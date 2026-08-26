@@ -22,7 +22,10 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import type { AudioTrack, CaptureSize, Frame, InputEvent, Manifest } from '@vitrina/core/types';
-import { defaultProject, hostFromUrl } from '@vitrina/core';
+import {
+  defaultProject, hostFromUrl, planSegments, computeQualityBudget,
+  cameraConfigForBudget, CAMERA_PRESETS,
+} from '@vitrina/core';
 import { findBrowser, launchFlags, comoInstalarNavegador, type BrowserInfo } from './browser.ts';
 import { INJECT_SOURCE, BINDING_NAME } from './inject.ts';
 import { jpegSize } from './jpeg.ts';
@@ -242,15 +245,24 @@ export class Recorder {
       JSON.stringify(this.events, null, 2),
     );
 
-    // Una carpeta .vitrina sin project.json no se puede abrir en el editor.
-    // Lo escribe el grabador para que cualquier productor genere carpetas
-    // completas, no solo el CLI.
+    // Una carpeta .vitrina sin project.json no se puede abrir en el editor, y
+    // una con project.json pero sin tramos de zoom se abre sin nada que ver.
+    // El zoom automatico es la razon de ser de la herramienta y se deduce de
+    // los eventos, asi que se calcula aqui: la carpeta sale util de una vez,
+    // la grabe el CLI, la app o una herramienta.
     const projectPath = path.join(this.opts.outDir, 'project.json');
     if (!(await exists(projectPath))) {
-      await fsp.writeFile(
-        projectPath,
-        JSON.stringify(defaultProject({ host: hostFromUrl(this.opts.url) }), null, 2),
-      );
+      const project = defaultProject({ host: hostFromUrl(this.opts.url) });
+      const viewport = manifest.capture ?? manifest.viewport;
+      const budget = computeQualityBudget(viewport, project.export, project.frame);
+      project.zooms = planSegments({
+        events: this.events,
+        viewport,
+        startedAt: this.startedAt,
+        durationMs,
+        config: cameraConfigForBudget(CAMERA_PRESETS.normal, budget.maxSharpZoom),
+      });
+      await fsp.writeFile(projectPath, JSON.stringify(project, null, 2));
     }
 
     return {

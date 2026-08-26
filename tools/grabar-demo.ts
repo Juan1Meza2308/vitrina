@@ -8,6 +8,7 @@
  *   node tools/grabar-demo.ts [--secs=12] [--out=...]
  */
 import CDP from 'chrome-remote-interface';
+import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { Recorder } from '@vitrina/capture-cdp';
@@ -97,6 +98,19 @@ async function guion(input: InputClient, endAt: number): Promise<void> {
 }
 
 async function main(): Promise<void> {
+  // `--si-falta` la salta si ya existe. La usa `npm run app:check`, que
+  // necesita una grabacion para verificarse pero no puede traerla en el repo:
+  // son cientos de MB de frames y estan en .gitignore. Sin esto, el primer
+  // comando que ejecuta quien clona el proyecto falla con un ENOENT.
+  if (process.argv.includes('--si-falta')) {
+    const yaEsta = await fsp.access(path.join(outDir, 'manifest.json'))
+      .then(() => true).catch(() => false);
+    if (yaEsta) {
+      console.log(`grabacion de prueba ya presente en ${outDir}`);
+      return;
+    }
+  }
+
   const preset = CAPTURE_PRESETS.find((p) => p.name === 'equilibrado')!;
   const rec = new Recorder({
     url: fixture,
