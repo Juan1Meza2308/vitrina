@@ -1,0 +1,14 @@
+# Finales de linea normalizados a LF en el repositorio.
+#
+# Sin esto, un checkout en macOS o Linux marca como modificados todos los
+# ficheros escritos en Windows, y el primer `git status` del que clone parece
+# un desastre.
+* text=auto eol=lf
+
+# Binarios: que git no intente normalizarlos.
+*.png binary
+*.jpg binary
+*.mp4 binary
+*.webm binary
+*.mov binary
+*.gif binary
