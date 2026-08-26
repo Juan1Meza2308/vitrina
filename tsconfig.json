@@ -1,0 +1,21 @@
+{
+  "compilerOptions": {
+    "target": "ES2023",
+    "lib": ["ES2023", "DOM"],
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    // Node 24 ejecuta TS por type-stripping: solo se permite sintaxis borrable
+    // (nada de enum, namespace ni parameter properties). Esto lo hace cumplir.
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true
+  },
+  "include": ["packages/**/*.ts", "bin/**/*.ts", "tools/**/*.ts"],
+  "exclude": ["node_modules", "**/dist", "spikes", "apps"]
+}

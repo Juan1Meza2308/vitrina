@@ -1,0 +1,47 @@
+# Empaquetado de la app de escritorio.
+#
+# Ojo: un .app o un .dmg de macOS SOLO se pueden generar desde macOS —
+# electron-builder necesita las herramientas del sistema. Desde Windows este
+# fichero se puede validar con `--win --dir`, que comprueba lo que de verdad
+# suele romperse: que las dependencias nativas entren en el paquete.
+appId: dev.vitrina.app
+productName: Vitrina
+copyright: MIT
+
+# Version exacta y explicita. En un workspace de npm, electron esta izado a la
+# raiz y declarado como rango, asi que electron-builder no puede resolverla
+# sola. Hay que subirla junto con la devDependencia de electron.
+electronVersion: 44.0.0
+
+directories:
+  output: ../../dist
+
+files:
+  - out/**/*
+  - package.json
+
+# El binario nativo de canvas no puede ir dentro del asar: se carga con
+# `process.dlopen`, que necesita un fichero real en disco.
+asarUnpack:
+  - '**/node_modules/@napi-rs/canvas*/**'
+
+mac:
+  category: public.app-category.developer-tools
+  target:
+    - dmg
+    - zip
+  # Sin firma: no hace falta cuenta de Apple Developer. La contrapartida es que
+  # la primera apertura pide clic derecho -> Abrir, o quitar la cuarentena con
+  # `xattr -dr com.apple.quarantine /Applications/Vitrina.app`.
+  identity: null
+  extendInfo:
+    # macOS exige declarar para que se pide el microfono, o getUserMedia falla
+    # sin explicacion.
+    NSMicrophoneUsageDescription: >-
+      Vitrina graba tu narracion mientras haces la demo.
+    # Vitrina NO captura la pantalla: graba el compositor del navegador por
+    # DevTools Protocol. Por eso no declara NSScreenCaptureUsageDescription ni
+    # dispara el permiso de grabacion de pantalla.
+
+win:
+  target: nsis

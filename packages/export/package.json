@@ -1,0 +1,11 @@
+{
+  "name": "@vitrina/export",
+  "version": "0.1.0-dev",
+  "private": true,
+  "type": "module",
+  "description": "Exportador offline determinista: compone cada frame y lo codifica con ffmpeg",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "@napi-rs/canvas": "^1.0.8"
+  }
+}

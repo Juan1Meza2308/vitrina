@@ -1,0 +1,8 @@
+node_modules/
+dist/
+out/
+grabaciones/
+spikes/out/
+apps/desktop/captura-*.png
+*.log
+.DS_Store

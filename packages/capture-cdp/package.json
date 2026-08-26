@@ -1,0 +1,11 @@
+{
+  "name": "@vitrina/capture-cdp",
+  "version": "0.1.0-dev",
+  "private": true,
+  "type": "module",
+  "description": "Captura por Chrome DevTools Protocol: screencast + eventos del DOM",
+  "exports": { ".": "./src/index.ts" },
+  "dependencies": {
+    "chrome-remote-interface": "^0.33.3"
+  }
+}

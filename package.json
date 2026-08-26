@@ -1,0 +1,48 @@
+{
+  "name": "vitrina",
+  "private": true,
+  "version": "0.1.0-dev",
+  "type": "module",
+  "description": "Grabador open source para demos de apps web: zoom automatico en los clicks y fondo cinematografico",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.18"
+  },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "scripts": {
+    "record": "node bin/vitrina-record.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p apps/desktop",
+    "app": "npm run dev --workspace @vitrina/desktop",
+    "app:build": "npm run build --workspace @vitrina/desktop",
+    "app:check": "npm run app:build && node tools/verificar-app.ts grabaciones/demo.vitrina",
+    "calibrar": "node tools/calibrar.ts",
+    "app:dist": "npm run app:build && electron-builder --projectDir apps/desktop --config electron-builder.yml"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^4.7.0",
+    "electron": "^44.0.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^5.0.0",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  },
+  "dependencies": {
+    "@napi-rs/canvas": "^1.0.8",
+    "chrome-remote-interface": "^0.33.3"
+  },
+  "allowScripts": {
+    "electron@44.0.0": true,
+    "esbuild@0.25.12": true,
+    "esbuild@0.21.5": true
+  }
+}

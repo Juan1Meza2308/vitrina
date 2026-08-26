@@ -1,0 +1,76 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Vitrina · stress fixture</title>
+<style>
+  :root { --bg:#0b0d10; --card:#14181d; --line:#232a32; --fg:#e6edf3; --dim:#8b98a5; --acc:#c3f53c; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--fg); font:14px/1.5 system-ui,Segoe UI,sans-serif; padding:24px; }
+  h1 { font-size:22px; letter-spacing:-.02em; margin-bottom:4px; }
+  .sub { color:var(--dim); margin-bottom:20px; }
+  .grid { display:grid; grid-template-columns:repeat(3,1fr); gap:12px; margin-bottom:16px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:12px; padding:16px; }
+  .card h2 { font-size:12px; text-transform:uppercase; letter-spacing:.08em; color:var(--dim); margin-bottom:8px; }
+  .big { font-size:26px; font-weight:600; letter-spacing:-.02em; }
+  button { background:transparent; border:1px solid var(--line); color:var(--fg); border-radius:8px;
+           padding:10px 14px; font:inherit; cursor:pointer; transition:.15s; }
+  button:hover { border-color:var(--acc); }
+  button.on { border-color:var(--acc); color:var(--acc); background:rgba(195,245,60,.08); }
+  .row { display:flex; gap:8px; flex-wrap:wrap; margin-bottom:16px; }
+  input { background:var(--card); border:1px solid var(--line); border-radius:8px; padding:10px 12px;
+          color:var(--fg); font:inherit; width:200px; }
+  canvas { width:100%; height:150px; display:block; border-radius:12px; border:1px solid var(--line); }
+  .long p { color:var(--dim); margin:10px 0; max-width:60ch; }
+</style>
+<h1>Panel de cotización</h1>
+<div class="sub">Fixture de estrés — repintado continuo para medir el peor caso</div>
+<div class="grid">
+  <div class="card"><h2>Precio estimado</h2><div class="big" id="p">$3.360</div></div>
+  <div class="card"><h2>Tiempo</h2><div class="big" id="t">3-5 semanas</div></div>
+  <div class="card"><h2>Frames</h2><div class="big" id="f">0</div></div>
+</div>
+<div class="row">
+  <button id="b1">One page</button><button id="b2">Sitio informativo</button>
+  <button id="b3">Corporativo</button><button id="b4">E-commerce</button>
+</div>
+<div class="row">
+  <input id="i1" placeholder="Nombre del cliente"><input id="i2" placeholder="Tu nombre">
+</div>
+<canvas id="c" width="1200" height="300"></canvas>
+<div class="long" id="long"></div>
+<script>
+  // Contenido largo para poder hacer scroll
+  const long = document.getElementById('long');
+  for (let i = 0; i < 24; i++) {
+    const p = document.createElement('p');
+    p.textContent = 'Bloque ' + (i + 1) + ' — texto de relleno para forzar scroll y medir el coste de repintado durante el desplazamiento en la captura por screencast.';
+    long.appendChild(p);
+  }
+  // Animación permanente: obliga a Chrome a repintar cada frame (peor caso para el screencast)
+  const cv = document.getElementById('c'), cx = cv.getContext('2d');
+  const fEl = document.getElementById('f');
+  let n = 0;
+  function loop(ts) {
+    n++;
+    fEl.textContent = n;
+    const g = cx.createLinearGradient(0, 0, cv.width, cv.height);
+    g.addColorStop(0, `hsl(${(ts / 20) % 360} 70% 45%)`);
+    g.addColorStop(1, `hsl(${(ts / 20 + 90) % 360} 70% 35%)`);
+    cx.fillStyle = g; cx.fillRect(0, 0, cv.width, cv.height);
+    cx.fillStyle = 'rgba(255,255,255,.85)';
+    for (let i = 0; i < 60; i++) {
+      const x = (i / 60) * cv.width + Math.sin(ts / 400 + i) * 18;
+      const h = 40 + Math.sin(ts / 300 + i * 0.4) * 34;
+      cx.fillRect(x, cv.height / 2 - h / 2, 8, h);
+    }
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+  // Estado de botones, para que los clicks sintéticos produzcan cambio visible
+  for (const b of document.querySelectorAll('button')) {
+    b.onclick = () => {
+      document.querySelectorAll('button').forEach(x => x.classList.remove('on'));
+      b.classList.add('on');
+      document.getElementById('p').textContent = '$' + (2000 + Math.floor(Math.random() * 8000)).toLocaleString('es');
+    };
+  }
+</script>

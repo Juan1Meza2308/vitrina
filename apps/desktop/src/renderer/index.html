@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="es">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <!--
+      Sin conexiones externas: la app es local y no tiene por que salir a la red.
+
+      Cada forma de cargar algo se rige por su propia directiva, y aqui se usan
+      tres: los frames y la narracion se piden con `fetch()` (connect-src) para
+      decodificarlos, y el audio se reproduce desde un blob (media-src blob:).
+      Nombrar solo img-src deja el lienzo negro y el audio mudo, sin mas rastro
+      que un aviso en la consola. Ha pasado dos veces en este proyecto.
+    -->
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; connect-src 'self' vitrina:; img-src 'self' vitrina: data: blob:; media-src 'self' vitrina: blob:; style-src 'self' 'unsafe-inline'; script-src 'self'"
+    />
+    <title>Vitrina</title>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="./main.tsx"></script>
+  </body>
+</html>

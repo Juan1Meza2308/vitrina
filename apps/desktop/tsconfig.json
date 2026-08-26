@@ -1,0 +1,23 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    // Todo lo de esta app lo empaqueta Vite, asi que la resolucion es la del
+    // bundler y no la de Node. Eso evita tener que declarar la app como CJS o
+    // ESM: el proceso principal se emite en CommonJS (que es lo que permite
+    // usar `__dirname` y un preload sin sandbox) mientras el codigo fuente se
+    // escribe en ESM como el resto del monorepo.
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "allowImportingTsExtensions": true,
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "types": ["node", "vite/client"]
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx", "electron.vite.config.ts"]
+}

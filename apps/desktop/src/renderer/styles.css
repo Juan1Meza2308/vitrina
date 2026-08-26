@@ -1,0 +1,226 @@
+:root {
+  --bg: #0b0d10;
+  --panel: #14181d;
+  --panel-alto: #1b2027;
+  --linea: #232a32;
+  --fg: #e6edf3;
+  --dim: #8b98a5;
+  --acc: #c3f53c;
+  --peligro: #ff6b5e;
+  --radio: 10px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  background: var(--bg);
+  color: var(--fg);
+  font: 14px/1.5 system-ui, "Segoe UI", Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+}
+
+button {
+  font: inherit;
+  color: var(--fg);
+  background: transparent;
+  border: 1px solid var(--linea);
+  border-radius: var(--radio);
+  padding: 9px 14px;
+  cursor: pointer;
+  transition: border-color .15s, background .15s, color .15s;
+}
+button:hover:not(:disabled) { border-color: #38424e; }
+button:disabled { opacity: .4; cursor: default; }
+button.primario { background: var(--acc); border-color: var(--acc); color: #10160a; font-weight: 600; }
+button.primario:hover:not(:disabled) { filter: brightness(1.08); }
+button.peligro { border-color: #4a2b28; color: var(--peligro); }
+button.on { border-color: var(--acc); color: var(--acc); background: rgba(195, 245, 60, .08); }
+
+input[type="text"] {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--linea);
+  border-radius: var(--radio);
+  padding: 10px 12px;
+  width: 100%;
+  user-select: text;
+}
+input[type="text"]:focus { outline: none; border-color: var(--acc); }
+
+input[type="range"] { width: 100%; accent-color: var(--acc); }
+
+.app { display: flex; flex-direction: column; height: 100vh; }
+
+/* ---------- pantalla de inicio ---------- */
+
+.inicio {
+  margin: auto;
+  width: 560px;
+  display: flex;
+  flex-direction: column;
+  gap: 22px;
+}
+.marca { display: flex; align-items: baseline; gap: 10px; }
+.marca h1 { font-size: 26px; letter-spacing: -.03em; font-weight: 650; }
+.marca span { color: var(--dim); font-size: 13px; }
+
+.campo { display: flex; flex-direction: column; gap: 7px; }
+.campo > label { color: var(--dim); font-size: 12px; text-transform: uppercase; letter-spacing: .07em; }
+
+.presets { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.preset {
+  display: flex; flex-direction: column; gap: 3px; align-items: flex-start;
+  padding: 11px 12px; text-align: left; line-height: 1.35;
+}
+.preset b { font-size: 13px; font-weight: 600; }
+.preset small { color: var(--dim); font-size: 11px; }
+.preset.on small { color: rgba(195, 245, 60, .75); }
+
+.nota-calidad {
+  display: flex; align-items: center; gap: 8px;
+  color: var(--dim); font-size: 12.5px;
+  padding: 10px 12px; border: 1px solid var(--linea); border-radius: var(--radio);
+  background: var(--panel);
+}
+.nota-calidad b { color: var(--acc); font-weight: 600; }
+.nota-calidad.aviso b { color: var(--peligro); }
+
+.acciones { display: flex; gap: 10px; }
+.acciones .primario { flex: 1; }
+
+/* ---------- cuenta atras y grabacion ---------- */
+
+.centro { margin: auto; text-align: center; display: flex; flex-direction: column; gap: 18px; align-items: center; }
+.cuenta { font-size: 92px; font-weight: 300; letter-spacing: -.04em; line-height: 1; font-variant-numeric: tabular-nums; }
+.pulso { width: 11px; height: 11px; border-radius: 50%; background: var(--peligro); animation: latido 1.4s ease-in-out infinite; }
+@keyframes latido { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+.stats { display: flex; gap: 26px; color: var(--dim); font-size: 13px; font-variant-numeric: tabular-nums; }
+.stats b { color: var(--fg); font-weight: 600; }
+
+/* ---------- editor ---------- */
+
+.editor { display: grid; grid-template-columns: 1fr 316px; height: 100vh; overflow: hidden; }
+.escenario { display: flex; flex-direction: column; min-width: 0; padding: 18px; gap: 14px; }
+
+.lienzo-caja {
+  flex: 1; min-height: 0;
+  display: flex; align-items: center; justify-content: center;
+  background:
+    repeating-conic-gradient(#191d23 0% 25%, #14181d 0% 50%) 50% / 18px 18px;
+  border: 1px solid var(--linea); border-radius: 14px; overflow: hidden;
+}
+.lienzo-caja canvas { max-width: 100%; max-height: 100%; display: block; }
+.lienzo-caja canvas.encuadrable { cursor: grab; }
+.lienzo-caja canvas.encuadrable:active { cursor: grabbing; }
+
+.transporte { display: flex; align-items: center; gap: 14px; }
+.reloj { color: var(--dim); font-size: 12.5px; font-variant-numeric: tabular-nums; min-width: 92px; }
+
+.pista { position: relative; flex: 1; height: 44px; cursor: pointer; touch-action: none; }
+.pista.arrastrando { cursor: grabbing; }
+.riel {
+  position: absolute; left: 0; right: 0; top: 19px; height: 6px;
+  background: var(--panel-alto); border-radius: 3px;
+}
+
+/* El material recortado se atenua, no se oculta: asi se ve que sigue ahi y
+   que el recorte es reversible. */
+.recorte {
+  position: absolute; top: 8px; bottom: 8px;
+  background: rgba(11, 13, 16, .72); border-radius: 4px; pointer-events: none;
+}
+/* Los silencios se distinguen del recorte de los extremos con unas rayas: son
+   la misma idea —material que no sale— pero uno lo puso el usuario y el otro
+   una deteccion automatica, que se equivoca mas. */
+.recorte.corte {
+  background: repeating-linear-gradient(
+    -45deg, rgba(11, 13, 16, .8) 0 5px, rgba(139, 152, 165, .35) 5px 10px);
+}
+
+.tramo {
+  position: absolute; top: 12px; height: 20px;
+  background: rgba(195, 245, 60, .22); border: 1px solid var(--acc);
+  border-radius: 5px; cursor: grab;
+  transition: background .12s, box-shadow .12s;
+}
+.tramo:hover { background: rgba(195, 245, 60, .34); }
+.tramo.sel { background: rgba(195, 245, 60, .42); box-shadow: 0 0 0 2px rgba(195, 245, 60, .35); }
+/* Un tramo tocado a mano se distingue del automatico: es lo que se perderia al
+   volver al zoom automatico. */
+.tramo.manual { border-style: dashed; }
+
+/* Asas anchas aunque el tramo sea estrecho: agarrar un borde de 2 px es una
+   fuente inagotable de frustracion. */
+.asa {
+  position: absolute; top: -4px; bottom: -4px; left: -4px; width: 11px;
+  cursor: ew-resize; border-radius: 4px;
+}
+.asa.asa-der { left: auto; right: -4px; }
+.tramo.sel .asa { background: rgba(195, 245, 60, .55); }
+
+.asa-trim {
+  position: absolute; top: 4px; bottom: 4px; width: 9px; margin-left: -4px;
+  cursor: ew-resize; border-radius: 3px;
+  background: var(--dim); opacity: .55;
+}
+.asa-trim:hover { opacity: 1; background: var(--fg); }
+.asa-trim.der { margin-left: -5px; }
+
+.aguja {
+  position: absolute; top: 4px; width: 2px; height: 36px;
+  background: var(--fg); border-radius: 1px; pointer-events: none;
+}
+
+/* ---------- panel lateral ---------- */
+
+.panel { border-left: 1px solid var(--linea); background: var(--panel); overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 20px; }
+.grupo { display: flex; flex-direction: column; gap: 9px; }
+.grupo > h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .09em; color: var(--dim); font-weight: 600; }
+.fila { display: flex; gap: 6px; }
+.fila button { flex: 1; padding: 7px 6px; font-size: 12.5px; }
+.deslizador { display: flex; flex-direction: column; gap: 5px; }
+.deslizador label { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--dim); }
+.deslizador label b { color: var(--fg); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+.muestras { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.muestra { height: 38px; border-radius: 8px; border: 1px solid var(--linea); cursor: pointer; padding: 0; }
+.muestra.on { border-color: var(--acc); box-shadow: 0 0 0 1px var(--acc); }
+
+.barra { height: 6px; background: var(--panel-alto); border-radius: 3px; overflow: hidden; }
+/* Se escala en vez de cambiar el ancho: animar `width` fuerza un calculo de
+   layout en cada actualizacion, y durante una exportacion llegan varias por
+   segundo mientras la maquina ya esta compilando frames. Al ser un color
+   solido, escalar se ve exactamente igual. */
+.barra > div {
+  width: 100%; height: 100%; background: var(--acc);
+  transform-origin: left; transition: transform .2s;
+}
+.progreso-txt { display: flex; justify-content: space-between; font-size: 12px; color: var(--dim); font-variant-numeric: tabular-nums; }
+
+.aviso {
+  font-size: 12px; line-height: 1.45; color: #f0d9a0;
+  background: rgba(240, 200, 100, .07); border: 1px solid rgba(240, 200, 100, .2);
+  border-radius: 8px; padding: 9px 11px;
+}
+.medidor {
+  width: 220px; height: 8px; background: var(--panel-alto);
+  border-radius: 4px; overflow: hidden;
+}
+.medidor > div {
+  width: 100%; height: 100%; transform-origin: left; transform: scaleX(0);
+  background: linear-gradient(90deg, var(--acc), #ffcc4d 80%, var(--peligro));
+}
+
+select {
+  font: inherit; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--linea); border-radius: var(--radio);
+  padding: 9px 10px; width: 100%;
+}
+select:focus { outline: none; border-color: var(--acc); }
+
+.sutil { color: var(--dim); font-size: 12px; line-height: 1.45; }
+.error { font-size: 12.5px; color: var(--peligro); }
+.pie { margin-top: auto; display: flex; flex-direction: column; gap: 9px; }

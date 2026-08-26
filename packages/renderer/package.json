@@ -1,0 +1,8 @@
+{
+  "name": "@vitrina/renderer",
+  "version": "0.1.0-dev",
+  "private": true,
+  "type": "module",
+  "description": "Compositor: fondo, marco, chrome sintetico, contenido y cursor. Compartido por preview y export.",
+  "exports": { ".": "./src/index.ts" }
+}

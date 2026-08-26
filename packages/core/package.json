@@ -1,0 +1,12 @@
+{
+  "name": "@vitrina/core",
+  "version": "0.1.0-dev",
+  "private": true,
+  "type": "module",
+  "description": "Modelo de proyecto, matematica de calidad y motor de camara. Sin dependencias.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./types": "./src/types.ts",
+    "./quality": "./src/quality.ts"
+  }
+}
