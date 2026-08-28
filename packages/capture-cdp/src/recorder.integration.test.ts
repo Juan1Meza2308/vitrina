@@ -63,7 +63,23 @@ describe('Recorder', () => {
       await rec.start();
 
       // Entrada sintetica sobre los botones reales del fixture.
-      const input = (await CDP({ port: PORT })) as unknown as InputClient;
+      //
+      // Al target de la PAGINA y con `local: true`. Sin lo segundo,
+      // `chrome-remote-interface` se descarga el descriptor del protocolo por
+      // HTTP del navegador al conectar, y ese endpoint compite con el chorro de
+      // frames: se comia segundos de la grabacion y el recuento de frames
+      // quedaba al filo del umbral, con este test fallando y pasando sin que
+      // nada cambiara.
+      const objetivos = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()) as
+        { type: string; id: string; url: string }[];
+      // Se filtra tambien por URL, no solo por tipo: un navegador anterior a
+      // medio cerrar en el mismo puerto devuelve sus targets, y conectarse a uno
+      // que esta muriendo da "socket hang up" y tumba el fichero entero.
+      const pagina = objetivos.find((t) => t.type === 'page' && t.url.includes('stress.html'))
+        ?? objetivos.find((t) => t.type === 'page');
+      const input = (await CDP({
+        port: PORT, target: pagina?.id, local: true,
+      })) as unknown as InputClient;
       for (const x of [70, 190, 320]) {
         await input.Input.dispatchMouseEvent({ type: 'mouseMoved', x, y: 232 });
         await sleep(50);
@@ -77,7 +93,10 @@ describe('Recorder', () => {
       result = await rec.stop();
       await rec.close();
 
-      expect(result.manifest.frames.length).toBeGreaterThan(20);
+      // Se pide un flujo, no un numero magico: al menos 8 frames por segundo de
+      // grabacion. Un umbral fijo mide la velocidad de la maquina.
+      const segundos = result.manifest.durationMs / 1000;
+      expect(result.manifest.frames.length).toBeGreaterThan(segundos * 8);
       expect(result.events.length).toBeGreaterThan(0);
     },
     60_000,

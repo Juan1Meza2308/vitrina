@@ -47,6 +47,15 @@ const client = (await CDP({ port: PORT, target })) as unknown as Cliente;
 await Promise.all([client.Page.enable(), client.Runtime.enable()]);
 await sleep(4500);
 
+if (process.argv.includes('--captura')) {
+  const tiro = await (client as unknown as {
+    Page: { captureScreenshot(p: { format?: string }): Promise<{ data: string }> };
+  }).Page.captureScreenshot({ format: 'png' });
+  const fsp = await import('node:fs/promises');
+  await fsp.writeFile('apps/desktop/captura-ui.png', Buffer.from(tiro.data, 'base64'));
+  console.log('captura: apps/desktop/captura-ui.png');
+}
+
 const { result } = await client.Runtime.evaluate({ expression: expr, returnByValue: true });
 console.log(typeof result.value === 'string' ? result.value : JSON.stringify(result.value, null, 1));
 

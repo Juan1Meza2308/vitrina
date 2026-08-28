@@ -102,17 +102,92 @@ input[type="range"] { width: 100%; accent-color: var(--acc); }
 
 /* ---------- editor ---------- */
 
-/* `grid-template-rows` no es decorativo: sin el, la fila implicita es `auto` y
-   crece con el contenido, asi que un lienzo 9:16 estiraba la fila muy por
-   debajo de la ventana y `overflow: hidden` se comia el transporte y la linea
-   de tiempo. Con 16:9 cabia por los pelos y el fallo no se veia. */
+/* Dos filas: arriba biblioteca + previsualizacion + inspector, abajo la linea
+   de tiempo a todo lo ancho.
+
+   Las alturas explicitas no son decorativas: sin ellas la fila implicita es
+   `auto` y crece con el contenido, asi que un lienzo 9:16 estiraba la fila muy
+   por debajo de la ventana y `overflow: hidden` se comia todo lo de abajo. Con
+   16:9 cabia por los pelos y el fallo no se veia. */
 .editor {
-  display: grid; grid-template-columns: 1fr 316px; grid-template-rows: minmax(0, 1fr);
+  display: grid; grid-template-rows: minmax(0, 1fr) auto;
   height: 100vh; overflow: hidden;
+}
+.fila-alta {
+  display: grid; grid-template-columns: 216px 1fr 316px;
+  min-height: 0; overflow: hidden;
+}
+.biblioteca {
+  border-right: 1px solid var(--linea); background: var(--panel);
+  padding: 16px 14px; overflow-y: auto; min-height: 0;
+  display: flex; flex-direction: column; gap: 20px;
 }
 .escenario {
   display: flex; flex-direction: column; min-width: 0; min-height: 0;
   padding: 18px; gap: 14px;
+}
+
+/* --- linea de tiempo -------------------------------------------------- */
+
+.linea {
+  border-top: 1px solid var(--linea); background: var(--panel);
+  display: flex; flex-direction: column;
+}
+.barra {
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px; border-bottom: 1px solid var(--linea);
+}
+.barra button { padding: 6px 12px; font-size: 12.5px; }
+.barra .hueco { flex: 1; }
+.escala {
+  display: flex; align-items: center; gap: 8px;
+  color: var(--dim); font-size: 12px;
+}
+.escala input { width: 130px; }
+.escala b { color: var(--fg); font-variant-numeric: tabular-nums; min-width: 30px; }
+
+.tl { display: flex; padding: 8px 12px 12px; gap: 8px; }
+.tl-rotulos { display: flex; flex-direction: column; width: 52px; flex: none; }
+.tl-rot {
+  height: 40px; display: flex; align-items: center;
+  color: var(--dim); font-size: 11px;
+}
+.tl-rot.regla { height: 20px; }
+/* Solo el contenedor hace scroll; `.pista` es el elemento ancho de dentro, y
+   por eso su `getBoundingClientRect()` ya viene desplazado y la conversion de x
+   a tiempo sigue siendo una division. */
+.tl-scroll { flex: 1; min-width: 0; overflow-x: auto; overflow-y: hidden; }
+.tl-scroll::-webkit-scrollbar { height: 8px; }
+.tl-scroll::-webkit-scrollbar-thumb { background: var(--linea); border-radius: 4px; }
+
+.carril { position: relative; height: 40px; }
+.carril.regla { height: 20px; }
+.carril .riel {
+  position: absolute; left: 0; right: 0; top: 4px; bottom: 4px;
+  background: var(--panel-alto); border-radius: 6px;
+}
+.marca {
+  position: absolute; top: 2px; transform: translateX(-1px);
+  padding-left: 4px; border-left: 1px solid var(--linea);
+  color: var(--dim); font-size: 10px; font-variant-numeric: tabular-nums;
+  white-space: nowrap; pointer-events: none;
+}
+
+.onda {
+  position: absolute; left: 0; right: 0; top: 6px; bottom: 6px;
+  display: flex; align-items: center; gap: 0; pointer-events: none;
+}
+.onda span {
+  flex: 1; min-width: 0; background: rgba(140, 200, 255, .55); border-radius: 1px;
+}
+.sin-audio {
+  position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+  color: var(--dim); font-size: 11px; pointer-events: none;
+}
+.tramo .etiqueta {
+  position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
+  font-size: 10.5px; color: rgba(11, 13, 16, .8); pointer-events: none;
+  white-space: nowrap; overflow: hidden; max-width: calc(100% - 16px);
 }
 
 .lienzo-caja {
@@ -129,25 +204,21 @@ input[type="range"] { width: 100%; accent-color: var(--acc); }
 .transporte { display: flex; align-items: center; gap: 14px; }
 .reloj { color: var(--dim); font-size: 12.5px; font-variant-numeric: tabular-nums; min-width: 92px; }
 
-.pista { position: relative; flex: 1; height: 44px; cursor: pointer; touch-action: none; }
+.pista { position: relative; cursor: pointer; touch-action: none; }
 .pista.arrastrando { cursor: grabbing; }
-.riel {
-  position: absolute; left: 0; right: 0; top: 19px; height: 6px;
-  background: var(--panel-alto); border-radius: 3px;
-}
-
 /* El material recortado se atenua, no se oculta: asi se ve que sigue ahi y
    que el recorte es reversible. */
 .recorte {
-  position: absolute; top: 8px; bottom: 8px;
+  position: absolute; top: 20px; bottom: 0;
   background: rgba(11, 13, 16, .72); border-radius: 4px; pointer-events: none;
 }
-/* Los silencios se distinguen del recorte de los extremos con unas rayas: son
-   la misma idea —material que no sale— pero uno lo puso el usuario y el otro
-   una deteccion automatica, que se equivoca mas. */
-.recorte.corte {
+/* Los silencios se distinguen de los acelerados con unas rayas y otro color:
+   son ideas distintas —el corte quita material, el acelerado lo conserva— y
+   confundirlos haria pensar que se ha perdido algo. */
+.carril .corte {
+  position: absolute; top: 4px; bottom: 4px; border-radius: 4px; pointer-events: none;
   background: repeating-linear-gradient(
-    -45deg, rgba(11, 13, 16, .8) 0 5px, rgba(139, 152, 165, .35) 5px 10px);
+    -45deg, rgba(11, 13, 16, .85) 0 5px, rgba(139, 152, 165, .35) 5px 10px);
 }
 
 .tramo {
@@ -180,7 +251,7 @@ input[type="range"] { width: 100%; accent-color: var(--acc); }
 .asa-trim.der { margin-left: -5px; }
 
 .aguja {
-  position: absolute; top: 4px; width: 2px; height: 36px;
+  position: absolute; top: 0; bottom: 0; width: 2px;
   background: var(--fg); border-radius: 1px; pointer-events: none;
 }
 

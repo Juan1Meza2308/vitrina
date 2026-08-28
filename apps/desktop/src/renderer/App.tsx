@@ -13,8 +13,19 @@ import type { RecordingData, ExportProgressMsg, ExportPresetInfo } from '../prel
 import { Preview, makeTrack } from './preview.ts';
 import { Timeline } from './Timeline.tsx';
 import { grabarMicrofono, listarMicrofonos, type MicHandle, type DispositivoAudio } from './mic.ts';
+import { picos } from './timeline-calc.ts';
 
 type Fase = 'inicio' | 'cuenta' | 'grabando' | 'editor';
+
+/**
+ * Columnas de la forma de onda.
+ *
+ * Fijo y generoso: la pista se amplia con el zoom de la linea de tiempo, y
+ * recalcular los picos en cada cambio de escala haria trabajo de sobra para una
+ * diferencia que no se ve. A 900 columnas una grabacion de tres minutos da una
+ * columna cada 200 ms, suficiente para ver donde se hablo.
+ */
+const COLUMNAS_ONDA = 900;
 
 const FONDOS: { nombre: string; bg: Background; css: string }[] = [
   { nombre: 'Degradado', bg: { kind: 'linear', from: '#6d5efc', to: '#c3f53c', angle: 135 }, css: 'linear-gradient(135deg,#6d5efc,#c3f53c)' },
@@ -512,24 +523,41 @@ function Editor({ datos, onSalir }: { datos: RecordingData; onSalir: () => void 
   // y otras se quedaba en HAVE_NOTHING. Con el fichero completo en memoria el
   // seek del scrubbing es inmediato y fiable.
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [escalaTl, setEscalaTl] = useState(1);
+  const [onda, setOnda] = useState<Float32Array | null>(null);
   useEffect(() => {
     if (!pista) return;
     let url: string | null = null;
     let vivo = true;
     void (async () => {
       try {
-        const blob = await (await fetch(`vitrina://${pista.file}`)).blob();
+        const res = await fetch(`vitrina://${pista.file}`);
+        const bytes = await res.arrayBuffer();
         if (!vivo) return;
-        url = URL.createObjectURL(blob);
+        url = URL.createObjectURL(new Blob([bytes], { type: pista.mimeType }));
         setAudioUrl(url);
+
+        // La onda se decodifica del mismo fichero que ya se ha traido, no de
+        // otra peticion: es el mismo audio y bajarlo dos veces solo anadiria
+        // latencia. `decodeAudioData` consume el buffer, asi que se le pasa una
+        // copia o el elemento <audio> se quedaria sin datos.
+        const ctx = new AudioContext();
+        try {
+          const buf = await ctx.decodeAudioData(bytes.slice(0));
+          if (vivo) setOnda(picos(buf.getChannelData(0), COLUMNAS_ONDA));
+        } finally {
+          void ctx.close();
+        }
       } catch {
         setAudioUrl(null);
+        setOnda(null);
       }
     })();
     return () => {
       vivo = false;
       if (url) URL.revokeObjectURL(url);
       setAudioUrl(null);
+      setOnda(null);
     };
   }, [pista]);
 
@@ -604,45 +632,17 @@ function Editor({ datos, onSalir }: { datos: RecordingData; onSalir: () => void 
 
   return (
     <div className="editor">
-      <div className="escenario">
-        <div className="lienzo-caja">
-          <canvas
-            ref={lienzo}
-            width={project.export.width}
-            height={project.export.height}
-            className={puedeEncuadrar ? 'encuadrable' : ''}
-            title={puedeEncuadrar ? 'Arrastra para reencuadrar este tramo' : ''}
-            onPointerDown={encuadrePointerDown}
-            onPointerMove={encuadrePointerMove}
-            onPointerUp={encuadreSoltar}
-            onPointerCancel={encuadreSoltar}
-          />
+      <div className="fila-alta">
+      <aside className="biblioteca">
+        <div className="grupo">
+          <h3>Grabacion</h3>
+          <p className="sutil">
+            {datos.manifest.capture?.w ?? datos.manifest.viewport.w}×
+            {datos.manifest.capture?.h ?? datos.manifest.viewport.h}
+            {' · '}{(duracion / 1000).toFixed(1)}s
+          </p>
         </div>
-        {audioUrl && <audio ref={audio} src={audioUrl} preload="auto" />}
 
-        <div className="transporte">
-          <button onClick={() => setReproduciendo((r) => !r)} style={{ minWidth: 92 }}>
-            {reproduciendo ? 'Pausa' : 'Reproducir'}
-          </button>
-          <span className="reloj">{(tMs / 1000).toFixed(1)}s / {(duracion / 1000).toFixed(1)}s</span>
-          <Timeline
-            durationMs={duracion}
-            tMs={tMs}
-            onSeek={(ms) => { setReproduciendo(false); setTMs(ms); }}
-            zooms={zooms}
-            onZoomsChange={setZooms}
-            seleccion={seleccion}
-            onSeleccion={setSeleccion}
-            trimStartMs={project.trimStartMs}
-            trimEndMs={project.trimEndMs}
-            cuts={cortes}
-            speeds={project.speeds ?? []}
-            onTrim={(t) => setProject((p) => ({ ...p, ...t }))}
-          />
-        </div>
-      </div>
-
-      <aside className="panel">
         <div className="grupo">
           <h3>Fondo</h3>
           <div className="muestras">
@@ -670,7 +670,34 @@ function Editor({ datos, onSalir }: { datos: RecordingData; onSalir: () => void 
             </div>
           )}
         </div>
+      </aside>
 
+      <div className="escenario">
+        <div className="lienzo-caja">
+          <canvas
+            ref={lienzo}
+            width={project.export.width}
+            height={project.export.height}
+            className={puedeEncuadrar ? 'encuadrable' : ''}
+            title={puedeEncuadrar ? 'Arrastra para reencuadrar este tramo' : ''}
+            onPointerDown={encuadrePointerDown}
+            onPointerMove={encuadrePointerMove}
+            onPointerUp={encuadreSoltar}
+            onPointerCancel={encuadreSoltar}
+          />
+        </div>
+        {audioUrl && <audio ref={audio} src={audioUrl} preload="auto" />}
+
+        <div className="transporte">
+          <button className="primario" onClick={() => setReproduciendo((r) => !r)}
+                  style={{ minWidth: 104 }}>
+            {reproduciendo ? 'Pausa' : 'Reproducir'}
+          </button>
+          <span className="reloj">{(tMs / 1000).toFixed(1)}s / {(duracion / 1000).toFixed(1)}s</span>
+        </div>
+      </div>
+
+      <aside className="panel">
         <div className="grupo">
           <h3>Marco</h3>
           <div className="deslizador">
@@ -748,12 +775,6 @@ function Editor({ datos, onSalir }: { datos: RecordingData; onSalir: () => void 
             </p>
           )}
 
-          <button onClick={anadirTramo} disabled={dentroDeTramo}
-                  title={dentroDeTramo
-                    ? 'La aguja esta dentro de un tramo. Muevela a un hueco.'
-                    : 'Crea un tramo en la posicion de la aguja'}>
-            Anadir tramo aqui
-          </button>
           {editado && (
             <button onClick={() => replanificar(camara)}>Volver al zoom automatico</button>
           )}
@@ -857,6 +878,45 @@ function Editor({ datos, onSalir }: { datos: RecordingData; onSalir: () => void 
           <button onClick={onSalir}>Nueva grabacion</button>
         </div>
       </aside>
+      </div>
+
+      <div className="linea">
+        <div className="barra">
+          <button onClick={() => borrarSeleccion()} disabled={seleccion === null}>
+            Borrar tramo
+          </button>
+          <button onClick={anadirTramo} disabled={dentroDeTramo}
+                  title={dentroDeTramo
+                    ? 'La aguja esta dentro de un tramo. Muevela a un hueco.'
+                    : 'Crea un tramo en la posicion de la aguja'}>
+            Anadir tramo
+          </button>
+          <span className="hueco" />
+          <label className="escala">
+            Zoom
+            <input type="range" min={1} max={8} step={0.5} value={escalaTl}
+                   onChange={(e) => setEscalaTl(Number(e.target.value))} />
+            <b>×{escalaTl}</b>
+          </label>
+        </div>
+
+        <Timeline
+          durationMs={duracion}
+          tMs={tMs}
+          onSeek={(ms) => { setReproduciendo(false); setTMs(ms); }}
+          zooms={zooms}
+          onZoomsChange={setZooms}
+          seleccion={seleccion}
+          onSeleccion={setSeleccion}
+          trimStartMs={project.trimStartMs}
+          trimEndMs={project.trimEndMs}
+          cuts={cortes}
+          speeds={project.speeds ?? []}
+          escala={escalaTl}
+          onda={onda}
+          onTrim={(t) => setProject((p) => ({ ...p, ...t }))}
+        />
+      </div>
     </div>
   );
 }

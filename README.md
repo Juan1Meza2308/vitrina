@@ -350,6 +350,34 @@ Todo el tiempo de la salida pasa por un mapa: recortar los extremos y quitar
 silencios son la misma operación vista de dos formas. La reproducción del editor
 usa ese mismo mapa, así que salta los silencios igual que el vídeo final.
 
+## El editor
+
+La ventana sigue la forma de un editor de vídeo de escritorio: biblioteca a la
+izquierda, previsualización en el centro con su transporte, inspector a la
+derecha, y **la línea de tiempo a todo lo ancho abajo** con su barra de
+herramientas.
+
+La línea de tiempo tiene una regla con marcas en minutos:segundos y **tres
+carriles**, porque tres cosas distintas se superponían antes en una sola franja
+de 44 px:
+
+- **Vídeo** — los tramos de zoom, con su etiqueta y sus asas
+- **Ritmo** — los acelerados (rayado azul) y los silencios cortados (gris). Se
+  pintan distinto a propósito: un corte quita material y un acelerado lo
+  conserva
+- **Audio** — la narración, con su forma de onda
+
+El **zoom de la línea de tiempo** no es adorno. Con todo aplastado al ancho de
+la ventana, una demo de tres minutos daba unos 400 ms por píxel: no se podía
+colocar un corte donde tocaba. Por defecto va ajustado al ancho, así que el
+comportamiento sólo cambia si se amplía.
+
+> El paso de la regla se elige por la **anchura disponible**, no por la
+> duración: la misma grabación al doble de ancho enseña más detalle, y las
+> marcas nunca se amontonan a menos de 70 px. Y la onda toma el **pico** de cada
+> columna, no la media: la media de una voz normal ronda 0.02 y saldría plana,
+> sin decir dónde se habló, que es justo para lo que sirve.
+
 ## Ritmo: acelerar las esperas
 
 Una demo real está llena de esperas —una carga, un formulario que se rellena, un

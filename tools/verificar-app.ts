@@ -391,7 +391,18 @@ async function verificarTimeline(client: Cliente): Promise<void> {
     (() => { const r = document.querySelector('.pista').getBoundingClientRect();
       return JSON.stringify({ x: r.x, y: r.y, w: r.width, h: r.height }); })()
   `)) as { x: number; y: number; w: number; h: number };
-  const medioY = Math.round(pista.y + pista.h / 2);
+  // La altura sale del CARRIL de video, no del centro de la pista. Con la pista
+  // de una sola linea daba igual; ahora abarca tres carriles y su centro cae en
+  // el de ritmo, asi que los clicks pasaban de largo de los tramos y fallaban
+  // ocho comprobaciones a la vez. Derivarlo del carril vale para cualquier
+  // distribucion futura.
+  const carril = JSON.parse(await ev<string>(client, `
+    (() => { const c = document.querySelector('.carril.video') || document.querySelector('.pista');
+      const r = c.getBoundingClientRect();
+      return JSON.stringify({ y: r.y, h: r.height }); })()
+  `)) as { y: number; h: number };
+  const medioY = Math.round(carril.y + carril.h / 2);
+  void pista;
 
   const arrastrar = async (desdeX: number, hastaX: number, y = medioY) => {
     await client.Input.dispatchMouseEvent({ type: 'mousePressed', x: desdeX, y, button: 'left', clickCount: 1 });
@@ -466,7 +477,7 @@ async function verificarTimeline(client: Cliente): Promise<void> {
   check('el hueco encontrado admite un tramo', hueco.w > 20, `${hueco.w.toFixed(0)}px`);
 
   const n0 = await ev<number>(client, 'document.querySelectorAll(".tramo").length');
-  await ev(client, '[...document.querySelectorAll("button")].find(b => b.textContent.trim() === "Anadir tramo aqui").click()');
+  await ev(client, '[...document.querySelectorAll("button")].find(b => b.textContent.trim() === "Anadir tramo").click()');
   await sleep(400);
   const n1 = await ev<number>(client, 'document.querySelectorAll(".tramo").length');
   check('anadir crea un tramo nuevo', n1 === n0 + 1, `${n0} -> ${n1}`);
