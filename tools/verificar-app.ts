@@ -279,6 +279,36 @@ async function main(): Promise<void> {
   // --- linea de tiempo editable ---------------------------------------------
   await verificarTimeline(client);
 
+  // --- deshacer --------------------------------------------------------------
+  // Se comprueba el EFECTO, no que el boton se active: borrar un tramo y que
+  // vuelva el mismo numero es lo unico que demuestra que el historial guarda el
+  // proyecto y no una referencia al mismo objeto mutado.
+  const tramosAntes = await ev<number>(client, 'document.querySelectorAll(".tramo").length');
+  await ev(client, `
+    (() => {
+      const t = document.querySelector('.tramo');
+      const r = t.getBoundingClientRect();
+      t.dispatchEvent(new PointerEvent('pointerdown', {
+        bubbles: true, clientX: r.x + r.width / 2, clientY: r.y + r.height / 2, pointerId: 1,
+      }));
+      t.dispatchEvent(new PointerEvent('pointerup', { bubbles: true, pointerId: 1 }));
+    })()
+  `);
+  await sleep(400);
+  await ev(client,
+    "[...document.querySelectorAll('button')].find(b => b.textContent === 'Borrar tramo').click()");
+  await sleep(400);
+  const tramosTrasBorrar = await ev<number>(client, 'document.querySelectorAll(".tramo").length');
+  check('borrar quita un tramo', tramosTrasBorrar === tramosAntes - 1,
+    `${tramosAntes} -> ${tramosTrasBorrar}`);
+
+  await ev(client,
+    "[...document.querySelectorAll('button')].find(b => b.textContent === 'Deshacer').click()");
+  await sleep(500);
+  const tramosTrasDeshacer = await ev<number>(client, 'document.querySelectorAll(".tramo").length');
+  check('deshacer lo devuelve', tramosTrasDeshacer === tramosAntes,
+    `${tramosTrasBorrar} -> ${tramosTrasDeshacer}`);
+
   // --- anotaciones -----------------------------------------------------------
   // Son la ventaja de capturar desde el DOM. Se comprueba que el interruptor
   // llegue al lienzo, no solo que el boton se ponga en 'on'.

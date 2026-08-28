@@ -9,11 +9,13 @@ import {
 import type {
   Background, CameraPresetName, CapturePreset, Cut, Orientacion, Project, ZoomSegment,
 } from '@vitrina/core';
-import type { RecordingData, ExportProgressMsg, ExportPresetInfo } from '../preload/index.ts';
+import type { RecordingData, ExportProgressMsg, ExportPresetInfo, GrabacionReciente } from '../preload/index.ts';
 import { Preview, makeTrack } from './preview.ts';
 import { Timeline } from './Timeline.tsx';
 import { grabarMicrofono, listarMicrofonos, type MicHandle, type DispositivoAudio } from './mic.ts';
 import { picos } from './timeline-calc.ts';
+import { inicial, empujar, deshacer, rehacer, puedeDeshacer, puedeRehacer }
+  from './historial.ts';
 
 type Fase = 'inicio' | 'cuenta' | 'grabando' | 'editor';
 
@@ -50,8 +52,20 @@ export function App() {
   const [nivel, setNivel] = useState(0);
   const mic = useRef<MicHandle | null>(null);
 
+  const [recientes, setRecientes] = useState<GrabacionReciente[]>([]);
+
   useEffect(() => {
     void window.vitrina.capturePresets().then(setPresets);
+    void window.vitrina.recientes().then(setRecientes);
+    // Lo ultimo que se uso. Sin esto cada arranque volvia a localhost:3000 y al
+    // preset de fabrica, aunque llevaras diez demos seguidas del mismo sitio.
+    void window.vitrina.ajustes().then((a) => {
+      setUrl(a.url);
+      setPresetName(a.presetName);
+      setOrientacion(a.orientacion);
+      setMicOn(a.micOn);
+      setMicDeviceId(a.micDeviceId);
+    });
   }, []);
 
   useEffect(() => window.vitrina.onRecordProgress(setStats), []);
@@ -123,6 +137,9 @@ export function App() {
           setError(`Sin audio: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
+      // Se guardan al grabar y no al teclear: escribir media URL y cerrar no
+      // deberia dejarla puesta para la proxima vez.
+      void window.vitrina.guardarAjustes({ url, presetName, orientacion, micOn, micDeviceId });
       await window.vitrina.startRecording(url, presetName, orientacion);
       setStats({ frames: 0, elapsedMs: 0 });
       setFase('grabando');
@@ -145,6 +162,15 @@ export function App() {
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
       setFase('inicio');
+    }
+  }, []);
+
+  const abrirDir = useCallback(async (dir: string) => {
+    try {
+      setDatos(await window.vitrina.loadRecording(dir));
+      setFase('editor');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
     }
   }, []);
 
@@ -288,6 +314,22 @@ export function App() {
           <button className="primario" onClick={() => void grabar()}>Grabar</button>
           <button onClick={() => void abrir()}>Abrir grabacion</button>
         </div>
+
+        {recientes.length > 0 && (
+          <div className="campo">
+            <label>Recientes</label>
+            <div className="recientes">
+              {recientes.map((r) => (
+                <button key={r.dir} className="reciente" title={r.dir}
+                        onClick={() => void abrirDir(r.dir)}>
+                  <b>{new Date(r.startedAt).toLocaleString()}</b>
+                  <small>{(r.durationMs / 1000).toFixed(1)}s</small>
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+
       </div>
     </div>
   );
@@ -296,14 +338,47 @@ export function App() {
 // ---------------------------------------------------------------------------
 
 function Editor({ datos, onSalir }: { datos: RecordingData; onSalir: () => void }) {
-  const [project, setProject] = useState<Project>(datos.project);
+  /**
+   * Lo que se deshace es el estado de edicion ENTERO, no solo el proyecto.
+   *
+   * Los tramos de zoom viven en su propio estado —ver mas abajo por que no se
+   * derivan— y son justo lo que mas se quiere deshacer: borrar uno por error es
+   * el accidente tipico. Un historial que solo cubriera `project` dejaria el
+   * boton puesto y sin efecto, que es peor que no tenerlo.
+   */
+  const [hist, setHist] = useState(() => inicial({
+    project: datos.project,
+    zooms: datos.project.zooms,
+  }));
+  const { project, zooms } = hist.presente;
+
+  // Las dos con la misma firma que `useState`, para que los sitios que ya las
+  // llaman no se enteren de nada.
+  const setProject = useCallback((accion: Project | ((p: Project) => Project)) => {
+    setHist((h) => {
+      const siguiente = typeof accion === 'function'
+        ? (accion as (p: Project) => Project)(h.presente.project)
+        : accion;
+      if (Object.is(siguiente, h.presente.project)) return h;
+      return empujar(h, { ...h.presente, project: siguiente }, performance.now());
+    });
+  }, []);
+  const setZooms = useCallback((accion: ZoomSegment[] | ((z: ZoomSegment[]) => ZoomSegment[])) => {
+    setHist((h) => {
+      const siguiente = typeof accion === 'function'
+        ? (accion as (z: ZoomSegment[]) => ZoomSegment[])(h.presente.zooms)
+        : accion;
+      if (Object.is(siguiente, h.presente.zooms)) return h;
+      return empujar(h, { ...h.presente, zooms: siguiente }, performance.now());
+    });
+  }, []);
   const [camara, setCamara] = useState<CameraPresetName>('normal');
   const [tMs, setTMs] = useState(0);
   const [reproduciendo, setReproduciendo] = useState(false);
 
   // Los tramos son ESTADO, no un valor derivado. En cuanto se pueden editar a
-  // mano, recalcularlos en cada render borraria el trabajo del usuario.
-  const [zooms, setZooms] = useState<ZoomSegment[]>(datos.project.zooms);
+  // mano, recalcularlos en cada render borraria el trabajo del usuario. Viven
+  // dentro del historial, arriba, junto al proyecto.
   const [seleccion, setSeleccion] = useState<number | null>(null);
 
   const lienzo = useRef<HTMLCanvasElement>(null);
@@ -457,13 +532,34 @@ function Editor({ datos, onSalir }: { datos: RecordingData; onSalir: () => void 
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // La guardia es imprescindible: sin ella, escribir una flecha o una zeta
+      // en un campo de texto dispararia los atajos.
       if ((e.target as HTMLElement)?.tagName === 'INPUT') return;
+
+      const mando = e.ctrlKey || e.metaKey;
+      if (mando && e.key.toLowerCase() === 'z') {
+        e.preventDefault();
+        setHist((h) => (e.shiftKey ? rehacer(h) : deshacer(h)));
+        return;
+      }
       if (e.key === 'Delete' || e.key === 'Backspace') borrarSeleccion();
       if (e.key === ' ') { e.preventDefault(); setReproduciendo((r) => !r); }
+
+      // Un frame a 60 fps, o un segundo con Shift: mover la aguja a mano es
+      // como se afina un corte, y arrastrando no se llega al frame exacto.
+      const paso = e.shiftKey ? 1000 : 1000 / 60;
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        setReproduciendo(false);
+        const d = e.key === 'ArrowLeft' ? -paso : paso;
+        setTMs((t) => Math.min(duracion, Math.max(0, t + d)));
+      }
+      if (e.key === 'Home') { setReproduciendo(false); setTMs(0); }
+      if (e.key === 'End') { setReproduciendo(false); setTMs(duracion); }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [borrarSeleccion]);
+  }, [borrarSeleccion, duracion]);
 
   const anadirTramo = () => {
     // Se centra donde estaba el cursor en ese instante: es donde estaba pasando
@@ -882,6 +978,11 @@ function Editor({ datos, onSalir }: { datos: RecordingData; onSalir: () => void 
 
       <div className="linea">
         <div className="barra">
+          <button onClick={() => setHist(deshacer)} disabled={!puedeDeshacer(hist)}
+                  title="Deshacer (Ctrl+Z)">Deshacer</button>
+          <button onClick={() => setHist(rehacer)} disabled={!puedeRehacer(hist)}
+                  title="Rehacer (Ctrl+Shift+Z)">Rehacer</button>
+          <span className="separador" />
           <button onClick={() => borrarSeleccion()} disabled={seleccion === null}>
             Borrar tramo
           </button>

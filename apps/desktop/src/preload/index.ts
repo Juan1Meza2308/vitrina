@@ -17,6 +17,21 @@ export interface RecordingData {
   project: Project;
 }
 
+export interface Ajustes {
+  url: string;
+  presetName: string;
+  orientacion: Orientacion;
+  micOn: boolean;
+  micDeviceId: string;
+}
+
+export interface GrabacionReciente {
+  dir: string;
+  nombre: string;
+  durationMs: number;
+  startedAt: number;
+}
+
 export interface RecordProgress {
   frames: number;
   events: number;
@@ -71,6 +86,11 @@ const api = {
   onRecordProgress: (cb: (p: RecordProgress) => void) => subscribe('record:progress', cb),
 
   openRecording: (): Promise<RecordingData | null> => ipcRenderer.invoke('recording:open'),
+  recientes: (limite = 5): Promise<GrabacionReciente[]> =>
+    ipcRenderer.invoke('recordings:recent', limite),
+  ajustes: (): Promise<Ajustes> => ipcRenderer.invoke('settings:get'),
+  guardarAjustes: (parcial: Partial<Ajustes>): Promise<Ajustes> =>
+    ipcRenderer.invoke('settings:set', parcial),
   loadRecording: (dir: string): Promise<RecordingData> => ipcRenderer.invoke('recording:load', dir),
   saveProject: (dir: string, project: Project): Promise<void> =>
     ipcRenderer.invoke('recording:saveProject', dir, project),

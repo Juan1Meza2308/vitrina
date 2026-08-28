@@ -44,6 +44,7 @@ todavía no.
 | Vista de móvil real en vertical | hecho |
 | Cursor suavizado | hecho |
 | Rótulos y teclas en pantalla | hecho |
+| Editor tipo CapCut · deshacer · memoria | hecho |
 | macOS y Windows | hecho (sin probar en Mac) |
 | Grabación vertical (9:16) | hecho |
 
@@ -377,6 +378,27 @@ comportamiento sólo cambia si se amplía.
 > marcas nunca se amontonan a menos de 70 px. Y la onda toma el **pico** de cada
 > columna, no la media: la media de una voz normal ronda 0.02 y saldría plana,
 > sin decir dónde se habló, que es justo para lo que sirve.
+
+### Deshacer, atajos y memoria
+
+`Ctrl+Z` deshace y `Ctrl+Shift+Z` rehace. Lo que se deshace es el estado de
+edición **entero** —proyecto y tramos de zoom—, no sólo la mitad: borrar un tramo
+por error es el accidente típico y era irreversible.
+
+> Lo único difícil del historial es el **agrupado**. Arrastrar un tramo dispara
+> decenas de cambios de estado; sin agrupar, deshacer retrocedería un píxel de
+> movimiento y habría que pulsarlo cuarenta veces. Los cambios separados por
+> menos de 400 ms cuentan como el mismo gesto, que es lo que distingue «estoy
+> arrastrando» de «he decidido otra cosa» sin que cada control tenga que avisar
+> de cuándo empieza y termina.
+
+Las flechas mueven la aguja un frame, con `Shift` un segundo, e `Inicio`/`Fin`
+van a los extremos. Arrastrando no se llega al frame exacto.
+
+La app **recuerda** la última dirección, preset, orientación y micrófono en un
+`ajustes.json` en `userData`, y ofrece las últimas grabaciones en la pantalla de
+inicio. Se guardan al grabar, no al teclear: escribir media URL y cerrar no
+debería dejarla puesta para la próxima vez.
 
 ## Ritmo: acelerar las esperas
 

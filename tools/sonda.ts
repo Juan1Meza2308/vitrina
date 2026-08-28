@@ -12,6 +12,7 @@ import path from 'node:path';
 
 const PORT = 9504;
 const APP = path.resolve('apps/desktop');
+const sinGrabacion = process.argv.includes('--inicio');
 const grabacion = path.resolve(
   process.argv[2]?.startsWith('--') ? 'grabaciones/demo.vitrina' : process.argv[2] ?? 'grabaciones/demo.vitrina');
 const expr = process.argv.find((a) => a.startsWith('--eval='))?.slice(7) ?? '1';
@@ -29,7 +30,10 @@ interface Cliente {
   close(): Promise<void>;
 }
 
-const child = spawn(ELECTRON, [APP, grabacion, `--remote-debugging-port=${PORT}`],
+const child = spawn(
+  ELECTRON,
+  sinGrabacion ? [APP, `--remote-debugging-port=${PORT}`]
+    : [APP, grabacion, `--remote-debugging-port=${PORT}`],
   { stdio: ['ignore', 'ignore', 'inherit'] });
 
 let target = '';

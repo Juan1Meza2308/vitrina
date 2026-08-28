@@ -23,12 +23,61 @@ import {
 } from '@vitrina/core';
 import type { AudioTrack, CameraPresetName, Cut, InputEvent, Manifest, Orientacion, Project } from '@vitrina/core';
 import { exportRecording, EXPORT_PRESETS, ExportAbortedError, findFfmpeg } from '@vitrina/export';
+import { normalizarAjustes, type Ajustes } from './ajustes.ts';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 const ejecutar = promisify(execFile);
 
 const RECORDINGS = path.join(app.getPath('videos'), 'Vitrina');
+
+/** Un JSON en `userData`: son cinco campos, no hace falta una dependencia. */
+const ficheroAjustes = () => path.join(app.getPath('userData'), 'ajustes.json');
+
+async function leerAjustes(): Promise<Ajustes> {
+  try {
+    return normalizarAjustes(JSON.parse(await fsp.readFile(ficheroAjustes(), 'utf8')));
+  } catch {
+    return normalizarAjustes(null);
+  }
+}
+
+ipcMain.handle('settings:get', () => leerAjustes());
+
+ipcMain.handle('settings:set', async (_e, parcial: Partial<Ajustes>) => {
+  const fusion = { ...(await leerAjustes()), ...parcial };
+  await fsp.writeFile(ficheroAjustes(), JSON.stringify(fusion, null, 2)).catch(() => {});
+  return fusion;
+});
+
+/**
+ * Las ultimas grabaciones, para no tener que buscarlas en un dialogo.
+ *
+ * Se leen del disco cada vez en lugar de mantener una lista: si el usuario
+ * borra una carpeta, una lista guardada ofreceria abrir algo que ya no existe.
+ */
+ipcMain.handle('recordings:recent', async (_e, limite = 5) => {
+  try {
+    const nombres = await fsp.readdir(RECORDINGS);
+    const info = await Promise.all(nombres
+      .filter((n) => n.endsWith('.vitrina'))
+      .map(async (nombre) => {
+        const dir = path.join(RECORDINGS, nombre);
+        try {
+          const m = JSON.parse(await fsp.readFile(path.join(dir, 'manifest.json'), 'utf8')) as Manifest;
+          return { dir, nombre, durationMs: m.durationMs, startedAt: m.startedAt };
+        } catch {
+          return null;   // carpeta a medias: una grabacion interrumpida
+        }
+      }));
+    return info
+      .filter((x): x is NonNullable<typeof x> => x !== null)
+      .sort((a, b) => b.startedAt - a.startedAt)
+      .slice(0, limite);
+  } catch {
+    return [];
+  }
+});
 
 let win: BrowserWindow | null = null;
 let recorder: Recorder | null = null;
