@@ -15,11 +15,12 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { Recorder, ventanaPara } from '@vitrina/capture-cdp';
+import CDP from 'chrome-remote-interface';
+import { Recorder, ventanaPara, guionDe, reproducir } from '@vitrina/capture-cdp';
 import {
   CAPTURE_PRESETS, CAMERA_PRESETS, cameraConfigForBudget, computeQualityBudget,
   defaultProject, hostFromUrl, planSegments, parseSilenceReport, silenceFilter,
-  paraOrientacion,
+  paraOrientacion, reescalarProyecto,
 } from '@vitrina/core';
 import type { AudioTrack, CameraPresetName, Cut, InputEvent, Manifest, Orientacion, Project } from '@vitrina/core';
 import { exportRecording, EXPORT_PRESETS, ExportAbortedError, findFfmpeg } from '@vitrina/export';
@@ -311,6 +312,103 @@ ipcMain.handle('record:start', async (
   await recorder.launch();
   await recorder.start();
   return { dir: recordingDir, preset };
+});
+
+/**
+ * Repite una grabacion: vuelve a ejecutar su log de entrada y guarda otra nueva.
+ *
+ * Es lo que evita la dolencia de siempre —un fallo a los tres minutos obliga a
+ * repetir los tres minutos y ademas se pierde lo editado—. La original no se
+ * toca: sale una grabacion aparte.
+ */
+ipcMain.handle('record:repeat', async (
+  _e,
+  opts: { dir: string; presetName?: string; texto?: string },
+) => {
+  if (recorder) throw new Error('Ya hay una grabacion en curso');
+
+  const origen = path.resolve(opts.dir);
+  const manifest = JSON.parse(
+    await fsp.readFile(path.join(origen, 'manifest.json'), 'utf8')) as Manifest;
+  const events = JSON.parse(
+    await fsp.readFile(path.join(origen, 'events.json'), 'utf8')) as InputEvent[];
+
+  const fuenteVieja = manifest.capture ?? manifest.viewport;
+  const elegido = opts.presetName
+    ? CAPTURE_PRESETS.find((p) => p.name === opts.presetName)
+    : undefined;
+  const preset = elegido
+    ? paraOrientacion(elegido, fuenteVieja.h > fuenteVieja.w ? 'vertical' : 'horizontal')
+    : null;
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const destino = path.join(RECORDINGS, `${stamp}-repetida.vitrina`);
+  await fsp.mkdir(destino, { recursive: true });
+
+  const guion = guionDe(events, manifest.startedAt, {
+    deviceScaleFactor: manifest.deviceScaleFactor ?? 1,
+    relleno: opts.texto ?? '',
+  });
+
+  const hueco = screen.getPrimaryDisplay().workAreaSize;
+  const viewport = preset?.css ?? preset?.capture ?? manifest.viewport;
+  const dsf = preset ? (preset.dsf ?? 1) : (manifest.deviceScaleFactor ?? 1);
+  recorder = new Recorder({
+    url: manifest.url,
+    viewport,
+    deviceScaleFactor: dsf,
+    window: ventanaPara(
+      { w: Math.round(viewport.w * dsf), h: Math.round(viewport.h * dsf) },
+      { width: Math.round(hueco.width * 0.92), height: Math.round(hueco.height * 0.92) },
+    ),
+    outDir: destino,
+    onProgress: (p) => win?.webContents.send('record:progress', p),
+  });
+
+  try {
+    await recorder.launch();
+    await recorder.start();
+
+    // Al target de la pagina y con `local: true`: conectar en medio del
+    // screencast sin eso se come mas de quince segundos, y aqui esos segundos
+    // desplazarian el guion entero respecto a la grabacion.
+    const objetivos = (await (await fetch('http://127.0.0.1:9222/json/list')).json()) as
+      { type: string; id: string }[];
+    const pagina = objetivos.find((t) => t.type === 'page');
+    if (!pagina) throw new Error('El navegador de repeticion no expuso una pagina');
+    const input = (await CDP({
+      port: 9222, target: pagina.id, local: true,
+    })) as unknown as Parameters<typeof reproducir>[0] & { close(): Promise<void> };
+
+    await reproducir(input, guion, { relleno: opts.texto ?? '' });
+    await input.close();
+
+    const resultado = await recorder.stop();
+    await recorder.close();
+    recorder = null;
+
+    // El proyecto se copia REESCALADO: los tramos de zoom guardan su objetivo
+    // en pixeles de la fuente, asi que copiarlos tal cual a una captura de otro
+    // tamano deja la camara encuadrando otro sitio, y sin sintoma visible.
+    try {
+      const viejo = JSON.parse(
+        await fsp.readFile(path.join(origen, 'project.json'), 'utf8')) as Project;
+      const fuenteNueva = resultado.manifest.capture ?? resultado.manifest.viewport;
+      await fsp.writeFile(
+        path.join(destino, 'project.json'),
+        JSON.stringify(reescalarProyecto(viejo, fuenteVieja, fuenteNueva), null, 2),
+      );
+    } catch {
+      await planAndSave(destino, 'normal');
+    }
+
+    recordingDir = destino;
+    return loadRecording(destino);
+  } catch (e) {
+    await recorder?.close().catch(() => {});
+    recorder = null;
+    throw e;
+  }
 });
 
 ipcMain.handle('record:stop', async () => {

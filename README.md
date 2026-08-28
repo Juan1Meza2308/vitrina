@@ -46,6 +46,7 @@ todavía no.
 | Rótulos y teclas en pantalla | hecho |
 | Editor tipo CapCut · deshacer · memoria | hecho |
 | Looks guardados y marca de agua | hecho |
+| Repetir la grabación | hecho |
 | macOS y Windows | hecho (sin probar en Mac) |
 | Grabación vertical (9:16) | hecho |
 
@@ -400,6 +401,45 @@ La app **recuerda** la última dirección, preset, orientación y micrófono en 
 `ajustes.json` en `userData`, y ofrece las últimas grabaciones en la pantalla de
 inicio. Se guardan al grabar, no al teclear: escribir media URL y cerrar no
 debería dejarla puesta para la próxima vez.
+
+## Repetir la grabación
+
+La dolencia número uno de cualquier herramienta de demos: un fallo en el minuto
+tres obliga a repetir los tres minutos, y encima se pierde todo lo editado.
+
+Vitrina no graba píxeles: conduce un navegador y guarda **lo que pasó** —cada
+movimiento, cada click con el rectángulo del elemento—. Así que puede volver a
+ejecutar la misma demo sola, en un navegador nuevo:
+
+- Salió un error en el vídeo → se arregla la app y se repite la demo igual.
+- Se grabó a `fluido` y hace falta más resolución → se repite a `maximo`.
+- Cambió el idioma, el tema o los datos → misma demo, otro contenido.
+
+**Y conservando la edición.** La repetición sigue los instantes del log, así que
+los tramos de zoom caen donde caían y el proyecto entero —look, zooms, ritmo,
+cortes— se copia a la grabación nueva. La original no se toca.
+
+> El proyecto se copia **reescalado**. Los tramos de zoom guardan su objetivo en
+> píxeles de la fuente, así que copiarlos tal cual a una captura de otro tamaño
+> deja la cámara encuadrando otro sitio — y el vídeo sale bien a primera vista.
+> Medido al implementarlo: un tramo que encuadraba el 6 % del ancho pasaba a
+> apuntar al 4 %.
+
+Dos cosas que conviene saber:
+
+- **Lo que se escribió no se puede reproducir.** El log guarda que se pulsó una
+  tecla, nunca cuál — es la misma garantía que impide que una demo con un login
+  filtre credenciales. Para los formularios se puede dar un texto de relleno.
+- **Es volver a ejecutar el guion, no clonar el vídeo.** Si la app depende de la
+  red o de un estado previo, el resultado puede diferir.
+
+```bash
+node tools/repetir.ts grabaciones/demo.vitrina --preset=maximo
+```
+
+Compara al terminar las **etiquetas de los elementos pulsados** con las del
+original. Contar eventos no probaría nada: la prueba es que aterrizó en los
+mismos botones.
 
 ## Tu marca en cada demo
 

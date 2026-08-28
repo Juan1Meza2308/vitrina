@@ -183,7 +183,14 @@ export function App() {
   }, []);
 
   if (fase === 'editor' && datos) {
-    return <Editor key={datos.dir} datos={datos} onSalir={() => { setDatos(null); setFase('inicio'); }} />;
+    return (
+      <Editor
+        key={datos.dir}
+        datos={datos}
+        onSalir={() => { setDatos(null); setFase('inicio'); }}
+        onAbrir={setDatos}
+      />
+    );
   }
 
   if (fase === 'cuenta') {
@@ -337,7 +344,14 @@ export function App() {
 
 // ---------------------------------------------------------------------------
 
-function Editor({ datos, onSalir }: { datos: RecordingData; onSalir: () => void }) {
+function Editor(
+  { datos, onSalir, onAbrir }: {
+    datos: RecordingData;
+    onSalir: () => void;
+    /** Cambiar a otra grabacion sin pasar por la pantalla de inicio. */
+    onAbrir: (d: RecordingData) => void;
+  },
+) {
   /**
    * Lo que se deshace es el estado de edicion ENTERO, no solo el proyecto.
    *
@@ -381,13 +395,18 @@ function Editor({ datos, onSalir }: { datos: RecordingData; onSalir: () => void 
   // dentro del historial, arriba, junto al proyecto.
   const [seleccion, setSeleccion] = useState<number | null>(null);
   const [looks, setLooks] = useState<Look[]>([]);
+  const [repitiendo, setRepitiendo] = useState(false);
+  const [calidadRepeticion, setCalidadRepeticion] = useState('');
   const [lookPorDefecto, setLookPorDefecto] = useState<string | null>(null);
+  const [presetsCaptura, setPresetsCaptura] = useState<CapturePreset[]>([]);
+  const [errorRepeticion, setErrorRepeticion] = useState('');
 
   useEffect(() => {
     void window.vitrina.ajustes().then((a) => {
       setLooks(a.looks);
       setLookPorDefecto(a.lookPorDefecto);
     });
+    void window.vitrina.capturePresets().then(setPresetsCaptura);
   }, []);
 
   const lienzo = useRef<HTMLCanvasElement>(null);
@@ -432,6 +451,21 @@ function Editor({ datos, onSalir }: { datos: RecordingData; onSalir: () => void 
   const acelerarEsperas = useCallback(() => {
     setProject((p) => ({ ...p, speeds: propuesta }));
   }, [propuesta]);
+
+  const repetir = useCallback(async () => {
+    setRepitiendo(true);
+    try {
+      // Se guarda antes: la repeticion copia el project.json del disco, y sin
+      // volcar lo editado se repetiria con la version anterior.
+      await guardar();
+      onAbrir(await window.vitrina.repetirGrabacion(
+        datos.dir, calidadRepeticion || undefined));
+    } catch (e) {
+      setErrorRepeticion(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRepitiendo(false);
+    }
+  }, [datos.dir, calidadRepeticion]);
 
   const guardarLook = useCallback(async () => {
     const nombre = window.prompt('Nombre del look', `Look ${looks.length + 1}`)?.trim();
@@ -814,6 +848,30 @@ function Editor({ datos, onSalir }: { datos: RecordingData; onSalir: () => void 
             </div>
           )}
         </div>
+        <div className="grupo">
+          <h3>Repetir</h3>
+          <p className="sutil">
+            Vuelve a ejecutar esta misma demo sola, conservando zooms y look.
+            Para regrabarla con mas resolucion, o despues de arreglar algo que
+            salia en el video.
+          </p>
+          <select value={calidadRepeticion} disabled={repitiendo}
+                  onChange={(e) => setCalidadRepeticion(e.target.value)}>
+            <option value="">Misma calidad</option>
+            {presetsCaptura.map((p) => (
+              <option key={p.name} value={p.name}>{p.name}</option>
+            ))}
+          </select>
+          <button onClick={() => void repetir()} disabled={repitiendo}>
+            {repitiendo ? 'Repitiendo...' : 'Repetir esta grabacion'}
+          </button>
+          <p className="sutil">
+            Lo que se escribio no se puede reproducir: el log guarda que se pulso
+            una tecla, nunca cual.
+          </p>
+          {errorRepeticion && <p className="error">{errorRepeticion}</p>}
+        </div>
+
         <div className="grupo">
           <h3>Looks</h3>
           {looks.length === 0 && (

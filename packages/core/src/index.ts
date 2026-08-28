@@ -20,6 +20,7 @@ export type { AudioTrack, AudioAlignment } from './audio.ts';
 export { layoutFrame, notchRect } from './layout.ts';
 export type { FrameLayout, FrameStyleInput, Insets } from './layout.ts';
 export { defaultProject, defaultExportFor, hostFromUrl } from './project.ts';
+export { reescalarProyecto } from './reescalar.ts';
 export type { ProjectDefaults } from './project.ts';
 export {
   planSegments, buildCameraTrack, CameraTrack, CursorPath, SUAVIZADO_CURSOR_MS, autoCamera,

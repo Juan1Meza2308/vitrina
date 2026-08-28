@@ -440,6 +440,53 @@ async function main(): Promise<void> {
   check('el fichero exportado existe',
     await fsp.stat(destino).then((s) => s.size > 10_000).catch(() => false));
 
+  // Este bloque va el ULTIMO a proposito: deja el editor abierto en OTRA
+  // grabacion. Puesto antes, el resto de comprobaciones miraban un lienzo
+  // distinto y la exportacion escribia en la carpeta que este bloque acababa de
+  // borrar. Cuatro fallos en cascada y ninguno donde estaba el problema.
+  // --- repetir la grabacion ---------------------------------------------------
+  // La dolencia que ataca: un fallo obliga a repetirlo todo Y se pierde lo
+  // editado. Lo que se comprueba es que la repeticion aterrice en los MISMOS
+  // elementos, no que salgan frames: un video de la pagina quieta tambien
+  // tendria frames.
+  const salidasApp = path.join(os.homedir(), 'Videos', 'Vitrina');
+  const antesRepetir = new Set(await listar(salidasApp));
+  const tramosPrevios = await ev<number>(client, 'document.querySelectorAll(".tramo").length');
+
+  await ev(client,
+    "[...document.querySelectorAll('button')].find(b => b.textContent === 'Repetir esta grabacion').click()");
+  const repetida = await esperarA(client,
+    "!!document.querySelector('canvas') && !document.body.textContent.includes('Repitiendo')",
+    'repeticion terminada', 180_000);
+  check('repetir termina y deja el editor abierto', repetida);
+
+  const nuevas = (await listar(salidasApp)).filter((n) => !antesRepetir.has(n));
+  const carpetaNueva = nuevas[0] ? path.join(salidasApp, nuevas[0]) : null;
+  if (!carpetaNueva) {
+    check('la repeticion creo una grabacion nueva', false);
+  } else {
+    const etiquetasDe = async (dir: string) => {
+      const evs = JSON.parse(await fsp.readFile(path.join(dir, 'events.json'), 'utf8')) as
+        { type: string; label?: string | null }[];
+      return evs.filter((e) => e.type === 'down').map((e) => e.label ?? '?').join(' | ');
+    };
+    const orig = await etiquetasDe(grabacion);
+    const rep = await etiquetasDe(carpetaNueva);
+    check('la repeticion pulsa los mismos elementos', orig === rep && orig.length > 0,
+      `${orig}  ->  ${rep}`);
+
+    const tramosNuevos = await ev<number>(client, 'document.querySelectorAll(".tramo").length');
+    check('y conserva la edicion', tramosNuevos === tramosPrevios,
+      `${tramosPrevios} -> ${tramosNuevos}`);
+
+    // La original no se toca: repetir no puede destruir lo que ya tenias.
+    check('la grabacion original sigue ahi',
+      await fsp.stat(path.join(grabacion, 'manifest.json')).then(() => true).catch(() => false));
+
+    await fsp.rm(carpetaNueva, { recursive: true, force: true }).catch(() => {});
+  }
+
+
   await client.close();
   child.kill();
   await sleep(500);

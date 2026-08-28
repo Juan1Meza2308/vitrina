@@ -88,6 +88,8 @@ const api = {
   ): Promise<{ dir: string; preset: CapturePreset }> =>
     ipcRenderer.invoke('record:start', { url, presetName, orientacion }),
   stopRecording: (): Promise<RecordingData> => ipcRenderer.invoke('record:stop'),
+  repetirGrabacion: (dir: string, presetName?: string, texto?: string): Promise<RecordingData> =>
+    ipcRenderer.invoke('record:repeat', { dir, presetName, texto }),
   onRecordProgress: (cb: (p: RecordProgress) => void) => subscribe('record:progress', cb),
 
   openRecording: (): Promise<RecordingData | null> => ipcRenderer.invoke('recording:open'),
