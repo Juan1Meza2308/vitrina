@@ -68,7 +68,7 @@ export interface AudioInput {
    * Es una lista y no un unico salto porque cortar silencios quita trozos del
    * interior. Sin cortes queda un solo tramo, que es el caso normal.
    */
-  keeps: { start: number; end: number }[];
+  keeps: { start: number; end: number; rate?: number }[];
   /** Segundos de silencio a anteponer, si el audio empezo tarde. */
   delaySec: number;
 }
@@ -99,10 +99,31 @@ function inputArgs(settings: ExportSettings, audio?: AudioInput): string[] {
  * marcas de tiempo: sin reiniciarlas, el segundo trozo conservaria las suyas
  * originales y ffmpeg dejaria el hueco del silencio que se pretendia quitar.
  */
+/**
+ * Cadena de `atempo` para una velocidad cualquiera.
+ *
+ * `atempo` solo acepta factores entre 0.5 y 2, asi que 4x son dos filtros
+ * encadenados y 0.25x otros dos. Se descompone en factores iguales y no en
+ * "2 y lo que sobre" porque cada pasada del filtro deja su huella en el timbre,
+ * y repartir el trabajo suena mejor que forzar uno al maximo.
+ *
+ * Devuelve cadena vacia a velocidad 1: encadenar un `atempo=1` es procesar el
+ * audio para nada.
+ */
+export function cadenaAtempo(rate: number): string {
+  if (!(rate > 0) || Math.abs(rate - 1) < 1e-6) return '';
+  const pasos = Math.max(1, Math.ceil(Math.abs(Math.log2(rate))));
+  const factor = Math.pow(rate, 1 / pasos);
+  return Array.from({ length: pasos }, () => `atempo=${factor.toFixed(6)}`).join(',');
+}
+
 function audioFilter(audio: AudioInput): string {
-  const tramos = audio.keeps.length > 0 ? audio.keeps : [{ start: 0, end: 0 }];
-  const partes = tramos.map((k, i) =>
-    `[1:a]atrim=start=${k.start.toFixed(3)}:end=${k.end.toFixed(3)},asetpts=PTS-STARTPTS[k${i}]`);
+  const tramos = audio.keeps.length > 0 ? audio.keeps : [{ start: 0, end: 0, rate: 1 }];
+  const partes = tramos.map((k, i) => {
+    const tempo = cadenaAtempo(k.rate ?? 1);
+    return `[1:a]atrim=start=${k.start.toFixed(3)}:end=${k.end.toFixed(3)}`
+      + `,asetpts=PTS-STARTPTS${tempo ? ',' + tempo : ''}[k${i}]`;
+  });
 
   const etiquetas = tramos.map((_, i) => `[k${i}]`).join('');
   const unido = tramos.length > 1

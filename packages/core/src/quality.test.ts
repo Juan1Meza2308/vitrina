@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
+import { defaultExportFor, defaultProject } from './project.ts';
 import {
-  computeQualityBudget, describeBudget, clampZoom, pickPreset, CAPTURE_PRESETS,
-} from './quality.ts';
+  computeQualityBudget, describeBudget, clampZoom, pickPreset, CAPTURE_PRESETS, paraOrientacion } from './quality.ts';
 
 const EXPORT_720 = { width: 1280, height: 720 };
 
@@ -98,5 +98,118 @@ describe('pickPreset', () => {
     // maquina: que hay presets y que la seleccion devuelve uno de ellos.
     expect(CAPTURE_PRESETS.length).toBeGreaterThan(0);
     expect(CAPTURE_PRESETS).toContain(pickPreset(60));
+  });
+});
+
+describe('paraOrientacion', () => {
+  const P = { name: 'x', capture: { w: 1920, h: 1080 }, measuredFps: 60, p95DeltaMs: 20 };
+  // Escalones fijos: probar la REGLA, no la lista vigente. Con la de verdad los
+  // tests afirmarian una eleccion de producto que puede cambiar.
+  const BANCO = [
+    { css: { w: 390, h: 844 }, dsf: 2 },
+    { css: { w: 430, h: 932 }, dsf: 3 },
+  ];
+
+  it('en vertical emula un viewport de movil de verdad', () => {
+    // Es la razon de todo esto: por debajo del punto de ruptura tipico, la web
+    // muestra su diseno movil. Un viewport de 800 o 900 px no lo consigue.
+    const v = paraOrientacion(P, 'vertical', BANCO);
+    expect(v.css).toBeDefined();
+    expect(v.css!.w).toBeLessThanOrEqual(430);
+  });
+
+  it('la resolucion sale de la escala, no del ancho CSS', () => {
+    const v = paraOrientacion(P, 'vertical', BANCO);
+    expect(v.capture.w).toBe(Math.round(v.css!.w * v.dsf!));
+    expect(v.capture.h).toBe(Math.round(v.css!.h * v.dsf!));
+    // Y da resolucion de publicar pese al viewport pequeno.
+    expect(v.capture.w).toBeGreaterThanOrEqual(720);
+  });
+
+  it('el escalon sigue a la posicion del preset en la escalera', () => {
+    const primero = paraOrientacion({ ...P, name: 'fluido' }, 'vertical', BANCO);
+    const ultimo = paraOrientacion({ ...P, name: 'maximo' }, 'vertical', BANCO);
+    expect(primero.capture.w).toBeLessThan(ultimo.capture.w);
+  });
+
+  it('proporcion de movil, no 9:16', () => {
+    // Girar el preset apaisado daba 16:9 de alto y el marco salia rechoncho:
+    // 0.57 de proporcion frente al 0.47 de un telefono real.
+    const v = paraOrientacion(P, 'vertical', BANCO);
+    expect(v.capture.w / v.capture.h).toBeLessThan(0.5);
+    expect(v.capture.h).toBeGreaterThan(v.capture.w);
+  });
+
+  it('conserva los fps medidos y el nombre', () => {
+    const v = paraOrientacion(P, 'vertical', BANCO);
+    expect(v.measuredFps).toBe(P.measuredFps);
+    expect(v.p95DeltaMs).toBe(P.p95DeltaMs);
+    expect(v.name).toBe(P.name);
+  });
+
+  it('no toca el preset si ya esta en esa orientacion', () => {
+    expect(paraOrientacion(P, 'horizontal', BANCO)).toBe(P);
+  });
+
+  it('un preset cuadrado cuenta como horizontal y no se toca', () => {
+    const c = { ...P, capture: { w: 1080, h: 1080 } };
+    expect(paraOrientacion(c, 'horizontal', BANCO)).toBe(c);
+  });
+});
+
+describe('defaultExportFor', () => {
+  it('sigue la forma de la captura', () => {
+    expect(defaultExportFor({ w: 1600, h: 900 })).toEqual({ w: 1280, h: 720 });
+    expect(defaultExportFor({ w: 1080, h: 1920 })).toEqual({ w: 1080, h: 1920 });
+  });
+
+  it('la salida vertical no deja bandas: misma forma que la fuente', () => {
+    const cap = { w: 1080, h: 1920 };
+    const out = defaultExportFor(cap);
+    expect(out.w / out.h).toBeCloseTo(cap.w / cap.h, 6);
+  });
+
+  it('deja margen de zoom real en todas las capturas de movil', () => {
+    // Es la razon de ser de la regla: sin margen la camara no se mueve, y el
+    // zoom automatico es el sentido de la herramienta.
+    for (const cap of [{ w: 780, h: 1688 }, { w: 860, h: 1864 },
+                       { w: 1075, h: 2330 }, { w: 1290, h: 2796 }]) {
+      const o = defaultExportFor(cap);
+      const b = computeQualityBudget(cap, { width: o.w, height: o.h },
+        { fill: 0.8, chrome: 'phone' });
+      expect(b.sharpAtRest, `${cap.w}x${cap.h}`).toBe(true);
+      expect(b.maxSharpZoom, `${cap.w}x${cap.h}`).toBeGreaterThan(1.15);
+    }
+  });
+
+  it('elige el vertical mas grande que conserve el margen', () => {
+    // Con 1290 de ancho cabe el lienzo grande; con 860 no, y baja al pequeno en
+    // vez de entregar un 1080x1920 blando.
+    expect(defaultExportFor({ w: 1290, h: 2796 })).toEqual({ w: 1080, h: 1920 });
+    expect(defaultExportFor({ w: 860, h: 1864 })).toEqual({ w: 720, h: 1280 });
+    // Por debajo del mas pequeno se queda en el mas pequeno: encogerlo sin
+    // limite daria salidas ridiculas.
+    expect(defaultExportFor({ w: 400, h: 866 })).toEqual({ w: 720, h: 1280 });
+  });
+});
+
+describe('defaultProject segun la captura', () => {
+  it('una captura vertical abre en 9:16 y con marco de movil', () => {
+    const p = defaultProject({ capture: { w: 1080, h: 1920 } });
+    expect(p.export.width).toBe(1080);
+    expect(p.export.height).toBe(1920);
+    expect(p.frame.chrome).toBe('phone');
+  });
+
+  it('una captura apaisada mantiene 720p y barra de navegador', () => {
+    const p = defaultProject({ capture: { w: 1600, h: 900 } });
+    expect(p.export.width).toBe(1280);
+    expect(p.frame.chrome).toBe('macos');
+  });
+
+  it('un exportSize explicito manda sobre la captura', () => {
+    const p = defaultProject({ capture: { w: 1080, h: 1920 }, exportSize: { w: 1280, h: 720 } });
+    expect(p.export.width).toBe(1280);
+    expect(p.frame.chrome).toBe('macos');
   });
 });

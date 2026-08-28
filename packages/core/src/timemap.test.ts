@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { TimeMap } from './timemap.ts';
+import { TimeMap, RATE_MAX } from './timemap.ts';
 
 const DUR = 10_000;
 
@@ -117,5 +117,113 @@ describe('TimeMap.skip', () => {
   it('en el borde exacto no salta', () => {
     expect(m.skip(3000)).toBe(3000);
     expect(m.skip(5000)).toBe(5000);
+  });
+});
+
+describe('TimeMap con velocidad', () => {
+  it('acelerar acorta la salida en la proporcion exacta', () => {
+    // 10 s con 4 s a doble velocidad: esos 4 ocupan 2, total 8.
+    const m = new TimeMap({ durationMs: DUR, speeds: [{ startMs: 2000, endMs: 6000, rate: 2 }] });
+    expect(m.outputDurationMs).toBe(8000);
+  });
+
+  it('la camara lenta la alarga', () => {
+    const m = new TimeMap({ durationMs: DUR, speeds: [{ startMs: 0, endMs: 2000, rate: 0.5 }] });
+    expect(m.outputDurationMs).toBe(12_000);
+  });
+
+  it('sourceAt avanza al ritmo del tramo', () => {
+    const m = new TimeMap({ durationMs: DUR, speeds: [{ startMs: 2000, endMs: 6000, rate: 2 }] });
+    expect(m.sourceAt(0)).toBe(0);
+    expect(m.sourceAt(2000)).toBe(2000);        // hasta aqui, tiempo real
+    expect(m.sourceAt(3000)).toBe(4000);        // 1 s de salida = 2 s de material
+    expect(m.sourceAt(4000)).toBe(6000);        // fin del tramo acelerado
+    expect(m.sourceAt(5000)).toBe(7000);        // vuelve a tiempo real
+  });
+
+  it('sourceAt nunca retrocede', () => {
+    // Es la invariante de la que dependen el indice de frames y la camara: si
+    // el tiempo de fuente retrocediera, el video daria un salto atras.
+    const m = new TimeMap({
+      durationMs: DUR,
+      cuts: [{ startMs: 7000, endMs: 8000 }],
+      speeds: [{ startMs: 1000, endMs: 3000, rate: 4 }, { startMs: 5000, endMs: 6000, rate: 0.5 }],
+    });
+    let ant = -1;
+    for (let t = 0; t <= m.outputDurationMs; t += 25) {
+      const src = m.sourceAt(t);
+      expect(src).toBeGreaterThanOrEqual(ant);
+      ant = src;
+    }
+  });
+
+  it('velocidad 1 da exactamente lo mismo que no poner ninguna', () => {
+    // No regresion: todo lo que ya funcionaba tiene que seguir igual.
+    const sin = new TimeMap({ durationMs: DUR, cuts: [{ startMs: 3000, endMs: 5000 }] });
+    const con = new TimeMap({
+      durationMs: DUR,
+      cuts: [{ startMs: 3000, endMs: 5000 }],
+      speeds: [{ startMs: 1000, endMs: 2000, rate: 1 }],
+    });
+    expect(con.keeps).toEqual(sin.keeps);
+    expect(con.outputDurationMs).toBe(sin.outputDurationMs);
+  });
+
+  it('en un solape gana la region que empieza antes', () => {
+    // Hace falta una regla, y esta no depende del orden en que se crearan.
+    const m = new TimeMap({
+      durationMs: DUR,
+      speeds: [{ startMs: 4000, endMs: 6000, rate: 4 }, { startMs: 2000, endMs: 5000, rate: 2 }],
+    });
+    const tramos = m.keeps.filter((k) => k.rate !== 1);
+    expect(tramos).toEqual([
+      { start: 2000, end: 5000, rate: 2 },
+      { start: 5000, end: 6000, rate: 4 },
+    ]);
+  });
+
+  it('recorta las velocidades absurdas en vez de aceptarlas', () => {
+    const m = new TimeMap({ durationMs: DUR, speeds: [{ startMs: 0, endMs: 4000, rate: 999 }] });
+    expect(m.keeps[0]!.rate).toBe(RATE_MAX);
+  });
+
+  it('una aceleracion dentro de un corte no lo resucita', () => {
+    const m = new TimeMap({
+      durationMs: DUR,
+      cuts: [{ startMs: 3000, endMs: 6000 }],
+      speeds: [{ startMs: 4000, endMs: 5000, rate: 2 }],
+    });
+    expect(m.keeps).toEqual([
+      { start: 0, end: 3000, rate: 1 },
+      { start: 6000, end: DUR, rate: 1 },
+    ]);
+  });
+
+  it('deja de ser identidad si hay una velocidad', () => {
+    expect(new TimeMap({ durationMs: DUR }).esIdentidad).toBe(true);
+    expect(new TimeMap({
+      durationMs: DUR, speeds: [{ startMs: 0, endMs: 1000, rate: 2 }],
+    }).esIdentidad).toBe(false);
+  });
+});
+
+describe('TimeMap.rateAt', () => {
+  it('devuelve la velocidad del tramo en el que cae', () => {
+    const m = new TimeMap({ durationMs: DUR, speeds: [{ startMs: 2000, endMs: 6000, rate: 3 }] });
+    expect(m.rateAt(1000)).toBe(1);
+    expect(m.rateAt(4000)).toBe(3);
+    expect(m.rateAt(7000)).toBe(1);
+  });
+
+  it('el preview avanzando con rateAt llega al mismo sitio que sourceAt', () => {
+    // Es la invariante que hace honesto al preview: reproducir paso a paso
+    // tiene que recorrer el mismo material que el export compone de golpe.
+    const m = new TimeMap({ durationMs: DUR, speeds: [{ startMs: 2000, endMs: 6000, rate: 2 }] });
+    let t = 0;
+    const dt = 10;
+    for (let salida = 0; salida < m.outputDurationMs; salida += dt) {
+      t = m.skip(t + dt * m.rateAt(t));
+    }
+    expect(t).toBeCloseTo(m.sourceAt(m.outputDurationMs), -1);
   });
 });

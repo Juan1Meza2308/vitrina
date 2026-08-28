@@ -3,9 +3,11 @@ import {
   CAMERA_PRESETS, cameraConfigForBudget, computeQualityBudget, describeBudget,
   planSegments, deleteSegment, setSegmentScale, insertSegment, hasManualEdits,
   clampTrim, CursorPath, moveSegmentTarget, layoutFrame, viewRect, TimeMap,
+  paraOrientacion, defaultExportFor,
+  tramosSinActividad, ahorroDe,
 } from '@vitrina/core';
 import type {
-  Background, CameraPresetName, CapturePreset, Cut, Project, ZoomSegment,
+  Background, CameraPresetName, CapturePreset, Cut, Orientacion, Project, ZoomSegment,
 } from '@vitrina/core';
 import type { RecordingData, ExportProgressMsg, ExportPresetInfo } from '../preload/index.ts';
 import { Preview, makeTrack } from './preview.ts';
@@ -25,6 +27,7 @@ export function App() {
   const [fase, setFase] = useState<Fase>('inicio');
   const [presets, setPresets] = useState<CapturePreset[]>([]);
   const [presetName, setPresetName] = useState('equilibrado');
+  const [orientacion, setOrientacion] = useState<Orientacion>('horizontal');
   const [url, setUrl] = useState('http://localhost:3000');
   const [cuenta, setCuenta] = useState(3);
   const [stats, setStats] = useState({ frames: 0, elapsedMs: 0 });
@@ -69,14 +72,24 @@ export function App() {
   }), []);
   useEffect(() => window.vitrina.onRecordingError(setError), []);
 
-  const preset = presets.find((p) => p.name === presetName);
+  // Ya reencuadrado: lo que se ensena en las fichas de calidad es lo que se va
+  // a capturar de verdad, no la version apaisada del preset.
+  const elegido = presets.find((p) => p.name === presetName);
+  const preset = elegido ? paraOrientacion(elegido, orientacion) : undefined;
 
   // El margen de zoom depende del tamano de salida y del marco, asi que se
   // muestra ya en la pantalla de grabacion: es antes de grabar cuando sirve.
+  // Tiene que calcularse contra la salida REAL de esta orientacion: en vertical
+  // la referencia es 1080x1920 con marco de movil, y el bisel come ancho util.
+  const salidaInicial = preset ? defaultExportFor(preset.capture) : null;
   const presupuestoInicial = useMemo(() => {
-    if (!preset) return null;
-    return computeQualityBudget(preset.capture, { width: 1280, height: 720 }, { fill: 0.8, chrome: 'macos' });
-  }, [preset]);
+    if (!preset || !salidaInicial) return null;
+    return computeQualityBudget(
+      preset.capture,
+      { width: salidaInicial.w, height: salidaInicial.h },
+      { fill: 0.8, chrome: orientacion === 'vertical' ? 'phone' : 'macos' },
+    );
+  }, [preset?.capture.w, preset?.capture.h, salidaInicial?.w, salidaInicial?.h, orientacion]);
 
   const grabar = useCallback(async () => {
     setError('');
@@ -99,7 +112,7 @@ export function App() {
           setError(`Sin audio: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
-      await window.vitrina.startRecording(url, presetName);
+      await window.vitrina.startRecording(url, presetName, orientacion);
       setStats({ frames: 0, elapsedMs: 0 });
       setFase('grabando');
     } catch (e) {
@@ -108,7 +121,7 @@ export function App() {
       setError(e instanceof Error ? e.message : String(e));
       setFase('inicio');
     }
-  }, [url, presetName, micOn, micDeviceId]);
+  }, [url, presetName, orientacion, micOn, micDeviceId]);
 
   const parar = useCallback(async () => {
     try {
@@ -189,15 +202,49 @@ export function App() {
         </div>
 
         <div className="campo">
+          <label>Formato</label>
+          <div className="fila">
+            <button className={orientacion === 'horizontal' ? 'on' : ''}
+                    onClick={() => setOrientacion('horizontal')}>
+              Horizontal <small>16:9</small>
+            </button>
+            <button className={orientacion === 'vertical' ? 'on' : ''}
+                    onClick={() => setOrientacion('vertical')}>
+              Vertical <small>9:16 · TikTok, Reels</small>
+            </button>
+          </div>
+          {orientacion === 'vertical' && (
+            <p className="nota-formato">
+              La pestana se abre a <b>{preset?.css?.w ?? 430} px</b> como un movil de
+              verdad, asi que tu web muestra su diseno movil. Se captura a escala
+              ×{preset?.dsf ?? 2}: sale nitida pese al viewport pequeno.
+              <br />
+              {/* Los fps de abajo son los medidos EN HORIZONTAL. Se dicen asi de
+                  claro porque todo el proyecto se apoya en no prometer numeros
+                  sin medir, y en vertical no se han medido. */}
+              Los fps son los medidos en horizontal; en vertical pueden ser menores.
+              Para comprobarlo en tu equipo: <code>node tools/calibrar.ts --vertical</code>.
+            </p>
+          )}
+        </div>
+
+        <div className="campo">
           <label>Calidad de captura</label>
           <div className="presets">
-            {presets.map((p) => (
-              <button key={p.name} className={`preset${p.name === presetName ? ' on' : ''}`}
-                      onClick={() => setPresetName(p.name)}>
-                <b>{p.capture.w}×{p.capture.h}</b>
-                <small>~{p.measuredFps} fps</small>
-              </button>
-            ))}
+            {presets.map((p) => {
+              const t = paraOrientacion(p, orientacion);
+              return (
+                <button key={p.name} className={`preset${p.name === presetName ? ' on' : ''}`}
+                        onClick={() => setPresetName(p.name)}>
+                  <b>{t.capture.w}×{t.capture.h}</b>
+                  {/* El ancho de maquetacion explica por que la UI se ve del
+                      tamano que se ve, y es lo que antes se inflaba hasta 2560
+                      para comprar margen de zoom. Ahora se compra con escala. */}
+                  <small>maqueta a {t.css?.w ?? t.capture.w} px</small>
+                  <small>~{p.measuredFps} fps</small>
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -219,7 +266,7 @@ export function App() {
 
         {presupuestoInicial && (
           <div className={`nota-calidad${presupuestoInicial.maxSharpZoom < 1.15 ? ' aviso' : ''}`}>
-            <span>Exportando a 720p:</span>
+            <span>Exportando a {salidaInicial?.w}×{salidaInicial?.h}:</span>
             <b>{describeBudget(presupuestoInicial)}</b>
           </div>
         )}
@@ -276,7 +323,20 @@ function Editor({ datos, onSalir }: { datos: RecordingData; onSalir: () => void 
     trimStartMs: project.trimStartMs,
     trimEndMs: project.trimEndMs,
     cuts: project.cuts,
-  }), [duracion, project.trimStartMs, project.trimEndMs, project.cuts]);
+    speeds: project.speeds,
+  }), [duracion, project.trimStartMs, project.trimEndMs, project.cuts, project.speeds]);
+
+  // Se calcula siempre, no al pulsar: el boton tiene que poder decir cuanto se
+  // ahorraria ANTES de tocarlo, igual que el indicador de zoom nitido dice lo
+  // que se va a conseguir antes de grabar.
+  const propuesta = useMemo(
+    () => tramosSinActividad(datos.events, datos.manifest.startedAt, duracion),
+    [datos.events, datos.manifest.startedAt, duracion],
+  );
+
+  const acelerarEsperas = useCallback(() => {
+    setProject((p) => ({ ...p, speeds: propuesta }));
+  }, [propuesta]);
 
   const replanificar = useCallback((preset: CameraPresetName) => {
     const config = cameraConfigForBudget(CAMERA_PRESETS[preset], presupuesto.maxSharpZoom);
@@ -337,7 +397,14 @@ function Editor({ datos, onSalir }: { datos: RecordingData; onSalir: () => void 
       const dt = ahora - anterior;
       anterior = ahora;
       setTMs((t) => {
-        const siguiente = t + dt;
+        // Se avanza al ritmo del tramo: en uno acelerado se consume mas
+        // material por segundo real. Sin esto el preview reproduciria a tiempo
+        // real algo que el export acelera.
+        const rate = mapa.rateAt(t);
+        const siguiente = t + dt * rate;
+        if (audio.current && audio.current.playbackRate !== rate) {
+          audio.current.playbackRate = rate;
+        }
         if (siguiente >= duracion) {
           setReproduciendo(false);
           return duracion;
@@ -569,6 +636,7 @@ function Editor({ datos, onSalir }: { datos: RecordingData; onSalir: () => void 
             trimStartMs={project.trimStartMs}
             trimEndMs={project.trimEndMs}
             cuts={cortes}
+            speeds={project.speeds ?? []}
             onTrim={(t) => setProject((p) => ({ ...p, ...t }))}
           />
         </div>
@@ -621,10 +689,11 @@ function Editor({ datos, onSalir }: { datos: RecordingData; onSalir: () => void 
                    onChange={(e) => setMarco({ shadow: Number(e.target.value) })} />
           </div>
           <div className="fila">
-            {(['none', 'macos', 'windows'] as const).map((c) => (
+            {(['none', 'macos', 'windows', 'phone'] as const).map((c) => (
               <button key={c} className={project.frame.chrome === c ? 'on' : ''}
                       onClick={() => setMarco({ chrome: c })}>
-                {c === 'none' ? 'Sin barra' : c === 'macos' ? 'macOS' : 'Windows'}
+                {c === 'none' ? 'Sin marco' : c === 'macos' ? 'macOS'
+                  : c === 'windows' ? 'Windows' : 'Movil'}
               </button>
             ))}
           </div>
@@ -741,9 +810,48 @@ function Editor({ datos, onSalir }: { datos: RecordingData; onSalir: () => void 
             <button className={project.frame.cursor === 'none' ? 'on' : ''}
                     onClick={() => setMarco({ cursor: 'none' })}>Oculto</button>
           </div>
+          <h3>Anotaciones</h3>
+          <div className="fila">
+            <button className={project.frame.labels ? 'on' : ''}
+                    title="Rotula el elemento pulsado con su texto, sacado del DOM"
+                    onClick={() => setMarco({ labels: !project.frame.labels })}>Rotulos</button>
+            <button className={project.frame.keys ? 'on' : ''}
+                    title="Muestra las teclas. Las imprimibles salen como un punto"
+                    onClick={() => setMarco({ keys: !project.frame.keys })}>Teclas</button>
+          </div>
+          <p className="sutil">
+            Salen del DOM al grabar, no de los pixeles. Lo que se escribe nunca se
+            muestra: las teclas imprimibles se dibujan como un punto.
+          </p>
         </div>
 
-        <Exportar dir={datos.dir} camara={camara} guardar={guardar} />
+        <div className="grupo">
+          <h3>Ritmo</h3>
+          <p className="sutil">
+            Las esperas —una carga, un formulario que se rellena— siguen en el
+            video pero pasan mas deprisa.
+          </p>
+          <button onClick={acelerarEsperas} disabled={propuesta.length === 0}>
+            {propuesta.length === 0
+              ? 'No hay esperas que acelerar'
+              : `Acelerar ${propuesta.length} ${propuesta.length === 1 ? 'espera' : 'esperas'}`
+                + ` · −${(ahorroDe(propuesta) / 1000).toFixed(1)}s`}
+          </button>
+          {(project.speeds ?? []).length > 0 && (
+            <>
+              <p className="sutil">
+                {project.speeds!.length} {project.speeds!.length === 1 ? 'tramo' : 'tramos'}
+                {' '}acelerado{project.speeds!.length === 1 ? '' : 's'} ·{' '}
+                −{(ahorroDe(project.speeds!) / 1000).toFixed(1)}s
+              </p>
+              <button onClick={() => setProject((p) => ({ ...p, speeds: [] }))}>
+                Volver a tiempo real
+              </button>
+            </>
+          )}
+        </div>
+
+        <Exportar dir={datos.dir} camara={camara} guardar={guardar} salida={project.export} />
 
         <div className="pie">
           <button onClick={onSalir}>Nueva grabacion</button>
@@ -756,7 +864,10 @@ function Editor({ datos, onSalir }: { datos: RecordingData; onSalir: () => void 
 // ---------------------------------------------------------------------------
 
 function Exportar(
-  { dir, camara, guardar }: { dir: string; camara: CameraPresetName; guardar: () => Promise<void> },
+  { dir, camara, guardar, salida }: {
+    dir: string; camara: CameraPresetName; guardar: () => Promise<void>;
+    salida: { width: number; height: number };
+  },
 ) {
   const [presets, setPresets] = useState<ExportPresetInfo[]>([]);
   const [elegido, setElegido] = useState('720p');
@@ -764,7 +875,15 @@ function Exportar(
   const [resultado, setResultado] = useState<{ file: string; warnings: string[] } | null>(null);
   const [error, setError] = useState('');
 
-  useEffect(() => { void window.vitrina.exportPresets().then(setPresets); }, []);
+  useEffect(() => {
+    void window.vitrina.exportPresets().then((ps) => {
+      setPresets(ps);
+      // Arrancar en el preset que ya tiene el proyecto. Una grabacion vertical
+      // que se ofreciera por defecto a 720p daria un video casi todo fondo.
+      const suyo = ps.find((p) => p.width === salida.width && p.height === salida.height);
+      if (suyo) setElegido(suyo.name);
+    });
+  }, [salida.width, salida.height]);
   useEffect(() => window.vitrina.onExportProgress(setProgreso), []);
 
   const lanzar = async () => {

@@ -16,7 +16,7 @@ import {
 import type {
   CameraPresetName, ExportSettings, InputEvent, Manifest, Project, QualityBudget, ZoomSegment,
 } from '@vitrina/core';
-import { composite, CursorSource } from '@vitrina/renderer';
+import { composite, CursorSource, OverlaySource } from '@vitrina/renderer';
 import type { Ctx, ImageLike } from '@vitrina/renderer';
 import { findFfmpeg, startEncoder, type AudioInput } from './ffmpeg.ts';
 import { extensionFor, resolvePreset, type ExportPreset } from './presets.ts';
@@ -103,6 +103,25 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
       + 'La camara apenas se movera. Para conservar el zoom, exporta mas pequeno o graba a mas resolucion.',
     );
   }
+  // Fuente y salida con formas distintas: el material entra entero y centrado,
+  // asi que lo que sobra son bandas de fondo. Con una grabacion vertical
+  // exportada a 720p es casi todo el encuadre, y sin aviso el usuario solo se
+  // entera al abrir el fichero.
+  const formaFuente = sourceSize.w / sourceSize.h;
+  const formaSalida = settings.width / settings.height;
+  const desvio = Math.max(formaFuente / formaSalida, formaSalida / formaFuente);
+  // El umbral deja pasar la diferencia normal entre una captura con forma de
+  // movil (19.5:9) y un lienzo 9:16, que es el flujo vertical de siempre y
+  // produce margen de fondo, no bandas. Lo que tiene que cazar es el error
+  // gordo: exportar material vertical a un preset apaisado, que desvia x3.
+  if (desvio > 1.35) {
+    const cual = formaSalida > formaFuente ? 'a los lados' : 'arriba y abajo';
+    warnings.push(
+      `El material es ${sourceSize.w}x${sourceSize.h} y la salida ${settings.width}x${settings.height}: `
+      + `no tienen la misma forma, asi que quedaran bandas de fondo ${cual}. `
+      + 'Elige un preset de la misma orientacion que la grabacion.',
+    );
+  }
   if (!budget.sharpAtRest) {
     warnings.push(
       `La ventana se dibuja a ${Math.round(budget.windowPx)} px desde un material de ${sourceSize.w} px: `
@@ -127,6 +146,7 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
     startedAt: manifest.startedAt, durationMs: manifest.durationMs, config,
   });
   const cursor = new CursorSource(events, manifest.startedAt);
+  const overlay = new OverlaySource(events, manifest.startedAt);
   const index = new FrameIndex(manifest);
   if (index.length === 0) throw new Error('La grabacion no tiene frames');
 
@@ -138,6 +158,7 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
     trimStartMs: project.trimStartMs,
     trimEndMs: project.trimEndMs,
     cuts: project.cuts,
+    speeds: project.speeds,
   });
   const spanMs = map.outputDurationMs;
   if (spanMs <= 0) throw new Error('El recorte deja la grabacion vacia');
@@ -160,6 +181,9 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
       const keeps = map.keeps.map((k) => ({
         start: audioTimeFor(pista, manifest.startedAt, k.start),
         end: audioTimeFor(pista, manifest.startedAt, k.end),
+        // El video se acelera muestreando; el audio hay que estirarlo, y de eso
+        // se encarga `atempo` con esta velocidad.
+        rate: k.rate,
       }));
       const al = audioAlignment(pista, manifest.startedAt, map.keeps[0]?.start ?? 0);
       audio = { file: ruta, keeps, delaySec: al.delaySec };
@@ -219,6 +243,7 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
         camera: track.sampleAt(tMs),
         project: renderProject,
         cursor: cursor.sample(tMs),
+        overlay: overlay.sample(tMs),
         backgroundImage: fondo as unknown as ImageLike | null,
       });
 

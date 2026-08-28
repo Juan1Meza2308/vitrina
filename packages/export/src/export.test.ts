@@ -21,7 +21,7 @@ import { FrameIndex } from '@vitrina/core';
 import type { Manifest, Project, QualityBudget, ZoomSegment } from '@vitrina/core';
 import { clampZooms, exportRecording, ExportAbortedError } from './exporter.ts';
 import { EXPORT_PRESETS, extensionFor, resolvePreset } from './presets.ts';
-import { findFfmpeg, comoInstalarFfmpeg } from './ffmpeg.ts';
+import { findFfmpeg, comoInstalarFfmpeg, cadenaAtempo } from './ffmpeg.ts';
 
 const run = promisify(execFile);
 const T0 = 1_700_000_000_000;
@@ -119,11 +119,13 @@ describe('presets', () => {
 let dir = '';
 
 /** Grabacion minima real: frames en disco, manifest, eventos y proyecto. */
-async function makeRecording(overrides: Partial<Project> = {}): Promise<string> {
+async function makeRecording(
+  overrides: Partial<Project> = {},
+  size = { w: 320, h: 180 },
+): Promise<string> {
   const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'vitrina-export-'));
   await fsp.mkdir(path.join(root, 'frames'));
 
-  const size = { w: 320, h: 180 };
   const times: number[] = [];
   for (let i = 0; i < 12; i++) {
     const c = createCanvas(size.w, size.h);
@@ -150,7 +152,7 @@ async function makeRecording(overrides: Partial<Project> = {}): Promise<string> 
     background: { kind: 'solid', color: '#101418' },
     frame: { fill: 0.8, radius: 8, shadow: 10, chrome: 'none', cursor: 'none' },
     zooms: [], trimStartMs: 0, trimEndMs: null,
-    export: { width: 320, height: 180, fps: 20, format: 'mp4' },
+    export: { width: size.w, height: size.h, fps: 20, format: 'mp4' },
     ...overrides,
   };
 
@@ -439,6 +441,84 @@ describe('exportRecording', () => {
     }
   }, 90_000);
 
+  it('graba y exporta en vertical sin bandas', async () => {
+    // El flujo de TikTok/Reels: material 9:16 y salida 9:16. Es el criterio de
+    // aceptacion en miniatura — la forma tiene que sobrevivir de punta a punta.
+    const v = await makeRecording(
+      { frame: { fill: 0.8, radius: 8, shadow: 10, chrome: 'phone', cursor: 'none' } },
+      { w: 180, h: 320 },
+    );
+    try {
+      const out = path.join(v, 'vertical.mp4');
+      const r = await exportRecording({
+        recordingDir: v,
+        preset: { name: 'v', width: 180, height: 320, fps: 20, format: 'mp4', nota: 'test' },
+        outFile: out,
+      });
+      expect(await probe(out)).toBe('180,320,24');
+      expect(r.warnings.join(' ')).not.toMatch(/bandas/);
+    } finally {
+      await fsp.rm(v, { recursive: true, force: true }).catch(() => {});
+    }
+  }, 60_000);
+
+  it('avisa cuando la salida no tiene la forma del material', async () => {
+    // Exportar una grabacion vertical a 720p produce un video casi todo fondo.
+    // Sin aviso, el usuario solo se entera al abrir el fichero.
+    const v = await makeRecording({}, { w: 180, h: 320 });
+    try {
+      const out = path.join(v, 'apaisado.mp4');
+      const r = await exportRecording({ recordingDir: v, preset: PRESET_MINI, outFile: out });
+      expect(r.warnings.some((w) => /bandas de fondo a los lados/.test(w))).toBe(true);
+    } finally {
+      await fsp.rm(v, { recursive: true, force: true }).catch(() => {});
+    }
+  }, 60_000);
+
+  it('no avisa de forma cuando fuente y salida coinciden', async () => {
+    // El aviso tiene que ser raro, o se convierte en ruido que nadie lee.
+    const out = path.join(dir, 'misma-forma.mp4');
+    const r = await exportRecording({ recordingDir: dir, preset: PRESET_MINI, outFile: out });
+    expect(r.warnings.some((w) => /bandas/.test(w))).toBe(false);
+  }, 60_000);
+
+  it('acelerar un tramo acorta el video exactamente lo que dice el mapa', async () => {
+    // La grabacion dura 1200ms. Con 600-1200 al doble, esos 600 ocupan 300:
+    // 900ms de salida, 18 frames a 20fps.
+    const rapido = await makeRecording({ speeds: [{ startMs: 600, endMs: 1200, rate: 2 }] });
+    try {
+      const out = path.join(rapido, 'rapido.mp4');
+      const r = await exportRecording({ recordingDir: rapido, preset: PRESET_MINI, outFile: out });
+      expect(r.durationMs).toBe(900);
+      expect(await probe(out)).toBe('320,180,18');
+    } finally {
+      await fsp.rm(rapido, { recursive: true, force: true }).catch(() => {});
+    }
+  }, 60_000);
+
+  it('el audio se acelera con el video y no se desincroniza', async () => {
+    // Es LA comprobacion de la funcionalidad: el video se acelera muestreando
+    // frames, pero el audio hay que estirarlo con `atempo`. Si solo se acelera
+    // uno de los dos, la narracion se despega de lo que se ve.
+    const rapido = await makeRecording({ speeds: [{ startMs: 0, endMs: 1200, rate: 2 }] });
+    try {
+      await makeAudio(rapido, 3);
+      const m = JSON.parse(await fsp.readFile(path.join(rapido, 'manifest.json'), 'utf8')) as Manifest;
+      m.audio = { file: 'mic.webm', startedAt: T0, mimeType: 'audio/webm;codecs=opus' };
+      await fsp.writeFile(path.join(rapido, 'manifest.json'), JSON.stringify(m));
+
+      const out = path.join(rapido, 'rapido-audio.mp4');
+      await exportRecording({ recordingDir: rapido, preset: PRESET_MINI, outFile: out });
+
+      const video = await duracionDe(out, 'v');
+      const audio = await duracionDe(out, 'a');
+      expect(video).toBeCloseTo(0.6, 1);
+      expect(Math.abs(audio - video)).toBeLessThan(0.15);
+    } finally {
+      await fsp.rm(rapido, { recursive: true, force: true }).catch(() => {});
+    }
+  }, 90_000);
+
   it('varios cortes se acumulan en la duracion final', async () => {
     const conCortes = await makeRecording({
       cuts: [{ startMs: 200, endMs: 400 }, { startMs: 700, endMs: 900 }],
@@ -474,5 +554,45 @@ describe('findFfmpeg · rutas por plataforma', () => {
   it('la ayuda de instalacion es la del sistema que corresponde', () => {
     expect(comoInstalarFfmpeg('darwin')).toContain('brew install ffmpeg');
     expect(comoInstalarFfmpeg('win32')).toContain('ffmpeg.org');
+  });
+});
+
+describe('cadenaAtempo', () => {
+  it('a velocidad normal no anade filtro', () => {
+    // Encadenar `atempo=1` seria procesar el audio para nada.
+    expect(cadenaAtempo(1)).toBe('');
+  });
+
+  it('usa un solo filtro dentro del rango que acepta atempo', () => {
+    expect(cadenaAtempo(2).split(',')).toHaveLength(1);
+    expect(cadenaAtempo(0.5).split(',')).toHaveLength(1);
+  });
+
+  it('encadena cuando se sale del rango', () => {
+    // `atempo` solo acepta 0.5-2, asi que 4x son dos pasadas.
+    const c = cadenaAtempo(4);
+    expect(c.split(',')).toHaveLength(2);
+    for (const f of c.split(',')) {
+      const v = Number(f.replace('atempo=', ''));
+      expect(v).toBeGreaterThanOrEqual(0.5);
+      expect(v).toBeLessThanOrEqual(2);
+    }
+  });
+
+  it('los factores multiplican a la velocidad pedida', () => {
+    // Si no, el audio queda mas corto o mas largo que el video y se desincroniza.
+    for (const rate of [0.25, 0.5, 1.5, 2, 3, 4, 8]) {
+      const c = cadenaAtempo(rate);
+      const producto = c === '' ? 1 : c.split(',')
+        .reduce((acc, f) => acc * Number(f.replace('atempo=', '')), 1);
+      expect(producto, `${rate}x`).toBeCloseTo(rate, 3);
+    }
+  });
+
+  it('reparte el trabajo en pasadas iguales', () => {
+    // Cada pasada del filtro deja huella en el timbre; 4x como 2+2 suena mejor
+    // que como 2 y otro 2 forzado al maximo.
+    const f = cadenaAtempo(4).split(',').map((x) => Number(x.replace('atempo=', '')));
+    expect(f[0]).toBeCloseTo(f[1]!, 6);
   });
 });

@@ -113,3 +113,81 @@ existe pero es **offline**: hay que poder re-renderizar la sesión, lo que exige
 grabar el DOM y reproducirlo, no grabar píxeles.
 
 Esa bifurcación cambia el producto y está pendiente de decisión.
+
+---
+
+## M7 · La vista de móvil sí se puede grabar con resolución
+
+**Refuta la conclusión de M0 en un punto.** M0 midió que
+`Page.startScreencast` ignora el `deviceScaleFactor`, y de ahí salió la regla
+«o maquetas como móvil o tienes resolución, no las dos». Es cierto **por la vía
+que midió** —`Emulation.setDeviceMetricsOverride`— pero no en general.
+
+Forzando la escala al **lanzar el navegador** el surface del compositor nace ya
+escalado y el screencast la respeta:
+
+| Configuración | La página ve | Frame real |
+|---|---|---|
+| emulado 430×932, dsf 1 | 430 css, dpr 1 | 430×932 |
+| emulado 430×932, dsf 3 | 430 css, dpr 3 | **430×932** ✗ |
+| `--force-device-scale-factor=3` + emulado dsf 1 | 430 css, **dpr 1** | 1290×2796 |
+| `--force-device-scale-factor=3` + emulado dsf 3 | 430 css, **dpr 3** | **1290×2796** ✓ |
+
+**Hay que ponerla en los dos sitios.** Sólo en el navegador, los frames salen
+grandes pero la página cree tener `devicePixelRatio` 1 y carga los assets de
+baja resolución: se ve blanda pese al tamaño.
+
+**Escalas exactas medidas** (M7c, viewport CSS fijo en 430×932):
+
+| Escala | Frame | ¿Exacto? |
+|---|---|---|
+| 1.5 | 740×864 | no — entregó otra cosa |
+| 2 | 860×1864 | sí |
+| 2.5 | 1075×2330 | sí |
+| 3 | 1290×2796 | sí |
+
+**Coste** (M7b, con `requestAnimationFrame`, no con `setInterval`):
+
+| Captura | MP | fps | p95 |
+|---|---|---|---|
+| 860×1864 (escala 2) | 1.60 | 71 | 37 ms |
+| 1290×2796 (escala 3) | 3.61 | 37 | 57 ms |
+
+> Un `setInterval(…, 33)` para forzar repintado limita la página a 30 fps y
+> entonces se mide el driver, no el pipeline. La primera pasada dio 30 fps
+> clavados en los cuatro casos, 3.6 MP incluidos, y parecía un techo del
+> sistema.
+
+**Dos consecuencias en el código.** `--window-size` va en DIP, así que la
+ventana se pide dividida por la escala o sale tres veces más grande que la
+pantalla. Y las coordenadas del log van en px CSS: se multiplican por
+`devicePixelRatio` en el script inyectado para dejarlas en píxeles de frame, que
+es donde trabajan la cámara y el compositor.
+
+
+---
+
+## M8 · Qué escalas sirven, y una lección sobre spikes
+
+M7c descartó la escala 1.5 porque entregó 740×864 en vez del tamaño pedido. Era
+**falso**: repetido con navegador limpio y conectando al target de la *página*
+en vez de al primero que hubiera, 1.5 entrega exactamente `css × dsf`.
+
+| Escala | css 1280 | css 960 |
+|---|---|---|
+| 1.25 | 1073×587 ✗ | 1200×675 ✓ (sólo con 4 s de margen) |
+| 1.5 | 1920×1080 ✓ | 1440×810 ✓ |
+| 1.75 | 2240×1260 ✓ | 1680×945 ✓ |
+| 2 | 2560×1440 ✓ | 1920×1080 ✓ |
+
+1.25 quedó descartada por inestable, no por imposible. No hace falta.
+
+**La lección es del método, no del navegador.** Dos spikes seguidos dieron
+resultados falsos por conectarse a un target de CDP que pertenecía al navegador
+anterior a medio cerrar. La pista estaba a la vista y se pasó por alto: los
+casos que fallaban devolvían todos **el mismo tamaño**, que además era el de la
+ventana. Cuando varios casos distintos coinciden en un valor que no depende de
+lo que se está variando, lo que falla es el banco de pruebas.
+
+Consecuencia práctica: 1.5 abarata toda la escalera apaisada. Sin ella, el
+escalón más barato con maquetación normal costaba 3.69 MP; con ella, 2.07.

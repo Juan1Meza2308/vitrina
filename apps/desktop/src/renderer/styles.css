@@ -76,7 +76,7 @@ input[type="range"] { width: 100%; accent-color: var(--acc); }
   padding: 11px 12px; text-align: left; line-height: 1.35;
 }
 .preset b { font-size: 13px; font-weight: 600; }
-.preset small { color: var(--dim); font-size: 11px; }
+.preset small { display: block; color: var(--dim); font-size: 10.5px; line-height: 1.35; }
 .preset.on small { color: rgba(195, 245, 60, .75); }
 
 .nota-calidad {
@@ -102,8 +102,18 @@ input[type="range"] { width: 100%; accent-color: var(--acc); }
 
 /* ---------- editor ---------- */
 
-.editor { display: grid; grid-template-columns: 1fr 316px; height: 100vh; overflow: hidden; }
-.escenario { display: flex; flex-direction: column; min-width: 0; padding: 18px; gap: 14px; }
+/* `grid-template-rows` no es decorativo: sin el, la fila implicita es `auto` y
+   crece con el contenido, asi que un lienzo 9:16 estiraba la fila muy por
+   debajo de la ventana y `overflow: hidden` se comia el transporte y la linea
+   de tiempo. Con 16:9 cabia por los pelos y el fallo no se veia. */
+.editor {
+  display: grid; grid-template-columns: 1fr 316px; grid-template-rows: minmax(0, 1fr);
+  height: 100vh; overflow: hidden;
+}
+.escenario {
+  display: flex; flex-direction: column; min-width: 0; min-height: 0;
+  padding: 18px; gap: 14px;
+}
 
 .lienzo-caja {
   flex: 1; min-height: 0;
@@ -181,6 +191,23 @@ input[type="range"] { width: 100%; accent-color: var(--acc); }
 .grupo > h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .09em; color: var(--dim); font-weight: 600; }
 .fila { display: flex; gap: 6px; }
 .fila button { flex: 1; padding: 7px 6px; font-size: 12.5px; }
+.fila button small { display: block; margin-top: 2px; font-size: 10.5px; opacity: .6; }
+.nota-formato { margin: 7px 0 0; font-size: 11.5px; line-height: 1.45; color: #8b97a8; }
+
+/* Tramo acelerado: rayado, para que no se confunda con el bloque macizo de un
+   corte. El material sigue ahi, solo pasa mas deprisa. */
+.veloz {
+  position: absolute; top: 0; bottom: 0; pointer-events: none;
+  background: repeating-linear-gradient(115deg,
+    rgba(120, 190, 255, .18) 0 6px, rgba(120, 190, 255, .04) 6px 12px);
+  border-left: 1px solid rgba(120, 190, 255, .5);
+  border-right: 1px solid rgba(120, 190, 255, .5);
+}
+.veloz span {
+  position: absolute; top: 2px; left: 50%; transform: translateX(-50%);
+  font-size: 9.5px; font-variant-numeric: tabular-nums; color: #9fd0ff;
+}
+.nota-formato code { font-size: 11px; color: #b7c2d0; }
 .deslizador { display: flex; flex-direction: column; gap: 5px; }
 .deslizador label { display: flex; justify-content: space-between; font-size: 12.5px; color: var(--dim); }
 .deslizador label b { color: var(--fg); font-weight: 500; font-variant-numeric: tabular-nums; }

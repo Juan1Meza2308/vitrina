@@ -14,7 +14,7 @@
  *    video mudo el espectador no sabe si el cambio lo provoco un click o solo
  *    ocurrio.
  */
-import { CursorPath } from '@vitrina/core';
+import { CursorPath, SUAVIZADO_CURSOR_MS } from '@vitrina/core';
 import type { InputEvent } from '@vitrina/core';
 import type { Ctx, CursorSample } from './types.ts';
 
@@ -31,8 +31,11 @@ export class CursorSource {
   private ups: number[] = [];
   private activity: number[] = [];
 
-  constructor(events: InputEvent[], startedAt: number) {
-    this.path = new CursorPath(events, startedAt);
+  /**
+   * @param settleMs Suavizado del puntero dibujado. Ver `SUAVIZADO_CURSOR_MS`.
+   */
+  constructor(events: InputEvent[], startedAt: number, settleMs = SUAVIZADO_CURSOR_MS) {
+    this.path = new CursorPath(events, startedAt, settleMs);
     for (const e of events) {
       const rt = e.t - startedAt;
       if (e.type === 'down') this.downs.push(rt);

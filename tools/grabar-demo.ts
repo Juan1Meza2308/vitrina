@@ -5,7 +5,7 @@
  * REALES, no fabricados en un test. Los tests fijan el comportamiento; esto
  * comprueba que la realidad se parece a lo que los tests asumen.
  *
- *   node tools/grabar-demo.ts [--secs=12] [--out=...]
+ *   node tools/grabar-demo.ts [--secs=18] [--out=...]
  */
 import CDP from 'chrome-remote-interface';
 import fsp from 'node:fs/promises';
@@ -20,7 +20,10 @@ const flag = (n: string, d = '') => {
   return hit ? hit.slice(n.length + 3) : d;
 };
 
-const secs = Number(flag('secs', '12'));
+// 18 y no 12: el guion incluye una espera de 2.6s por pasada —necesaria para
+// ejercitar el acelerado— y con 12s solo daba tiempo a un tramo de zoom, con lo
+// que el test de arrastrar bordes se quedaba sin material que arrastrar.
+const secs = Number(flag('secs', '18'));
 const outDir = path.resolve(flag('out', 'grabaciones/demo.vitrina'));
 const fixture = pathToFileURL(path.resolve('spikes/stress.html')).href;
 
@@ -72,7 +75,16 @@ async function guion(input: InputClient, endAt: number): Promise<void> {
     await clicar();
     await sleep(500);
   }
-  // 2. Irse a los campos y "escribir": el tramo debe mantenerse vivo.
+  // 2. Esperar sin tocar nada, como en una carga real.
+  //
+  // Va en medio del guion y no al final para que no lo recorte `endAt`. No es
+  // relleno: una demo real esta llena de esperas, y sin ninguna el guion no
+  // ejercitaba el camino de "acelerar las esperas" y la verificacion se lo
+  // saltaba en silencio, informando de ello pero sin fallar.
+  if (Date.now() >= endAt) return;
+  await sleep(2600);
+
+  // 3. Irse a los campos y "escribir": el tramo debe mantenerse vivo.
   await sleep(600);
   for (const c of campos) {
     if (Date.now() >= endAt) return;
@@ -94,6 +106,7 @@ async function guion(input: InputClient, endAt: number): Promise<void> {
   if (Date.now() >= endAt) return;
   await moverA(botones[3]!);
   await clicar();
+
   await sleep(900);
 }
 
@@ -114,7 +127,11 @@ async function main(): Promise<void> {
   const preset = CAPTURE_PRESETS.find((p) => p.name === 'equilibrado')!;
   const rec = new Recorder({
     url: fixture,
-    viewport: preset.capture,
+    // Igual que la app: el viewport es el CSS y la resolucion sale de la
+    // escala. Pasando `capture` a secas se grabaria maquetando a 1728 px, que
+    // es justo lo que la escalera nueva evita.
+    viewport: preset.css ?? preset.capture,
+    deviceScaleFactor: preset.dsf ?? 1,
     quality: 92,
     outDir,
     port: PORT,
@@ -125,7 +142,21 @@ async function main(): Promise<void> {
   await rec.start();
   console.log(`grabando   ${secs}s con guion sintetico...`);
 
-  const input = (await CDP({ port: PORT })) as unknown as InputClient;
+  // `local: true` no es un detalle: sin el, `chrome-remote-interface` se
+  // descarga el descriptor del protocolo por HTTP del propio navegador al
+  // conectar, y ese endpoint compite con el chorro de frames del screencast.
+  // Medido: mas de quince segundos para abrir el cliente. Como el reloj del
+  // guion arranca despues, la grabacion salia con quince segundos muertos al
+  // principio y sin ningun error. Al target de la pagina, ademas: dejar que
+  // `CDP` elija el primero que haya ya ha dado problemas en tres sitios.
+  const objetivos = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()) as
+    { type: string; id: string }[];
+  const pagina = objetivos.find((t) => t.type === 'page');
+  if (!pagina) throw new Error('El navegador de grabacion no expuso una pagina');
+  const input = (await CDP({
+    port: PORT, target: pagina.id, local: true,
+  })) as unknown as InputClient;
+
   const endAt = Date.now() + secs * 1000;
   while (Date.now() < endAt) await guion(input, endAt);
   await input.close();

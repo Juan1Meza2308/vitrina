@@ -21,6 +21,11 @@ import { pathToFileURL } from 'node:url';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { findFfmpeg } from '@vitrina/export';
+import {
+  layoutFrame, notchRect, paraOrientacion, defaultExportFor, computeQualityBudget,
+  CAPTURE_PRESETS,
+} from '@vitrina/core';
+import type { FrameStyle } from '@vitrina/core';
 
 const ejecutar = promisify(execFile);
 
@@ -91,6 +96,25 @@ const FIRMA = `
   })()
 `;
 
+/**
+ * Firma DENSA: lee el lienzo entero de una vez y resume todos los pixeles.
+ *
+ * La dispersa muestrea 589 puntos de 921.600 y se le escapa cualquier cosa
+ * pequena. Un rotulo de click cambia unos 900 pixeles —medido—, asi que la
+ * probabilidad de que caiga en la rejilla es de una moneda al aire: el test
+ * fallaba con el dibujo funcionando perfectamente. Cuesta una sola llamada a
+ * `getImageData`, menos que las 589 de la dispersa.
+ */
+const FIRMA_DENSA = `
+  (() => {
+    const c = document.querySelector('canvas');
+    const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    let h = 0;
+    for (let i = 0; i < d.length; i += 4) h = (h * 31 + d[i]) % 2147483647;
+    return String(h);
+  })()
+`;
+
 /** Evalua en la pagina y devuelve el valor ya serializado. */
 async function ev<T>(c: Cliente, expr: string): Promise<T> {
   const { result } = await c.Runtime.evaluate({
@@ -117,6 +141,44 @@ async function esperarA(
   }
   console.log(`  (agotada la espera de: ${descripcion})`);
   return false;
+}
+
+/**
+ * Da por perdida una promesa que tarda demasiado, en vez de colgar el proceso.
+ *
+ * Nace de `Page.captureScreenshot`: despues de exportar se queda esperando un
+ * frame del compositor que ya no llega, y bloqueaba la verificacion ENTERA
+ * despues de que todas las comprobaciones hubieran pasado. Una captura de
+ * pantalla es un adorno; no puede decidir si el flujo termina.
+ */
+async function conLimite<T>(p: Promise<T>, ms: number, que: string): Promise<T | null> {
+  let temporizador: NodeJS.Timeout | undefined;
+  const limite = new Promise<null>((r) => { temporizador = setTimeout(() => r(null), ms); });
+  try {
+    return await Promise.race([p, limite]);
+  } finally {
+    clearTimeout(temporizador);
+    void que;
+  }
+}
+
+/**
+ * Guarda una captura de pantalla, o avisa y sigue.
+ *
+ * `Page.captureScreenshot` espera un frame nuevo del compositor, y cuando la
+ * ventana no esta componiendo —pantalla dormida, ventana tapada, justo despues
+ * de exportar— no llega nunca y la llamada no vuelve. Colgo la verificacion
+ * entera con TODAS las comprobaciones ya en verde. Las capturas son material de
+ * apoyo: no pueden decidir si el flujo termina.
+ */
+async function capturar(client: Cliente, ruta: string): Promise<boolean> {
+  const tiro = await conLimite(client.Page.captureScreenshot({ format: 'png' }), 15_000, ruta);
+  if (!tiro) {
+    console.log(`  (sin captura ${ruta}: el compositor no entrego frame)`);
+    return false;
+  }
+  await fsp.writeFile(ruta, Buffer.from(tiro.data, 'base64'));
+  return true;
 }
 
 let fallos = 0;
@@ -179,8 +241,7 @@ async function main(): Promise<void> {
   const calidad = await ev<string>(client, 'document.querySelector(".nota-calidad")?.textContent ?? ""');
   check('el indicador de calidad esta presente', /zoom nitido/i.test(calidad), calidad.trim());
 
-  await fsp.writeFile('apps/desktop/captura-editor.png',
-    Buffer.from((await client.Page.captureScreenshot({ format: 'png' })).data, 'base64'));
+  await capturar(client, 'apps/desktop/captura-editor.png');
 
   // --- interaccion: mover la aguja repinta con otra camara -------------------
   const antes = await ev<string>(client, FIRMA);
@@ -213,11 +274,75 @@ async function main(): Promise<void> {
   check('cambiar el fondo repinta', antesFondo !== despuesFondo,
     `muestra ${activa} -> ${objetivo}`);
 
-  await fsp.writeFile('apps/desktop/captura-malla.png',
-    Buffer.from((await client.Page.captureScreenshot({ format: 'png' })).data, 'base64'));
+  await capturar(client, 'apps/desktop/captura-malla.png');
 
   // --- linea de tiempo editable ---------------------------------------------
   await verificarTimeline(client);
+
+  // --- anotaciones -----------------------------------------------------------
+  // Son la ventaja de capturar desde el DOM. Se comprueba que el interruptor
+  // llegue al lienzo, no solo que el boton se ponga en 'on'.
+  // La aguja tiene que estar JUSTO despues de un click con texto: el rotulo dura
+  // poco mas de un segundo, y comparando en cualquier otro instante las dos
+  // firmas salen iguales y el test falla sin que nada este roto. Paso.
+  const eventos = JSON.parse(await fsp.readFile(path.join(grabacion, 'events.json'), 'utf8')) as
+    { t: number; type: string; label?: string | null }[];
+  const manif = JSON.parse(await fsp.readFile(path.join(grabacion, 'manifest.json'), 'utf8')) as
+    { startedAt: number; durationMs: number };
+  const conTexto = eventos.find((e) => e.type === 'down' && (e.label ?? '').length > 0);
+
+  if (!conTexto) {
+    console.log('  (la grabacion de prueba no tiene clicks con texto)');
+  } else {
+    const enRotulo = conTexto.t - manif.startedAt + 250;
+    const riel2 = JSON.parse(await ev<string>(client, `
+      (() => { const r = document.querySelector('.pista').getBoundingClientRect();
+        return JSON.stringify({ x: r.x, y: r.y, w: r.width, h: r.height }); })()
+    `)) as { x: number; y: number; w: number; h: number };
+    const xr = Math.round(riel2.x + riel2.w * (enRotulo / manif.durationMs));
+    const yr = Math.round(riel2.y + riel2.h - 4);
+    await client.Input.dispatchMouseEvent({ type: 'mousePressed', x: xr, y: yr, button: 'left', clickCount: 1 });
+    await client.Input.dispatchMouseEvent({ type: 'mouseReleased', x: xr, y: yr, button: 'left', clickCount: 1 });
+    await sleep(1200);
+
+    const conRotulos = await ev<string>(client, FIRMA_DENSA);
+    await ev(client,
+      "[...document.querySelectorAll('button')].find(x => x.textContent === 'Rotulos').click()");
+    await sleep(900);
+    const sinRotulos = await ev<string>(client, FIRMA_DENSA);
+    check('los rotulos llegan al lienzo', conRotulos !== sinRotulos,
+      `"${conTexto.label}" en ${Math.round(enRotulo)}ms`);
+    await ev(client,
+      "[...document.querySelectorAll('button')].find(x => x.textContent === 'Rotulos').click()");
+    await sleep(600);
+  }
+
+  // --- ritmo: acelerar las esperas -------------------------------------------
+  // El material sigue entero (no es un corte), asi que lo que tiene que cambiar
+  // es la DURACION de salida, no el numero de tramos de zoom.
+  const antesRitmo = await ev<string>(client, `
+    (() => {
+      const b = [...document.querySelectorAll('button')].find(x => /Acelerar [0-9]+ espera/.test(x.textContent));
+      return b ? b.textContent : 'sin esperas';
+    })()
+  `);
+  if (antesRitmo === 'sin esperas') {
+    console.log('  (la grabacion de prueba no tiene esperas que acelerar)');
+  } else {
+    await ev(client,
+      "[...document.querySelectorAll('button')].find(x => /Acelerar [0-9]+ espera/.test(x.textContent)).click()");
+    check('acelerar esperas deja tramos marcados en la linea de tiempo',
+      await esperarA(client, '!!document.querySelector(".veloz")', 'tramos acelerados', 8000),
+      antesRitmo.trim());
+    check('y se puede volver a tiempo real',
+      await esperarA(client, `
+        (() => {
+          const b = [...document.querySelectorAll('button')].find(x => x.textContent === 'Volver a tiempo real');
+          if (b) { b.click(); return false; }
+          return !document.querySelector('.veloz');
+        })()
+      `, 'vuelta a tiempo real', 8000));
+  }
 
   // --- exportar desde la interfaz -------------------------------------------
   // El modulo de exportacion tiene sus propios tests; lo que se comprueba aqui
@@ -316,8 +441,7 @@ async function verificarTimeline(client: Cliente): Promise<void> {
   check('arrastrar el borde cambia la duracion', estirado.w > movido.w + 20,
     `ancho ${movido.w.toFixed(0)} -> ${estirado.w.toFixed(0)}`);
 
-  await fsp.writeFile('apps/desktop/captura-timeline.png',
-    Buffer.from((await client.Page.captureScreenshot({ format: 'png' })).data, 'base64'));
+  await capturar(client, 'apps/desktop/captura-timeline.png');
 
   // Anadir y borrar. La aguja tiene que estar en un hueco: dentro de un tramo
   // no cabe otro, y el boton se desactiva. Se busca el hueco mas ancho que haya
@@ -505,8 +629,7 @@ async function verificarGrabacion(): Promise<void> {
   check('el preview pinta la grabacion nueva', pintado,
     `firma ${await ev<string>(client, FIRMA)}`);
 
-  await fsp.writeFile('apps/desktop/captura-grabacion.png',
-    Buffer.from((await client.Page.captureScreenshot({ format: 'png' })).data, 'base64'));
+  await capturar(client, 'apps/desktop/captura-grabacion.png');
 
   await client.close();
   child.kill();
@@ -526,18 +649,295 @@ async function verificarGrabacion(): Promise<void> {
 }
 
 /**
+ * Verifica la grabacion vertical de principio a fin.
+ *
+ * Es el flujo que pidio el encargo y el unico modo que lo cubre entero: elegir
+ * vertical en la pantalla de inicio, grabar, aterrizar en un editor 9:16 con
+ * marco de movil y exportar un mp4 1080x1920. Probado solo por partes quedaria
+ * la duda de siempre —que cada pieza funcione y el conjunto no—, que es justo
+ * lo que paso con la CSP y con el esquema propio.
+ */
+async function verificarVertical(): Promise<void> {
+  const fixture = pathToFileURL(path.resolve('spikes/vertical.html')).href;
+  const salidas = path.join(os.homedir(), 'Videos', 'Vitrina');
+  const antes = new Set(await listar(salidas));
+
+  // Lo que la app va a capturar, calculado igual que ella: el preset por
+  // defecto de la pantalla de inicio, transpuesto.
+  const esperado = paraOrientacion(
+    CAPTURE_PRESETS.find((p) => p.name === 'equilibrado') ?? CAPTURE_PRESETS[1]!,
+    'vertical',
+  ).capture;
+
+  const salida = defaultExportFor(esperado);
+
+  console.log(`  grabando   ${fixture}`);
+  console.log(`  esperado   captura ${esperado.w}x${esperado.h}`
+    + `  salida ${salida.w}x${salida.h}\n`);
+
+  const child = spawn(ELECTRON, [APP, `--remote-debugging-port=${PORT}`],
+    { stdio: ['ignore', 'ignore', 'inherit'] });
+  const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+  await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+  await sleep(2000);
+
+  // --- pantalla de inicio ---------------------------------------------------
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent.includes('Vertical')).click()
+  `);
+
+  const ficha = await ev<string>(client, 'document.querySelector(".preset.on b").textContent');
+  check('las fichas de calidad muestran la resolucion girada',
+    ficha === `${esperado.w}×${esperado.h}`, ficha);
+
+  const nota = await ev<string>(client, 'document.querySelector(".nota-calidad span").textContent');
+  check('el indicador de calidad apunta a la salida vertical',
+    nota.includes(`${salida.w}×${salida.h}`), nota);
+
+  await ev(client, `
+    (() => {
+      const i = document.querySelector('#url');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+        .call(i, ${JSON.stringify(fixture)});
+      i.dispatchEvent(new Event('input', { bubbles: true }));
+      // Sin microfono: aqui se verifica la forma del video, y el audio ya tiene
+      // su propio modo de comprobacion.
+      [...document.querySelectorAll('button')].find(b => b.textContent === 'Sin audio').click();
+    })()
+  `);
+  // Grabar va en OTRA evaluacion a proposito: el manejador de Grabar cierra
+  // sobre el estado de React, y pulsando los dos en el mismo tick todavia
+  // arrastra el valor anterior y grabaria con microfono igualmente.
+  await sleep(300);
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Grabar').click()
+  `);
+
+  check('la app entro en modo grabacion',
+    await esperarA(client, '!!document.querySelector(".pulso")', 'estado grabando'));
+
+  await interactuarConLoGrabado(['#b2', '#b3', '#i1']);
+  await sleep(1500);
+
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Parar y editar')?.click()
+  `);
+  check('parar lleva al editor',
+    await esperarA(client, '!!document.querySelector("canvas")', 'editor abierto'));
+
+  // --- lo que quedo en disco ------------------------------------------------
+  const nuevas = (await listar(salidas)).filter((n) => !antes.has(n));
+  const carpeta = nuevas[0] ? path.join(salidas, nuevas[0]) : null;
+  if (!carpeta) {
+    check('se creo la carpeta de grabacion', false);
+    process.exit(1);
+  }
+
+  const manifest = JSON.parse(await fsp.readFile(path.join(carpeta, 'manifest.json'), 'utf8')) as
+    {
+      viewport: { w: number; h: number };
+      capture: { w: number; h: number } | null;
+      deviceScaleFactor?: number;
+    };
+  const cap = manifest.capture ?? manifest.viewport;
+  check('el material se capturo en vertical', cap.h > cap.w, `${cap.w}x${cap.h}`);
+  check('la captura coincide con el preset de movil',
+    cap.w === esperado.w && cap.h === esperado.h, `${cap.w}x${cap.h}`);
+
+  // Lo que hace que la web muestre su diseno movil: la pagina se maqueta a un
+  // ancho de telefono aunque los frames sean mucho mas grandes. Si un cambio
+  // volviera a igualar viewport y frame, la vista de movil se perderia sin que
+  // nada mas fallara.
+  check('la pagina se maqueto como un movil',
+    manifest.viewport.w <= 430, `${manifest.viewport.w} px css`);
+  check('y aun asi se capturo a resolucion de publicar',
+    cap.w >= manifest.viewport.w * 2,
+    `${manifest.viewport.w} css -> ${cap.w} px, escala ${manifest.deviceScaleFactor ?? 1}`);
+
+  const proyecto = JSON.parse(await fsp.readFile(path.join(carpeta, 'project.json'), 'utf8')) as
+    { frame: FrameStyle; export: { width: number; height: number } };
+  check('el proyecto abre en 9:16',
+    proyecto.export.width === salida.w && proyecto.export.height === salida.h,
+    `${proyecto.export.width}x${proyecto.export.height}`);
+  // La regla que evita que el video salga blando. Se comprueba el MARGEN, no el
+  // ancho: con `nitido` la salida (1080) es mas ancha que la captura (978) y
+  // aun asi no amplia. Comparar anchos pasaria aqui por casualidad y fallaria
+  // con otro preset.
+  const margen = computeQualityBudget(cap, proyecto.export, proyecto.frame);
+  check('la salida deja margen de zoom, no amplia en reposo',
+    margen.sharpAtRest && margen.maxSharpZoom >= 1.15,
+    `${margen.maxSharpZoom.toFixed(2)}x`);
+  check('el proyecto trae marco de movil', proyecto.frame.chrome === 'phone', proyecto.frame.chrome);
+
+  // --- lo que se ve en el editor --------------------------------------------
+  const lienzo = JSON.parse(await ev<string>(client,
+    'JSON.stringify({ w: document.querySelector("canvas").width, h: document.querySelector("canvas").height })',
+  )) as { w: number; h: number };
+  check('el lienzo del editor es vertical', lienzo.h > lienzo.w, `${lienzo.w}x${lienzo.h}`);
+
+  // Que el lienzo QUEPA, no solo que exista. `.editor` era un grid sin
+  // `grid-template-rows`, asi que la fila implicita crecia con el contenido: un
+  // lienzo 9:16 estiraba la fila muy por debajo de la ventana y `overflow:
+  // hidden` se comia el transporte y la linea de tiempo. Con 16:9 cabia por los
+  // pelos y no se veia. Ninguna prueba de pixeles del compositor lo habria
+  // pillado: el fallo esta en el CSS del editor, no en lo que se dibuja.
+  const caja = JSON.parse(await ev<string>(client, `
+    (() => {
+      const c = document.querySelector('canvas');
+      const r = (el) => { const b = el.getBoundingClientRect();
+        return { w: Math.round(b.width), h: Math.round(b.height) }; };
+      return JSON.stringify({
+        lienzo: r(c), caja: r(c.parentElement),
+        hayTransporte: !!document.querySelector('.transporte'),
+        transporteVisible: (() => {
+          const t = document.querySelector('.transporte');
+          return !!t && t.getBoundingClientRect().bottom <= window.innerHeight + 1;
+        })(),
+      });
+    })()
+  `)) as { lienzo: { w: number; h: number }; caja: { w: number; h: number };
+           hayTransporte: boolean; transporteVisible: boolean };
+  check('el lienzo cabe en su caja',
+    caja.lienzo.h <= caja.caja.h + 1 && caja.lienzo.w <= caja.caja.w + 1,
+    `${caja.lienzo.w}x${caja.lienzo.h} en ${caja.caja.w}x${caja.caja.h}`);
+  check('el transporte y la linea de tiempo siguen dentro de la ventana',
+    caja.hayTransporte && caja.transporteVisible);
+
+  check('el preview pinta la grabacion',
+    await esperarA(client, `(${FIRMA}) !== '0'`, 'primer frame pintado', 20_000));
+
+  // El marco se comprueba por pixeles y no por el estado de un boton: que el
+  // proyecto DIGA 'phone' no prueba que el compositor lo dibuje.
+  const l = layoutFrame(cap, proyecto.export, proyecto.frame);
+  const muestras = JSON.parse(await ev<string>(client, `
+    (() => {
+      const g = document.querySelector('canvas').getContext('2d');
+      const p = (x, y) => { const d = g.getImageData(Math.round(x), Math.round(y), 1, 1).data;
+                            return [d[0], d[1], d[2]]; };
+      const cy = ${l.window.y + l.window.h / 2};
+      return JSON.stringify({
+        esquina:  p(${l.window.x + 6}, ${l.window.y + 6}),
+        bisel:    p(${l.window.x + 5}, cy),
+        biselDer: p(${l.window.x + l.window.w - 5}, cy),
+        arriba:   p(${l.window.x + l.window.w / 2}, ${l.window.y + 4}),
+        abajo:    p(${l.window.x + l.window.w / 2}, ${l.window.y + l.window.h - 4}),
+        muesca:   p(${notchRect(l.content).x + notchRect(l.content).w / 2},
+                    ${notchRect(l.content).y + notchRect(l.content).h * 0.5}),
+        juntoAMuesca: p(${l.content.x + 10},
+                    ${notchRect(l.content).y + notchRect(l.content).h * 0.5}),
+        app:      [0, 1, 2, 3, 4].map(i => p(${l.content.x + 8}, cy + (i - 2) * 40))
+      });
+    })()
+  `)) as { [k: string]: number[] } & { app: number[][] };
+
+  const oscuro = (c: number[]) => Math.max(c[0]!, c[1]!, c[2]!) < 80;
+  const claro = (c: number[]) => Math.min(c[0]!, c[1]!, c[2]!) > 170;
+
+  check('el marco rodea el contenido por los lados',
+    oscuro(muestras.bisel!) && oscuro(muestras.biselDer!),
+    JSON.stringify([muestras.bisel, muestras.biselDer]));
+  check('y tambien por arriba y por abajo',
+    oscuro(muestras.arriba!) && oscuro(muestras.abajo!),
+    JSON.stringify([muestras.arriba, muestras.abajo]));
+  check('la carcasa tiene esquinas de movil: el fondo asoma por fuera',
+    !oscuro(muestras.esquina!) && !claro(muestras.esquina!), JSON.stringify(muestras.esquina));
+  check('la muesca cuelga dentro de la pantalla',
+    oscuro(muestras.muesca!), JSON.stringify(muestras.muesca));
+  // Lo que la distingue de una banda negra: la app se ve a su lado, a la misma
+  // altura. Si ocupara todo el ancho, esto seria carcasa.
+  check('la app se ve al lado de la muesca',
+    claro(muestras.juntoAMuesca!), JSON.stringify(muestras.juntoAMuesca));
+  const claros = muestras.app.filter(claro).length;
+  check('la app se ve dentro del marco', claros >= 3, `${claros}/5 muestras claras`);
+
+  // --- exportar -------------------------------------------------------------
+  // Se comprueba por el titulo, que lleva las dimensiones, en vez de por el
+  // nombre: cual sea el preset correcto depende del ancho capturado.
+  const preseleccion = await ev<string>(client, `
+    (() => {
+      const b = [...document.querySelectorAll('button')].find(x => x.classList.contains('on')
+        && /\\d+×\\d+/.test(x.title || ''));
+      return b ? b.title : 'ninguno';
+    })()
+  `);
+  check('el export arranca en el preset que corresponde',
+    preseleccion.startsWith(`${salida.w}×${salida.h}`), preseleccion);
+
+  const nombre = await ev<string>(client,
+    "[...document.querySelectorAll('button')].find(x => x.classList.contains('on')"
+    + " && /\\d+×\\d+/.test(x.title || '')).textContent");
+  const destino = path.join(carpeta, `export-${nombre}.mp4`);
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Exportar').click()
+  `);
+  const listo = await esperarA(client,
+    '[...document.querySelectorAll("button")].some(b => b.textContent === "Mostrar en la carpeta")',
+    'exportacion terminada', 240_000);
+  check('la exportacion termina', listo);
+
+  const dimensiones = await medirVideo(destino);
+  check(`el mp4 sale en ${salida.w}x${salida.h}`,
+    dimensiones === `${salida.w},${salida.h}`, dimensiones);
+
+  // Sin bandas: el contenido tiene que llenar el encuadre salvo el margen del
+  // marco. Es el criterio de aceptacion del encargo.
+  const ocupacion = (l.content.h / proyecto.export.height) * 100;
+  check('el contenido llena el encuadre', ocupacion > 75, `${ocupacion.toFixed(0)}% del alto`);
+
+  const tiro = await capturar(client, 'apps/desktop/captura-vertical.png');
+
+  await conLimite(client.close(), 5000, 'cierre del cliente');
+  child.kill();
+  await sleep(800);
+
+  for (const nombre of await listar(salidas)) {
+    if (antes.has(nombre)) continue;
+    await fsp.rm(path.join(salidas, nombre), { recursive: true, force: true }).catch(() => {});
+    console.log(`  limpiado   ${nombre}`);
+  }
+
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}`);
+  console.log(tiro
+    ? '  captura: apps/desktop/captura-vertical.png\n'
+    : '  (sin captura: tras exportar, el compositor no entrega frame nuevo)\n');
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/** Ancho,alto reales del fichero, leidos con ffprobe. */
+async function medirVideo(file: string): Promise<string> {
+  const ffmpeg = await findFfmpeg();
+  if (!ffmpeg) return 'sin ffprobe';
+  const ffprobe = path.join(path.dirname(ffmpeg), path.basename(ffmpeg).replace('ffmpeg', 'ffprobe'));
+  const { stdout } = await ejecutar(ffprobe, [
+    '-v', 'error', '-select_streams', 'v:0',
+    '-show_entries', 'stream=width,height', '-of', 'csv=p=0:s=,', file,
+  ]);
+  return stdout.trim();
+}
+
+/**
  * Inyecta clicks en el navegador que Vitrina abrio para grabar.
  *
- * Las coordenadas van en el viewport emulado (1600x900), que es donde caen los
- * botones del fixture. El grabador escucha esos eventos desde el DOM, asi que
- * un click sintetico produce exactamente el mismo registro que uno humano.
+ * Las coordenadas van en el viewport emulado, que es donde caen los botones del
+ * fixture. El grabador escucha esos eventos desde el DOM, asi que un click
+ * sintetico produce exactamente el mismo registro que uno humano.
+ *
+ * Con `selectores` las posiciones se preguntan a la pagina en vez de fijarlas a
+ * mano: en vertical el viewport depende del preset y del equipo, asi que unas
+ * coordenadas escritas a ojo pulsarian el vacio y la comprobacion diria "sin
+ * zoom" sin que nada estuviera roto.
  */
-async function interactuarConLoGrabado(): Promise<void> {
+async function interactuarConLoGrabado(selectores?: string[]): Promise<void> {
   interface Entrada {
     Input: {
       dispatchMouseEvent(p: {
         type: string; x: number; y: number; button?: string; clickCount?: number;
       }): Promise<void>;
+    };
+    Runtime: {
+      enable(): Promise<void>;
+      evaluate(p: { expression: string; returnByValue?: boolean }):
+        Promise<{ result: { value?: unknown } }>;
     };
     close(): Promise<void>;
   }
@@ -548,12 +948,28 @@ async function interactuarConLoGrabado(): Promise<void> {
   if (!page) throw new Error('El navegador de grabacion no expuso una pagina');
 
   const input = (await CDP({ port: 9222, target: page.id })) as unknown as Entrada;
-  for (const x of [70, 190, 320]) {
-    await input.Input.dispatchMouseEvent({ type: 'mouseMoved', x, y: 232 });
+
+  let puntos: { x: number; y: number }[];
+  if (selectores) {
+    await input.Runtime.enable();
+    const { result } = await input.Runtime.evaluate({
+      expression: `JSON.stringify(${JSON.stringify(selectores)}.map(sel => {
+        const r = document.querySelector(sel).getBoundingClientRect();
+        return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+      }))`,
+      returnByValue: true,
+    });
+    puntos = JSON.parse(String(result.value)) as { x: number; y: number }[];
+  } else {
+    puntos = [70, 190, 320].map((x) => ({ x, y: 232 }));
+  }
+
+  for (const { x, y } of puntos) {
+    await input.Input.dispatchMouseEvent({ type: 'mouseMoved', x, y });
     await sleep(120);
-    await input.Input.dispatchMouseEvent({ type: 'mousePressed', x, y: 232, button: 'left', clickCount: 1 });
+    await input.Input.dispatchMouseEvent({ type: 'mousePressed', x, y, button: 'left', clickCount: 1 });
     await sleep(60);
-    await input.Input.dispatchMouseEvent({ type: 'mouseReleased', x, y: 232, button: 'left', clickCount: 1 });
+    await input.Input.dispatchMouseEvent({ type: 'mouseReleased', x, y, button: 'left', clickCount: 1 });
     await sleep(700);
   }
   await input.close();
@@ -648,8 +1064,7 @@ async function verificarSilencios(): Promise<void> {
       Math.abs(corte.startMs - 2150) < 250 && Math.abs(corte.endMs - 4850) < 250);
   }
 
-  await fsp.writeFile('apps/desktop/captura-silencios.png',
-    Buffer.from((await client.Page.captureScreenshot({ format: 'png' })).data, 'base64'));
+  await capturar(client, 'apps/desktop/captura-silencios.png');
 
   await client.close();
   child.kill();
@@ -663,6 +1078,7 @@ async function verificarSilencios(): Promise<void> {
 }
 
 const flujo = process.argv.includes('--silencios') ? verificarSilencios
+  : process.argv.includes('--vertical') ? verificarVertical
   : process.argv.includes('--grabar') ? verificarGrabacion : main;
 flujo().catch((e: unknown) => {
   console.error('FALLO:', e instanceof Error ? e.message : String(e));

@@ -9,7 +9,7 @@
 import { describe, it, expect } from 'vitest';
 import type { CaptureSize, InputEvent, Rect } from '../types.ts';
 import { planSegments } from './segments.ts';
-import { buildCameraTrack } from './track.ts';
+import { buildCameraTrack, CursorPath, SUAVIZADO_CURSOR_MS } from './track.ts';
 import { viewRect } from './geometry.ts';
 import { CAMERA_PRESETS, cameraConfigForBudget, type CameraConfig } from './config.ts';
 
@@ -278,5 +278,76 @@ describe('buildCameraTrack · seguimiento del cursor', () => {
     const v = viewRect(tr.sampleAt(DENTRO_MS), VIEWPORT);
     expect(v.x + v.w).toBeLessThanOrEqual(VIEWPORT.w + 1e-3);
     expect(v.y + v.h).toBeLessThanOrEqual(VIEWPORT.h + 1e-3);
+  });
+});
+
+describe('CursorPath suavizado', () => {
+  /** Movimiento con temblor de mano: deriva mas un diente de sierra encima. */
+  function conTemblor(desde: number, hasta: number, pasos: number): InputEvent[] {
+    const ev: InputEvent[] = [];
+    for (let i = 0; i <= pasos; i++) {
+      const f = i / pasos;
+      ev.push({
+        t: T0 + i * 8,
+        type: 'move',
+        x: desde + (hasta - desde) * f + (i % 2 === 0 ? 6 : -6),
+        y: 300 + (i % 3 === 0 ? 5 : -5),
+      });
+    }
+    return ev;
+  }
+
+  it('quita el temblor', () => {
+    // La metrica es el recorrido VERTICAL mientras la mano solo avanza en
+    // horizontal: su ideal es cero, asi que mide temblor puro. La longitud
+    // total del camino no vale, y no por poco: el muelle va por dentro de las
+    // curvas, asi que un camino suavizado puede salir mas CORTO que la linea
+    // recta y confundir retardo con suavidad.
+    const ev = conTemblor(100, 900, 60);
+    const recorridoY = (p: CursorPath) => {
+      let d = 0;
+      let ant = p.at(0)!;
+      for (let t = 4; t <= 480; t += 4) {
+        const q = p.at(t)!;
+        d += Math.abs(q.y - ant.y);
+        ant = q;
+      }
+      return d;
+    };
+    const crudo = recorridoY(new CursorPath(ev, T0));
+    const suave = recorridoY(new CursorPath(ev, T0, SUAVIZADO_CURSOR_MS));
+    expect(crudo).toBeGreaterThan(100);          // el fixture tiembla de verdad
+    expect(suave).toBeLessThan(crudo * 0.1);     // medido: 400 px -> 16 px
+  });
+
+  it('llega exacto al punto del click tras la pausa de siempre', () => {
+    // Es el riesgo real del suavizado: si el puntero se dibuja lejos del boton
+    // en el instante de pulsar, la onda del click y el cursor se contradicen y
+    // se ve peor que el temblor. Nadie pulsa en movimiento: se para y pulsa.
+    const ev = conTemblor(100, 800, 40);
+    const finMov = ev[ev.length - 1]!.t;
+    for (let i = 1; i <= 25; i++) ev.push({ t: finMov + i * 8, type: 'move', x: 800, y: 300 });
+    const tClick = finMov + 25 * 8;
+    ev.push({ t: tClick, type: 'down', x: 800, y: 300 });
+
+    const suave = new CursorPath(ev, T0, SUAVIZADO_CURSOR_MS);
+    const p = suave.at(tClick - T0)!;
+    expect(Math.hypot(p.x - 800, p.y - 300)).toBeLessThan(1);
+  });
+
+  it('sin suavizado devuelve la trayectoria cruda', () => {
+    // El motor de camara la necesita asi: ya tiene su propio muelle.
+    const ev = conTemblor(100, 900, 20);
+    const a = new CursorPath(ev, T0);
+    const b = new CursorPath(ev, T0, 0);
+    for (let t = 0; t <= 160; t += 20) {
+      expect(a.at(t)).toEqual(b.at(t));
+    }
+  });
+
+  it('aguanta un log vacio o de una sola muestra', () => {
+    expect(new CursorPath([], T0, SUAVIZADO_CURSOR_MS).at(0)).toBeNull();
+    const uno: InputEvent[] = [{ t: T0, type: 'move', x: 5, y: 7 }];
+    expect(new CursorPath(uno, T0, SUAVIZADO_CURSOR_MS).at(50)).toEqual({ x: 5, y: 7 });
   });
 });

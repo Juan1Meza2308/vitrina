@@ -89,7 +89,17 @@ export function clampZoom(
 
 export interface CapturePreset {
   name: string;
+  /** Tamano real de cada frame. Es lo que ven la camara y el compositor. */
   capture: CaptureSize;
+  /**
+   * Viewport CSS emulado, cuando no coincide con `capture`.
+   *
+   * En vista de movil son 430x932 mientras los frames miden 1290x2796: la
+   * pagina maqueta como un telefono y el video sale a resolucion de publicar.
+   */
+  css?: CaptureSize;
+  /** Escala de dispositivo forzada al navegador. Ausente o 1 en horizontal. */
+  dsf?: number;
   /** fps mediano medido en M0 sobre este hardware. Ver spikes/HALLAZGOS.md. */
   measuredFps: number;
   /**
@@ -115,6 +125,75 @@ export const CAPTURE_PRESETS: CapturePreset[] = PRESETS_MEDIDOS;
 
 /** Maquina en la que se midieron los presets vigentes. */
 export { MEDIDO_EN };
+
+export type Orientacion = 'horizontal' | 'vertical';
+
+/** Que forma tiene un tamano de captura. */
+export function orientacionDe(size: CaptureSize): Orientacion {
+  return size.h > size.w ? 'vertical' : 'horizontal';
+}
+
+/**
+ * Configuraciones de captura en vista de movil, de menos a mas resolucion.
+ *
+ * `css` es el viewport que ve la pagina, y es lo que decide que la web muestre
+ * su diseno movil: 390 y 430 px son anchos de telefono reales, por debajo del
+ * punto de ruptura de practicamente cualquier sitio responsive. No se puede
+ * subir para ganar resolucion sin perder justo eso.
+ *
+ * La resolucion sale de `dsf`, la escala de dispositivo forzada al navegador.
+ * M0 concluyo que no habia forma de tener las dos cosas porque
+ * `Page.startScreencast` ignora el `deviceScaleFactor` de `Emulation`. Es
+ * cierto por esa via, pero forzando la escala al LANZAR el navegador
+ * (`--force-device-scale-factor`) el surface nace ya escalado y el screencast
+ * entrega css x dsf. Medido en M7: 430x932 a escala 3 da frames de 1290x2796
+ * con la pagina viendose a 430 px y `devicePixelRatio` 3.
+ *
+ * Solo escalas exactas: 1.5 no entrego el tamano pedido (M7c), 2, 2.5 y 3 si.
+ */
+const MOVILES: { css: CaptureSize; dsf: number }[] = [
+  { css: { w: 390, h: 844 }, dsf: 2 },     // 780x1688
+  { css: { w: 430, h: 932 }, dsf: 2 },     // 860x1864
+  { css: { w: 430, h: 932 }, dsf: 2.5 },   // 1075x2330
+  { css: { w: 430, h: 932 }, dsf: 3 },     // 1290x2796
+];
+
+/**
+ * Devuelve el preset en la orientacion pedida.
+ *
+ * En vertical no transpone ni reencuadra: cambia a la configuracion de movil
+ * del mismo escalon. Girar el preset apaisado daba una pantalla 16:9 —marco
+ * rechoncho, 0.57 frente al 0.47 real— y ademas un viewport de 800 o 900 px en
+ * el que la web sigue mostrando su diseno de escritorio, que es lo contrario de
+ * lo que se busca al grabar en vertical.
+ */
+export function paraOrientacion(
+  preset: CapturePreset,
+  a: Orientacion,
+  escalones: { css: CaptureSize; dsf: number }[] = MOVILES,
+): CapturePreset {
+  if (orientacionDe(preset.capture) === a) return preset;
+  if (a === 'horizontal') {
+    return { ...preset, capture: { w: preset.capture.h, h: preset.capture.w } };
+  }
+  // El escalon se elige por posicion en la lista, no por pixeles: los presets
+  // apaisados estan ordenados de mas fluido a mas nitido y los moviles tambien,
+  // asi que "el tercero" significa lo mismo en las dos escaleras.
+  const i = Math.min(escalones.length - 1, Math.max(0, indiceDe(preset)));
+  const m = escalones[i]!;
+  return {
+    ...preset,
+    css: m.css,
+    dsf: m.dsf,
+    capture: { w: Math.round(m.css.w * m.dsf), h: Math.round(m.css.h * m.dsf) },
+  };
+}
+
+/** Posicion del preset en la escalera de calidad estandar. */
+function indiceDe(preset: CapturePreset): number {
+  const i = CAPTURE_PRESETS.findIndex((p) => p.name === preset.name);
+  return i >= 0 ? i : 1;
+}
 
 /**
  * El preset mas nitido que sostiene los fps pedidos sin tirones perceptibles.

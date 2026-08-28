@@ -12,7 +12,7 @@
  */
 import { buildCameraTrack, FrameIndex } from '@vitrina/core';
 import type { CameraTrack, InputEvent, Manifest, Project } from '@vitrina/core';
-import { composite, CursorSource } from '@vitrina/renderer';
+import { composite, CursorSource, OverlaySource } from '@vitrina/renderer';
 import type { Ctx, ImageLike } from '@vitrina/renderer';
 
 /** Frames decodificados que se conservan. Suficiente para un scrub suave sin
@@ -22,6 +22,7 @@ const CACHE_MAX = 24;
 export class Preview {
   private index: FrameIndex;
   private cursor: CursorSource;
+  private overlay: OverlaySource;
   private cache = new Map<string, ImageBitmap>();
   private pendientes = new Map<string, Promise<ImageBitmap | null>>();
   private ultimo: ImageBitmap | null = null;
@@ -36,6 +37,7 @@ export class Preview {
   ) {
     this.index = new FrameIndex(manifest);
     this.cursor = new CursorSource(events, manifest.startedAt);
+    this.overlay = new OverlaySource(events, manifest.startedAt);
   }
 
   /** Se reconstruye al cambiar el zoom o el marco; los frames siguen valiendo. */
@@ -70,6 +72,7 @@ export class Preview {
       camera: this.track.sampleAt(tMs),
       project,
       cursor: this.cursor.sample(tMs),
+      overlay: this.overlay.sample(tMs),
       backgroundImage: await this.fondoDe(project) as unknown as ImageLike | null,
     });
   }

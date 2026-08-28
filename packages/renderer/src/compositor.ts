@@ -12,9 +12,11 @@
 import { layoutFrame, viewRect } from '@vitrina/core';
 import type { CameraState, CaptureSize, Project } from '@vitrina/core';
 import { paintBackground } from './background.ts';
-import { drawChrome } from './chrome.ts';
+import { drawFrame, drawNotch } from './chrome.ts';
 import { drawCursor } from './cursor.ts';
+import { drawLabel, drawKeys } from './overlays.ts';
 import type { Ctx, CursorSample, ImageLike } from './types.ts';
+import type { OverlaySample } from './overlays.ts';
 
 export interface CompositeOptions {
   ctx: Ctx;
@@ -28,6 +30,8 @@ export interface CompositeOptions {
    *  'image'. Se pasa decodificada para que el compositor sirva igual en Node
    *  y en el navegador. */
   backgroundImage?: ImageLike | null;
+  /** Rotulo y teclas del instante. Se calculan con `OverlaySource`. */
+  overlay?: OverlaySample | null;
 }
 
 export function composite(o: CompositeOptions): void {
@@ -41,7 +45,7 @@ export function composite(o: CompositeOptions): void {
   ctx.clearRect(0, 0, W, H);
   paintBackground(ctx, project.background, W, H, o.backgroundImage);
 
-  const { window, content, barH, radius } = layout;
+  const { window, content, radius, contentRadius } = layout;
 
   // 1. Silueta con sombra. Se pinta opaca porque una sombra sobre una forma
   //    semitransparente se ve a traves del contenido.
@@ -63,14 +67,29 @@ export function composite(o: CompositeOptions): void {
   ctx.roundRect(window.x, window.y, window.w, window.h, radius);
   ctx.clip();
 
-  drawChrome(ctx, window, barH, project.frame);
+  drawFrame(ctx, layout, project.frame);
 
   const view = clampView(viewRect(o.camera, sourceSize), sourceSize);
+
+  // Con bisel la pantalla tiene sus propias esquinas: el recorte exterior queda
+  // lejos y sin este segundo recorte el video asomaria por las esquinas de la
+  // carcasa. Con barra de navegador no hace falta y no se paga.
+  if (contentRadius > 0) {
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(content.x, content.y, content.w, content.h, contentRadius);
+    ctx.clip();
+  }
   ctx.drawImage(
     o.source,
     view.x, view.y, view.w, view.h,
     content.x, content.y, content.w, content.h,
   );
+  if (contentRadius > 0) ctx.restore();
+
+  // La muesca, sobre el video ya dibujado: en un telefono real se come un trozo
+  // de pantalla. Dentro del recorte de la ventana, para que respete el cuerpo.
+  drawNotch(ctx, layout, project.frame);
   ctx.restore();
 
   // 3. Borde fino por encima: separa la ventana del fondo cuando ambos son
@@ -83,7 +102,18 @@ export function composite(o: CompositeOptions): void {
   ctx.stroke();
   ctx.restore();
 
-  // 4. Cursor, siempre lo ultimo y siempre al mismo tamano en pantalla.
+  // 4. Rotulos y teclas, debajo del cursor para que la flecha no quede tapada.
+  if (o.overlay) {
+    if (project.frame.labels && o.overlay.label) {
+      const at = sourceToOutput(o.overlay.label, view, content);
+      if (at) drawLabel(ctx, o.overlay.label.text, at, o.overlay.label.opacity, content);
+    }
+    if (project.frame.keys && o.overlay.keys) {
+      drawKeys(ctx, o.overlay.keys.teclas, o.overlay.keys.opacity, content);
+    }
+  }
+
+  // 5. Cursor, siempre lo ultimo y siempre al mismo tamano en pantalla.
   if (o.cursor && project.frame.cursor !== 'none') {
     const at = sourceToOutput(o.cursor, view, content);
     // Fuera del encuadre no se dibuja: si no, se pegaria al borde de la ventana.

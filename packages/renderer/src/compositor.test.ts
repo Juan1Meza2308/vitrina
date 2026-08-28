@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { createCanvas } from '@napi-rs/canvas';
-import { layoutFrame, viewRect } from '@vitrina/core';
+import { layoutFrame, notchRect, viewRect } from '@vitrina/core';
 import type { Project } from '@vitrina/core';
 import { composite, sourceToOutput } from './compositor.ts';
 import type { Ctx, ImageLike } from './types.ts';
@@ -234,5 +234,126 @@ describe('sourceToOutput', () => {
   it('devuelve null fuera del encuadre', () => {
     const zoom = viewRect({ cx: 400, cy: 300, scale: 2.5 }, SOURCE);
     expect(sourceToOutput({ x: 1550, y: 860 }, zoom, l.content)).toBeNull();
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('composite con marco de movil', () => {
+  const V = { w: 1080, h: 1920 };
+  const SALIDA_V = { width: 1080, height: 1920, fps: 60, format: 'mp4' as const };
+
+  function fuenteV() {
+    const c = createCanvas(V.w, V.h);
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = CONTENIDO;
+    ctx.fillRect(0, 0, V.w, V.h);
+    return c;
+  }
+
+  function renderV(frame: Partial<Project['frame']> = {}) {
+    const p: Project = {
+      ...project(),
+      frame: { fill: 0.8, radius: 14, shadow: 0, chrome: 'phone', cursor: 'none', ...frame },
+      export: SALIDA_V,
+    };
+    const canvas = createCanvas(p.export.width, p.export.height);
+    const ctx = canvas.getContext('2d') as unknown as Ctx;
+    composite({
+      ctx,
+      source: fuenteV() as unknown as ImageLike,
+      sourceSize: V,
+      camera: { cx: V.w / 2, cy: V.h / 2, scale: 1 },
+      project: p,
+    });
+    const data = canvas.getContext('2d').getImageData(0, 0, p.export.width, p.export.height).data;
+    const px = (x: number, y: number): [number, number, number] => {
+      const i = (Math.round(y) * p.export.width + Math.round(x)) * 4;
+      return [data[i]!, data[i + 1]!, data[i + 2]!];
+    };
+    return { p, px, l: layoutFrame(V, p.export, p.frame) };
+  }
+
+  // Oscuro: cuerpo o filo del marco. El filo es un blanco al 22% sobre negro y
+  // no llega a gris medio, asi que sigue distinguiendose del fondo rojo y de la
+  // app verde sin tener que saber en cual de los dos se cayo el pixel.
+  const esCarcasa = (c: [number, number, number]) => c[0] < 90 && c[1] < 90 && c[2] < 100;
+
+  it('el contenido llena el encuadre salvo el margen del marco', () => {
+    // Es el criterio de la funcionalidad: en 9:16 no puede haber bandas de
+    // fondo grandes arriba y abajo, que es justo lo que pasaba componiendo
+    // material apaisado en un lienzo vertical.
+    const { l } = renderV();
+    expect(l.content.h / 1920).toBeGreaterThan(0.75);
+    expect(l.content.w / 1080).toBeGreaterThan(0.75);
+  });
+
+  it('deja carcasa entre el borde de la ventana y la pantalla', () => {
+    const { px, l } = renderV();
+    const my = l.window.y + l.window.h / 2;
+    expect(esRojo(px(l.window.x - 4, my))).toBe(true);          // fondo fuera
+    expect(esCarcasa(px(l.window.x + 4, my))).toBe(true);        // bisel
+    expect(esVerde(px(l.content.x + 4, my))).toBe(true);         // pantalla
+    expect(esCarcasa(px(l.window.x + l.window.w - 4, my))).toBe(true);
+    expect(esRojo(px(l.window.x + l.window.w + 4, my))).toBe(true);
+  });
+
+  it('tambien por arriba y por abajo, no solo a los lados', () => {
+    // La diferencia con una barra de navegador: el marco rodea, no corona.
+    const { px, l } = renderV();
+    const mx = l.window.x + l.window.w / 2;
+    expect(esCarcasa(px(mx, l.window.y + 3))).toBe(true);
+    expect(esCarcasa(px(mx, l.window.y + l.window.h - 3))).toBe(true);
+    expect(esRojo(px(mx, l.window.y - 4))).toBe(true);
+    expect(esRojo(px(mx, l.window.y + l.window.h + 4))).toBe(true);
+  });
+
+  it('dibuja la muesca colgando dentro de la pantalla', () => {
+    // Va DESPUES del video: en un telefono real la muesca se come pantalla.
+    const { px, l } = renderV();
+    const n = notchRect(l.content);
+    expect(esCarcasa(px(n.x + n.w / 2, n.y + n.h * 0.5))).toBe(true);
+    // Y por debajo de la muesca vuelve a haber app.
+    expect(esVerde(px(n.x + n.w / 2, n.y + n.h + 8))).toBe(true);
+  });
+
+  it('la app se ve a los dos lados de la muesca', () => {
+    // Es lo que distingue una muesca de una banda negra, y por eso no ocupa mas
+    // de la mitad del ancho.
+    const { px, l } = renderV();
+    const n = notchRect(l.content);
+    const y = n.y + n.h * 0.5;
+    expect(n.w).toBeLessThan(l.content.w * 0.5);
+    expect(esVerde(px(l.content.x + 10, y))).toBe(true);
+    expect(esVerde(px(l.content.x + l.content.w - 10, y))).toBe(true);
+  });
+
+  it('el bisel superior es tan fino como los laterales', () => {
+    // Antes la muesca tenia banda propia y el marco se veia pesado por arriba.
+    const { l } = renderV();
+    expect(l.insets.top).toBe(l.insets.left);
+  });
+
+  it('redondea la pantalla concentricamente dentro de la carcasa', () => {
+    // Las dos esquinas —cuerpo y pantalla— comparten centro, que es lo que hace
+    // que el bisel se vea de grosor constante en la curva. Entre los dos arcos
+    // tiene que haber marco: si la pantalla no estuviera recortada, ahi asomaria
+    // el video por fuera de la carcasa.
+    const { px, l } = renderV();
+    const cx = l.content.x + l.contentRadius;
+    const cy = l.content.y + l.contentRadius;
+    const medio = (l.contentRadius + l.radius) / 2;
+    const d = medio / Math.SQRT2;
+    expect(esCarcasa(px(cx - d, cy - d))).toBe(true);
+
+    // Y por dentro del arco interior, la app.
+    const dentro = (l.contentRadius * 0.6) / Math.SQRT2;
+    expect(esVerde(px(cx - dentro, cy - dentro))).toBe(true);
+    expect(esVerde(px(l.content.x + l.content.w / 2, l.content.y + l.content.h / 2))).toBe(true);
+  });
+
+  it('el fondo se ve en las esquinas del cuerpo redondeado', () => {
+    const { px, l } = renderV();
+    expect(esRojo(px(l.window.x + 2, l.window.y + 2))).toBe(true);
   });
 });

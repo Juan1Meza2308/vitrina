@@ -72,6 +72,8 @@ export interface CdpClient {
       mobile: boolean;
     }): Promise<void>;
     clearDeviceMetricsOverride(): Promise<void>;
+    /** Experimental: no esta en todos los navegadores. Llamar con catch. */
+    setScrollbarsHidden(p: { hidden: boolean }): Promise<void>;
   };
   on(event: 'Page.screencastFrame', cb: (p: ScreencastFrameParams) => void): void;
   on(event: 'Runtime.bindingCalled', cb: (p: BindingCalledParams) => void): void;

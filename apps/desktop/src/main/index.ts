@@ -10,17 +10,18 @@
  * y convertirlos a base64 para cruzar el puente los duplicaria de tamano y
  * bloquearia el hilo principal en cada movimiento del cursor.
  */
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, session, shell } from 'electron';
+import { app, BrowserWindow, dialog, ipcMain, net, protocol, screen, session, shell } from 'electron';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { Recorder } from '@vitrina/capture-cdp';
+import { Recorder, ventanaPara } from '@vitrina/capture-cdp';
 import {
   CAPTURE_PRESETS, CAMERA_PRESETS, cameraConfigForBudget, computeQualityBudget,
   defaultProject, hostFromUrl, planSegments, parseSilenceReport, silenceFilter,
+  paraOrientacion,
 } from '@vitrina/core';
-import type { AudioTrack, CameraPresetName, Cut, InputEvent, Manifest, Project } from '@vitrina/core';
+import type { AudioTrack, CameraPresetName, Cut, InputEvent, Manifest, Orientacion, Project } from '@vitrina/core';
 import { exportRecording, EXPORT_PRESETS, ExportAbortedError, findFfmpeg } from '@vitrina/export';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -31,6 +32,15 @@ const RECORDINGS = path.join(app.getPath('videos'), 'Vitrina');
 
 let win: BrowserWindow | null = null;
 let recorder: Recorder | null = null;
+/**
+ * Tamano de frame que se pidio al grabar, para contrastarlo con el que salio.
+ *
+ * Desde que la captura usa escala esto importa: si la emulacion no se aplica,
+ * se piden 2560 px y se graban 1073 sin que nada falle. Todo aguas abajo lee
+ * `manifest.capture`, asi que el video sale coherente pero mucho menos nitido
+ * de lo prometido, y en silencio.
+ */
+let marcoPedido: { w: number; h: number } | null = null;
 let recordingDir = '';
 /** Carpeta que sirve el protocolo `vitrina://`. */
 let servedDir = '';
@@ -214,23 +224,41 @@ ipcMain.handle('audio:stop', async () => {
   return audioTrack;
 });
 
-ipcMain.handle('record:start', async (_e, opts: { url: string; presetName: string }) => {
+ipcMain.handle('record:start', async (
+  _e,
+  opts: { url: string; presetName: string; orientacion?: Orientacion },
+) => {
   if (recorder) throw new Error('Ya hay una grabacion en curso');
 
-  const preset = CAPTURE_PRESETS.find((p) => p.name === opts.presetName) ?? CAPTURE_PRESETS[1]!;
+  const elegido = CAPTURE_PRESETS.find((p) => p.name === opts.presetName) ?? CAPTURE_PRESETS[1]!;
+  // Mismos pixeles con otra forma: los fps medidos para el preset siguen
+  // valiendo, y el encuadre sale con proporcion de movil.
+  const preset = paraOrientacion(elegido, opts.orientacion ?? 'horizontal');
   if (!recordingDir) {
     const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
     recordingDir = path.join(RECORDINGS, `${stamp}.vitrina`);
   }
   await fsp.mkdir(recordingDir, { recursive: true });
 
+  // La ventana la decide quien conoce la pantalla. El grabador tiene un
+  // respaldo razonable, pero en un portatil bajo o con un viewport vertical
+  // ese respaldo se sale del area util y la demo se graba a ciegas.
+  const hueco = screen.getPrimaryDisplay().workAreaSize;
   recorder = new Recorder({
     url: opts.url,
-    viewport: preset.capture,
+    // El viewport es el CSS, no el tamano del frame: en vista de movil son
+    // 430x932 y los frames salen a 1290x2796 por la escala.
+    viewport: preset.css ?? preset.capture,
+    deviceScaleFactor: preset.dsf ?? 1,
+    window: ventanaPara(preset.capture, {
+      width: Math.round(hueco.width * 0.92),
+      height: Math.round(hueco.height * 0.92),
+    }),
     outDir: recordingDir,
     onProgress: (p) => win?.webContents.send('record:progress', p),
   });
 
+  marcoPedido = preset.capture;
   await recorder.launch();
   await recorder.start();
   return { dir: recordingDir, preset };
@@ -243,6 +271,15 @@ ipcMain.handle('record:stop', async () => {
   const result = await recorder.stop();
   await recorder.close();
   recorder = null;
+
+  const real = result.manifest.capture;
+  if (marcoPedido && real && (real.w !== marcoPedido.w || real.h !== marcoPedido.h)) {
+    win?.webContents.send('recording:error',
+      `La captura salio a ${real.w}×${real.h} en vez de ${marcoPedido.w}×${marcoPedido.h}: `
+      + 'el navegador no aplico la escala. El video se puede editar igual, pero '
+      + 'sera menos nitido de lo previsto.');
+  }
+  marcoPedido = null;
 
   // Planificar la camara nada mas parar: el usuario no deberia tener que pedir
   // el zoom automatico, es la razon de ser de la herramienta.

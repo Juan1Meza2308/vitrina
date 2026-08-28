@@ -16,8 +16,8 @@
 // Se reexporta para que quien importe `@vitrina/core/types` tenga el tipo
 // completo del manifest sin tener que saber que el audio vive aparte.
 export type { AudioTrack } from './audio.ts';
-export type { Cut } from './timemap.ts';
-import type { Cut } from './timemap.ts';
+export type { Cut, Speed } from './timemap.ts';
+import type { Cut, Speed } from './timemap.ts';
 import type { AudioTrack } from './audio.ts';
 
 /** Rectangulo en pixeles del viewport capturado. */
@@ -80,10 +80,19 @@ export interface Manifest {
   /** Identificador del navegador usado, para diagnostico. */
   browser: string;
   url: string;
-  /** Viewport emulado en css px. Es tambien el tamano real de cada frame. */
+  /**
+   * Viewport emulado en css px: lo que ve la pagina y lo que decide su
+   * maquetacion. NO es el tamano de los frames cuando hay escala: grabando en
+   * vista de movil son 430x932 mientras cada frame mide 1290x2796.
+   */
   viewport: CaptureSize;
-  /** Tamano leido de la cabecera del primer JPEG. Debe coincidir con viewport. */
+  /**
+   * Tamano leido de la cabecera del primer JPEG: el de los frames de verdad.
+   * Es el que tiene que usar todo lo de aguas abajo.
+   */
   capture: CaptureSize | null;
+  /** Escala de dispositivo con la que se grabo. 1 salvo en vista de movil. */
+  deviceScaleFactor?: number;
   quality: number;
   /** Epoch en ms del arranque del screencast. */
   startedAt: number;
@@ -112,14 +121,28 @@ export interface FrameStyle {
   fill: number;
   radius: number;
   shadow: number;
-  /** Barra de navegador vectorial dibujada por el compositor, no capturada. */
-  chrome: 'none' | 'macos' | 'windows';
+  /**
+   * Marco dibujado por el compositor, no capturado.
+   *
+   * `macos` y `windows` son barras de navegador y solo ocupan alto por arriba.
+   * `phone` es un bisel que rodea el contenido por los cuatro lados, para
+   * grabaciones verticales: una barra de escritorio sobre un encuadre 9:16
+   * chirria.
+   */
+  chrome: 'none' | 'macos' | 'windows' | 'phone';
   /** Dominio mostrado en la barra sintetica. */
   chromeLabel?: string;
   /** Tema de la barra. Por defecto oscuro, que es lo que pega con apps oscuras. */
   chromeTheme?: 'light' | 'dark';
   /** Cursor sintetico redibujado desde el log. 'none' lo oculta. */
   cursor?: 'arrow' | 'none';
+  /**
+   * Rotula el elemento pulsado con su texto, sacado del DOM al grabar.
+   * Ausente cuenta como falso: las grabaciones anteriores no cambian de aspecto.
+   */
+  labels?: boolean;
+  /** Muestra las teclas pulsadas. Las imprimibles salen como un punto. */
+  keys?: boolean;
 }
 
 /** Un tramo de zoom automatico, editable a mano en el timeline. */
@@ -154,6 +177,12 @@ export interface Project {
    * corte devuelve el trozo, y volver a detectar no degrada nada.
    */
   cuts?: Cut[];
+  /**
+   * Tramos que se reproducen a otra velocidad. Como los cortes, se guardan como
+   * datos y no se aplican al material: quitar una aceleracion devuelve el tramo
+   * a tiempo real sin haber degradado nada.
+   */
+  speeds?: Speed[];
   export: ExportSettings;
 }
 

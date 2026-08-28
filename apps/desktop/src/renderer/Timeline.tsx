@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { moveSegment, resizeSegment, clampTrim } from '@vitrina/core';
-import type { Cut, ZoomSegment } from '@vitrina/core';
+import type { Cut, ZoomSegment, Speed } from '@vitrina/core';
 
 /**
  * Linea de tiempo editable.
@@ -34,6 +34,8 @@ export interface TimelineProps {
   /** Silencios quitados. Se pintan como el recorte porque son lo mismo: trozos
    *  que no llegan a la salida. */
   cuts?: Cut[];
+  /** Tramos acelerados. Se pintan distinto de los cortes: siguen en el video. */
+  speeds?: Speed[];
   onTrim: (t: { trimStartMs: number; trimEndMs: number | null }) => void;
 }
 
@@ -132,6 +134,15 @@ export function Timeline(props: TimelineProps) {
       {(props.cuts ?? []).map((c, i) => (
         <div key={`c${i}`} className="recorte corte" title="Silencio quitado"
              style={{ left: pct(c.startMs), width: pct(c.endMs - c.startMs) }} />
+      ))}
+      {/* Los acelerados NO se pintan como los cortes: un corte quita material y
+          uno acelerado lo conserva. Confundirlos visualmente haria pensar que se
+          ha perdido algo. */}
+      {(props.speeds ?? []).map((v, i) => (
+        <div key={`v${i}`} className="veloz" title={`×${v.rate} en este tramo`}
+             style={{ left: pct(v.startMs), width: pct(v.endMs - v.startMs) }}>
+          <span>×{v.rate}</span>
+        </div>
       ))}
 
       {zooms.map((z, i) => (

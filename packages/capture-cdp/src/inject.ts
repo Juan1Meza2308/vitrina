@@ -4,8 +4,11 @@
  *
  * Por que desde el DOM y no con un hook del sistema operativo:
  *
- *  - Las coordenadas llegan en client space del viewport emulado, que mapea 1:1
- *    con el frame del screencast. Cero matematica de scroll o escala.
+ *  - Las coordenadas llegan en client space del viewport emulado. Se multiplican
+ *    por `devicePixelRatio` para dejarlas en pixeles del FRAME, que es el
+ *    espacio en el que trabajan la camara y el compositor. En horizontal el
+ *    ratio es 1 y no cambia nada; grabando en vista de movil vale 2 o 3, y sin
+ *    esta conversion la camara encuadraria la esquina superior izquierda.
  *  - `Date.now()` aqui y `metadata.timestamp` del screencast comparten reloj,
  *    asi que la sincronizacion sale gratis. Con un hook del SO alinear el log
  *    con los frames es un dolor permanente.
@@ -24,11 +27,17 @@ export const INJECT_SOURCE = String.raw`
 
   const send = (o) => { try { window.__vitrina(JSON.stringify(o)); } catch (e) {} };
 
+  // De px CSS a px del frame. Se lee en cada evento y no una vez al instalar:
+  // la emulacion puede aplicarse despues de que el script corra, y un valor
+  // congelado a 1 dejaria todo el log a escala equivocada.
+  const k = () => window.devicePixelRatio || 1;
+  const px = (v) => Math.round(v * k());
+
   const rect = (el) => {
     if (!el || !el.getBoundingClientRect) return null;
     const r = el.getBoundingClientRect();
     if (!r.width || !r.height) return null;
-    return { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.width), h: Math.round(r.height) };
+    return { x: px(r.x), y: px(r.y), w: px(r.width), h: px(r.height) };
   };
 
   // Si el objetivo es un icono o un span dentro de un boton, su caja es
@@ -50,7 +59,7 @@ export const INJECT_SOURCE = String.raw`
     const now = performance.now();
     if (now - lastMove < 8) return;          // ~120 Hz basta para suavizar el trazo
     lastMove = now;
-    send({ t: Date.now(), type: 'move', x: Math.round(e.clientX), y: Math.round(e.clientY) });
+    send({ t: Date.now(), type: 'move', x: px(e.clientX), y: px(e.clientY) });
   }, true);
 
   ['pointerdown', 'pointerup'].forEach((type) => {
@@ -59,7 +68,7 @@ export const INJECT_SOURCE = String.raw`
       send({
         t: Date.now(),
         type: type === 'pointerdown' ? 'down' : 'up',
-        x: Math.round(e.clientX), y: Math.round(e.clientY),
+        x: px(e.clientX), y: px(e.clientY),
         rect: rect(el), tag: el && el.tagName, label: label(el),
       });
     }, true);
@@ -67,7 +76,7 @@ export const INJECT_SOURCE = String.raw`
 
   addEventListener('wheel', (e) => send({
     t: Date.now(), type: 'wheel',
-    x: Math.round(e.clientX), y: Math.round(e.clientY), dy: Math.round(e.deltaY),
+    x: px(e.clientX), y: px(e.clientY), dy: px(e.deltaY),
   }), true);
 
   // Nunca se registra la tecla pulsada si es imprimible. Grabar caracteres
@@ -77,7 +86,7 @@ export const INJECT_SOURCE = String.raw`
   }), true);
 
   addEventListener('scroll', () => send({
-    t: Date.now(), type: 'scroll', sy: Math.round(scrollY),
+    t: Date.now(), type: 'scroll', sy: px(scrollY),
   }), true);
 })();
 `;

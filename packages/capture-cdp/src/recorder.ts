@@ -6,8 +6,12 @@
  * decisiones no son obvias y conviene no revertirlas sin volver a medir:
  *
  *  1. La resolucion se consigue con un VIEWPORT EMULADO GRANDE, no subiendo el
- *     deviceScaleFactor. `Page.startScreencast` ignora por completo el DSF y
- *     entrega siempre el viewport CSS a 1:1, en headed y en headless.
+ *     deviceScaleFactor puesto por `Emulation`: `Page.startScreencast` lo
+ *     ignora y entrega el viewport CSS a 1:1. Lo que SI funciona es forzar la
+ *     escala al lanzar el navegador con `--force-device-scale-factor`, porque
+ *     entonces el surface del compositor nace ya escalado (M7). Hay que
+ *     ponerla en los dos sitios: solo en el navegador, la pagina cree tener
+ *     dpr 1 y carga assets de baja resolucion.
  *  2. El ack del frame se envia ANTES de tocar los datos. CDP no manda el frame
  *     siguiente hasta recibirlo, asi que cualquier trabajo sincrono en el
  *     handler se convierte directamente en fps perdidos.
@@ -31,10 +35,42 @@ import { INJECT_SOURCE, BINDING_NAME } from './inject.ts';
 import { jpegSize } from './jpeg.ts';
 import type { CdpClient } from './cdp.ts';
 
+/**
+ * Ventana fisica con la forma del viewport emulado, cabiendo en el hueco dado.
+ *
+ * Da igual para el fichero resultante —el screencast entrega el viewport
+ * emulado a su tamano, no el de la ventana— pero no da igual para quien graba:
+ * con un viewport 9:16 dentro de una ventana apaisada, el navegador encaja el
+ * contenido a lo alto y la demo se hace mirando una tira diminuta en medio de
+ * dos franjas vacias.
+ */
+export function ventanaPara(
+  viewport: CaptureSize,
+  hueco: { width: number; height: number } = { width: 1280, height: 780 },
+): { width: number; height: number } {
+  const escala = Math.min(hueco.width / viewport.w, hueco.height / viewport.h, 1);
+  return {
+    // Chrome tiene un ancho minimo de ventana; pedir menos no rompe nada porque
+    // el emulado manda, solo deja bandas a los lados mientras se graba.
+    width: Math.max(1, Math.round(viewport.w * escala)),
+    height: Math.max(1, Math.round(viewport.h * escala)),
+  };
+}
+
 export interface RecorderOptions {
   url: string;
   /** Viewport emulado en css px. Es tambien el tamano exacto de cada frame. */
+  /**
+   * Viewport emulado en px CSS. Es lo que ve la pagina y lo que decide su
+   * maquetacion; con `deviceScaleFactor` > 1 los frames salen mas grandes.
+   */
   viewport: CaptureSize;
+  /**
+   * Escala de dispositivo. Multiplica el tamano de los frames sin tocar la
+   * maquetacion: es lo que permite grabar la vista de movil (430 px CSS) con
+   * resolucion de publicar (1290 px). Ver M7 en spikes/HALLAZGOS.md.
+   */
+  deviceScaleFactor?: number;
   /** 92 por defecto: en M0 la calidad no afecta al rendimiento, asi que sale gratis. */
   quality?: number;
   outDir: string;
@@ -99,14 +135,19 @@ export class Recorder {
     // La ventana fisica no tiene que coincidir con el viewport emulado: puede
     // ser mas pequena y el navegador reescala para mostrarla. Eso es lo que
     // permite grabar a 1600x900 en un monitor de 1080p.
-    const win = this.opts.window ?? { width: 1280, height: 780 };
+    const dsf = this.opts.deviceScaleFactor ?? 1;
+    const win = this.opts.window ?? ventanaPara(this.marco());
     this.child = spawn(
       browser.path,
       launchFlags({
         port: this.opts.port,
         profileDir: this.profileDir,
-        windowWidth: win.width,
-        windowHeight: win.height,
+        // `--window-size` va en DIP, asi que con escala 3 hay que pedir un
+        // tercio o la ventana sale tres veces mas grande que la pantalla y
+        // quien graba hace la demo a ciegas.
+        windowWidth: Math.max(200, Math.round(win.width / dsf)),
+        windowHeight: Math.max(200, Math.round(win.height / dsf)),
+        deviceScaleFactor: dsf,
       }),
       { stdio: 'ignore' },
     );
@@ -139,12 +180,23 @@ export class Recorder {
     await Page.navigate({ url: this.opts.url });
     await Promise.race([loaded, sleep(15000)]);
 
+    // La escala se pone TAMBIEN aqui, no solo al lanzar: forzada solo en el
+    // navegador, los frames salen grandes pero la pagina cree tener dpr 1 y
+    // carga los assets de baja resolucion, con lo que se ve blanda pese al
+    // tamano. Medido en M7, caso C.
     await Emulation.setDeviceMetricsOverride({
       width: this.opts.viewport.w,
       height: this.opts.viewport.h,
-      deviceScaleFactor: 1,
+      deviceScaleFactor: this.opts.deviceScaleFactor ?? 1,
       mobile: false,
     });
+    // Un movil no ensena barra de scroll de escritorio, y con el viewport
+    // emulado a 430 px asomaba una en el borde derecho de la "pantalla". Es
+    // experimental, asi que si el navegador no la tiene se sigue: una barra de
+    // mas es un defecto estetico, no un motivo para no poder grabar.
+    if ((this.opts.deviceScaleFactor ?? 1) !== 1) {
+      await Emulation.setScrollbarsHidden({ hidden: true }).catch(() => {});
+    }
     await sleep(400);
     return browser;
   }
@@ -164,7 +216,7 @@ export class Recorder {
   async start(): Promise<void> {
     if (!this.client) throw new Error('launch() antes de start()');
     const { Page } = this.client;
-    this.expected = this.opts.viewport;
+    this.expected = this.marco();
 
     this.client.on(
       'Page.screencastFrame',
@@ -228,6 +280,7 @@ export class Recorder {
       browser: this.browser?.label ?? 'desconocido',
       url: this.opts.url,
       viewport: this.opts.viewport,
+      deviceScaleFactor: this.opts.deviceScaleFactor ?? 1,
       capture: this.frames.length ? this.expected : null,
       quality: this.opts.quality,
       startedAt: this.startedAt,
@@ -252,8 +305,10 @@ export class Recorder {
     // la grabe el CLI, la app o una herramienta.
     const projectPath = path.join(this.opts.outDir, 'project.json');
     if (!(await exists(projectPath))) {
-      const project = defaultProject({ host: hostFromUrl(this.opts.url) });
       const viewport = manifest.capture ?? manifest.viewport;
+      // `capture` decide la forma de la salida y el tipo de marco: una grabacion
+      // vertical tiene que abrirse ya en 9:16 y con marco de movil.
+      const project = defaultProject({ host: hostFromUrl(this.opts.url), capture: viewport });
       const budget = computeQualityBudget(viewport, project.export, project.frame);
       project.zooms = planSegments({
         events: this.events,
@@ -280,6 +335,19 @@ export class Recorder {
     if (this.profileDir) {
       await fsp.rm(this.profileDir, { recursive: true, force: true }).catch(() => {});
     }
+  }
+
+  /**
+   * Tamano real de cada frame: viewport CSS por la escala.
+   *
+   * Con escala 1 coincide con el viewport, que es el caso apaisado de siempre.
+   */
+  private marco(): CaptureSize {
+    const dsf = this.opts.deviceScaleFactor ?? 1;
+    return {
+      w: Math.round(this.opts.viewport.w * dsf),
+      h: Math.round(this.opts.viewport.h * dsf),
+    };
   }
 
   private async waitForPort(timeoutMs = 20000): Promise<void> {

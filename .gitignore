@@ -4,5 +4,7 @@ out/
 grabaciones/
 spikes/out/
 apps/desktop/captura-*.png
+apps/desktop/editor-vertical.png
+apps/desktop/marco*.png
 *.log
 .DS_Store

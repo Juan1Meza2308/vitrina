@@ -20,6 +20,7 @@
     "app": "npm run dev --workspace @vitrina/desktop",
     "app:build": "npm run build --workspace @vitrina/desktop",
     "app:check": "npm run app:build && node tools/grabar-demo.ts --si-falta && node tools/verificar-app.ts grabaciones/demo.vitrina",
+    "app:check:vertical": "npm run app:build && node tools/verificar-app.ts --vertical",
     "calibrar": "node tools/calibrar.ts",
     "app:dist": "npm run app:build && electron-builder --projectDir apps/desktop --config electron-builder.yml",
     "demo": "node tools/grabar-demo.ts"

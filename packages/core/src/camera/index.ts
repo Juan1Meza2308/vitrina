@@ -8,7 +8,7 @@
  */
 export { planSegments } from './segments.ts';
 export type { PlanOptions } from './segments.ts';
-export { buildCameraTrack, CameraTrack, CursorPath } from './track.ts';
+export { buildCameraTrack, CameraTrack, CursorPath, SUAVIZADO_CURSOR_MS } from './track.ts';
 export type { BuildTrackOptions } from './track.ts';
 export { CAMERA_PRESETS, cameraConfigForBudget } from './config.ts';
 export {

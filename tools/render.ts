@@ -17,7 +17,7 @@ import {
   buildCameraTrack, cameraConfigForBudget, computeQualityBudget, CAMERA_PRESETS, FrameIndex,
 } from '@vitrina/core';
 import type { InputEvent, Manifest, Project } from '@vitrina/core';
-import { composite, CursorSource } from '@vitrina/renderer';
+import { composite, CursorSource, OverlaySource } from '@vitrina/renderer';
 import type { Ctx, ImageLike } from '@vitrina/renderer';
 import { findFfmpeg } from '@vitrina/export';
 
@@ -50,6 +50,7 @@ async function main(): Promise<void> {
     startedAt: manifest.startedAt, durationMs: manifest.durationMs, config,
   });
   const cursor = new CursorSource(events, manifest.startedAt);
+const overlay = new OverlaySource(events, manifest.startedAt);
   const index = new FrameIndex(manifest);
 
   // El mismo fondo que usa el exportador. Sin esto la hoja de contacto mostraba
@@ -86,6 +87,7 @@ async function main(): Promise<void> {
       camera: track.sampleAt(tMs),
       project,
       cursor: cursor.sample(tMs),
+  overlay: overlay.sample(tMs),
       backgroundImage: fondo as unknown as ImageLike | null,
     });
   };

@@ -1,0 +1,97 @@
+<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Vitrina · fixture vertical</title>
+<!--
+  Fixture para grabacion en vertical.
+
+  El de estres (stress.html) es un panel de escritorio: en un viewport estrecho
+  se apelmaza en una columna ilegible y la prueba dejaria de significar nada.
+  Este esta pensado para 9:16 — cabecera, lista larga con scroll y botones
+  grandes y separados, que es lo que la camara tiene que saber encuadrar.
+
+  Va en claro a proposito, y no por gusto: la verificacion comprueba por pixeles
+  que el marco de movil rodea al contenido, y con una app oscura el bisel
+  (#0a0c10) y el fondo de la app serian el mismo color. En claro, carcasa,
+  pantalla y fondo del lienzo se distinguen sin ambiguedad.
+
+  Los botones llevan `id` porque la verificacion los localiza por selector y
+  pulsa en su centro.
+-->
+<style>
+  :root { --bg:#f7f8fa; --card:#ffffff; --line:#e3e6ea; --fg:#141922; --dim:#6b7480; --acc:#3d5afe; }
+  * { box-sizing:border-box; margin:0; }
+  body { background:var(--bg); color:var(--fg); font:16px/1.5 system-ui,Segoe UI,sans-serif; }
+
+  header { padding:34px 20px 16px; background:var(--card); border-bottom:1px solid var(--line); }
+  h1 { font-size:27px; letter-spacing:-.02em; }
+  .sub { color:var(--dim); font-size:14px; margin-top:4px; }
+
+  .acciones { display:flex; gap:10px; padding:18px 20px; }
+  button { flex:1; background:var(--card); border:1px solid var(--line); color:var(--fg);
+           border-radius:12px; padding:16px 12px; font:inherit; font-size:15px; cursor:pointer;
+           transition:.15s; }
+  button:hover { border-color:var(--acc); }
+  button.on { border-color:var(--acc); color:#fff; background:var(--acc); }
+
+  .campo { padding:0 20px 18px; }
+  input { width:100%; background:var(--card); border:1px solid var(--line); border-radius:12px;
+          padding:15px 14px; color:var(--fg); font:inherit; }
+
+  .total { margin:0 20px 18px; background:var(--card); border:1px solid var(--line);
+           border-radius:16px; padding:20px; }
+  .total span { color:var(--dim); font-size:13px; text-transform:uppercase; letter-spacing:.08em; }
+  .total b { display:block; font-size:34px; font-weight:600; letter-spacing:-.02em; margin-top:6px; }
+
+  ul { list-style:none; padding:0 20px 40px; }
+  li { display:flex; align-items:center; gap:14px; padding:16px 0; border-bottom:1px solid var(--line); }
+  .punto { width:44px; height:44px; border-radius:14px; background:#eef0f4;
+           border:1px solid var(--line); flex:none; }
+  .txt b { display:block; font-size:15px; font-weight:500; }
+  .txt small { color:var(--dim); }
+</style>
+
+<header>
+  <h1>Pedidos</h1>
+  <div class="sub">Fixture vertical — diseno de movil, scroll largo</div>
+</header>
+
+<div class="acciones">
+  <button id="b1" class="on">Hoy</button>
+  <button id="b2">Semana</button>
+  <button id="b3">Mes</button>
+</div>
+
+<div class="campo">
+  <input id="i1" placeholder="Buscar pedido">
+</div>
+
+<div class="total">
+  <span>Total del periodo</span>
+  <b id="total">$3.360</b>
+</div>
+
+<ul id="lista"></ul>
+
+<script>
+  const lista = document.getElementById('lista');
+  const nombres = ['Ana Torres', 'Luis Prado', 'Marta Gil', 'Nico Sanz', 'Eva Rios',
+                   'Hugo Vela', 'Sara Nunez', 'Ivan Mora', 'Lia Cabo', 'Pau Serra'];
+  for (let i = 0; i < 24; i++) {
+    const li = document.createElement('li');
+    li.innerHTML = '<div class="punto"></div><div class="txt"><b>'
+      + nombres[i % nombres.length] + '</b><small>#' + (1040 + i) + ' · $'
+      + (60 + i * 7) + '</small></div>';
+    lista.appendChild(li);
+  }
+
+  const totales = { b1: '$3.360', b2: '$18.720', b3: '$74.900' };
+  for (const id of ['b1', 'b2', 'b3']) {
+    document.getElementById(id).addEventListener('click', () => {
+      for (const otro of ['b1', 'b2', 'b3']) {
+        document.getElementById(otro).classList.toggle('on', otro === id);
+      }
+      document.getElementById('total').textContent = totales[id];
+    });
+  }
+</script>

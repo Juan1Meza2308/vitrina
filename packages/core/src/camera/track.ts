@@ -182,12 +182,29 @@ function followCursor(
 }
 
 /** Posicion del cursor en cualquier instante, interpolada entre eventos de movimiento. */
+/**
+ * Asentamiento por defecto del cursor dibujado, en ms.
+ *
+ * Corto a proposito. Suavizar el puntero quita el temblor de la mano y da el
+ * movimiento deliberado que distingue una demo cuidada, pero un muelle lento
+ * llega tarde: si el puntero se dibuja lejos del boton en el instante del
+ * click, la onda y el cursor se contradicen y se ve peor que el temblor. A
+ * 90 ms el error durante una pausa antes de pulsar —que es lo que hace todo el
+ * mundo— ya es de menos de un pixel.
+ */
+export const SUAVIZADO_CURSOR_MS = 90;
+
 export class CursorPath {
   private ts: Float64Array;
   private xs: Float32Array;
   private ys: Float32Array;
 
-  constructor(events: InputEvent[], startedAt: number) {
+  /**
+   * @param settleMs 0 deja la trayectoria cruda. Es lo que quiere el motor de
+   *   camara: ya tiene su propio muelle, y encadenar dos suavizados haria que
+   *   el encuadre persiguiera a un puntero que a su vez persigue al raton.
+   */
+  constructor(events: InputEvent[], startedAt: number, settleMs = 0) {
     const moves = events
       .filter((e) => e.x !== undefined && e.y !== undefined && e.type !== 'scroll')
       .map((e) => ({ rt: e.t - startedAt, x: e.x!, y: e.y! }))
@@ -202,6 +219,55 @@ export class CursorPath {
       this.xs[i] = m.x;
       this.ys[i] = m.y;
     }
+
+    if (settleMs > 0 && moves.length > 1) this.suavizar(settleMs);
+  }
+
+  /**
+   * Reescribe la trayectoria pasandola por el mismo muelle criticamente
+   * amortiguado que usa la camara, remuestreada a 240 Hz.
+   *
+   * Se remuestrea y no se filtran las muestras originales porque llegan a
+   * ritmo irregular —el log limita los `move` a ~120 Hz pero un tramo quieto no
+   * produce ninguno—, y un filtro sobre muestras desiguales suaviza distinto
+   * segun lo rapido que se moviera la mano.
+   */
+  private suavizar(settleMs: number): void {
+    const dur = this.ts[this.ts.length - 1]! - this.ts[0]!;
+    const n = Math.max(2, Math.ceil((dur / 1000) * HZ) + 1);
+    const t0 = this.ts[0]!;
+
+    const settleSec = Math.max(0.02, settleMs / 1000);
+    const omega = 4 / settleSec;              // amortiguamiento critico: damping 1
+    const k = omega * omega;
+    const c = 2 * omega;
+    const dt = 1 / HZ;
+
+    const ts = new Float64Array(n);
+    const xs = new Float32Array(n);
+    const ys = new Float32Array(n);
+
+    let x = this.xs[0]!;
+    let y = this.ys[0]!;
+    let vx = 0;
+    let vy = 0;
+
+    for (let i = 0; i < n; i++) {
+      const tMs = t0 + (i / HZ) * 1000;
+      const objetivo = this.at(tMs)!;
+      // Euler semi-implicito, igual que el motor de camara.
+      vx += (-k * (x - objetivo.x) - c * vx) * dt;
+      vy += (-k * (y - objetivo.y) - c * vy) * dt;
+      x += vx * dt;
+      y += vy * dt;
+      ts[i] = tMs;
+      xs[i] = x;
+      ys[i] = y;
+    }
+
+    this.ts = ts;
+    this.xs = xs;
+    this.ys = ys;
   }
 
   at(tMs: number): Point | null {

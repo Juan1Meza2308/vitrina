@@ -7,7 +7,7 @@
  */
 import { contextBridge, ipcRenderer } from 'electron';
 import type {
-  CameraPresetName, CapturePreset, Cut, InputEvent, Manifest, Project,
+  CameraPresetName, CapturePreset, Cut, InputEvent, Manifest, Orientacion, Project,
 } from '@vitrina/core';
 
 export interface RecordingData {
@@ -61,8 +61,12 @@ const api = {
   audioChunk: (chunk: Uint8Array): void => ipcRenderer.send('audio:chunk', chunk),
   audioStop: (): Promise<unknown> => ipcRenderer.invoke('audio:stop'),
 
-  startRecording: (url: string, presetName: string): Promise<{ dir: string; preset: CapturePreset }> =>
-    ipcRenderer.invoke('record:start', { url, presetName }),
+  startRecording: (
+    url: string,
+    presetName: string,
+    orientacion: Orientacion,
+  ): Promise<{ dir: string; preset: CapturePreset }> =>
+    ipcRenderer.invoke('record:start', { url, presetName, orientacion }),
   stopRecording: (): Promise<RecordingData> => ipcRenderer.invoke('record:stop'),
   onRecordProgress: (cb: (p: RecordProgress) => void) => subscribe('record:progress', cb),
 

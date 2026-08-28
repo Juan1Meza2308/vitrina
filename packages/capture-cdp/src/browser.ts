@@ -156,8 +156,20 @@ export function launchFlags(opts: {
   profileDir: string;
   windowWidth: number;
   windowHeight: number;
+  /**
+   * Escala de dispositivo forzada al navegador entero.
+   *
+   * Es lo que permite grabar la VISTA DE MOVIL sin perder resolucion: con un
+   * viewport de 430 px CSS la web muestra su diseno movil, y a escala 3 el
+   * screencast entrega 1290 px de ancho. Ponerla por `Emulation` no sirve
+   * —`startScreencast` la ignora, medido en M0—; forzada al lanzar el
+   * navegador el surface del compositor nace ya a esa escala. Ver M7.
+   */
+  deviceScaleFactor?: number;
 }): string[] {
+  const dsf = opts.deviceScaleFactor ?? 1;
   return [
+    ...(dsf !== 1 ? [`--force-device-scale-factor=${dsf}`] : []),
     `--remote-debugging-port=${opts.port}`,
     `--user-data-dir=${opts.profileDir}`,
     '--app=about:blank',

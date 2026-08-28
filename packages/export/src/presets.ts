@@ -10,7 +10,7 @@
 import type { Background, ExportSettings } from '@vitrina/core';
 
 export type ExportPresetName =
-  | '720p' | '1080p' | 'gif' | 'cuadrado' | 'vertical' | 'alpha';
+  | '720p' | '1080p' | 'gif' | 'cuadrado' | 'vertical' | 'vertical 720' | 'alpha';
 
 export interface ExportPreset extends ExportSettings {
   name: string;
@@ -46,7 +46,11 @@ export const EXPORT_PRESETS: Record<ExportPresetName, ExportPreset> = {
   },
   vertical: {
     name: 'vertical', width: 1080, height: 1920, fps: 60, format: 'mp4',
-    nota: 'recorte 9:16 para stories y shorts',
+    nota: '9:16 para stories y shorts; nativo si grabaste en vertical',
+  },
+  'vertical 720': {
+    name: 'vertical 720', width: 720, height: 1280, fps: 60, format: 'mp4',
+    nota: '9:16 mas pequeno: lo que toca cuando 1080 dejaria el video sin margen',
   },
   alpha: {
     name: 'alpha', width: 1280, height: 720, fps: 60, format: 'mov',

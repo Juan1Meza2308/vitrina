@@ -13,8 +13,28 @@ import type { CapturePreset } from './quality.ts';
 export const MEDIDO_EN = 'Intel(R) Core(TM) i5-7500 CPU @ 3.40GHz · win32';
 
 export const PRESETS_MEDIDOS: CapturePreset[] = [
-  { name: 'fluido', capture: { w: 1280, h: 720 }, measuredFps: 99, p95DeltaMs: 11 },
-  { name: 'equilibrado', capture: { w: 1600, h: 900 }, measuredFps: 99, p95DeltaMs: 20.5 },
-  { name: 'nitido', capture: { w: 1920, h: 1080 }, measuredFps: 62, p95DeltaMs: 33.6 },
-  { name: 'maximo', capture: { w: 2560, h: 1440 }, measuredFps: 41, p95DeltaMs: 52.3 },
+  {
+    name: 'fluido',
+    css: { w: 960, h: 540 }, dsf: 1.5,
+    capture: { w: 1440, h: 810 },
+    measuredFps: 101, p95DeltaMs: 12.4,
+  },
+  {
+    name: 'equilibrado',
+    css: { w: 1152, h: 648 }, dsf: 1.5,
+    capture: { w: 1728, h: 972 },
+    measuredFps: 92, p95DeltaMs: 23.6,
+  },
+  {
+    name: 'nitido',
+    css: { w: 1280, h: 720 }, dsf: 1.5,
+    capture: { w: 1920, h: 1080 },
+    measuredFps: 61, p95DeltaMs: 32.8,
+  },
+  {
+    name: 'maximo',
+    css: { w: 1280, h: 720 }, dsf: 2,
+    capture: { w: 2560, h: 1440 },
+    measuredFps: 45, p95DeltaMs: 55.5,
+  },
 ];
