@@ -23,7 +23,7 @@ import {
 } from '@vitrina/core';
 import type { AudioTrack, CameraPresetName, Cut, InputEvent, Manifest, Orientacion, Project } from '@vitrina/core';
 import { exportRecording, EXPORT_PRESETS, ExportAbortedError, findFfmpeg } from '@vitrina/export';
-import { normalizarAjustes, type Ajustes } from './ajustes.ts';
+import { normalizarAjustes, aplicarLook, type Ajustes } from './ajustes.ts';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -333,6 +333,19 @@ ipcMain.handle('record:stop', async () => {
   // Planificar la camara nada mas parar: el usuario no deberia tener que pedir
   // el zoom automatico, es la razon de ser de la herramienta.
   await planAndSave(recordingDir, 'normal');
+
+  // Y aplicar el look por defecto, si lo hay. Va aqui y no en `defaultProject`
+  // porque ese vive en la libreria de captura, que no sabe nada de ajustes de
+  // usuario y no debe saberlo.
+  const ajustes = await leerAjustes();
+  const look = ajustes.looks.find((l) => l.nombre === ajustes.lookPorDefecto);
+  if (look) {
+    const ruta = path.join(recordingDir, 'project.json');
+    try {
+      const p = JSON.parse(await fsp.readFile(ruta, 'utf8')) as Project;
+      await fsp.writeFile(ruta, JSON.stringify(aplicarLook(p, look), null, 2));
+    } catch { /* sin look: la grabacion sigue siendo valida */ }
+  }
   return loadRecording(recordingDir);
 });
 
@@ -453,6 +466,27 @@ ipcMain.handle('background:choose', async (_e, dir: string) => {
 
   const ext = path.extname(origen).toLowerCase() || '.png';
   const destino = `fondo${ext}`;
+  await fsp.copyFile(origen, path.join(path.resolve(dir), destino));
+  return destino;
+});
+
+/**
+ * Copia la imagen de la marca DENTRO de la carpeta, igual que el fondo.
+ *
+ * La grabacion tiene que poder moverse de maquina y seguir exportando: si se
+ * guardara la ruta original, el export fallaria en cuanto se moviera el fichero.
+ */
+ipcMain.handle('watermark:choose', async (_e, dir: string) => {
+  const r = await dialog.showOpenDialog({
+    title: 'Marca de agua',
+    properties: ['openFile'],
+    filters: [{ name: 'Imagenes', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+  });
+  const origen = r.canceled ? null : r.filePaths[0];
+  if (!origen) return null;
+
+  const ext = path.extname(origen).toLowerCase() || '.png';
+  const destino = `marca${ext}`;
   await fsp.copyFile(origen, path.join(path.resolve(dir), destino));
   return destino;
 });

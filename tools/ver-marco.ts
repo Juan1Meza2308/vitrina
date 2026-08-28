@@ -44,6 +44,9 @@ const track = buildCameraTrack({
 });
 const cursor = new CursorSource(events, manifest.startedAt);
 const overlay = new OverlaySource(events, manifest.startedAt);
+const marca = project.watermark?.path
+  ? await loadImage(path.join(dir, project.watermark.path)).catch(() => null)
+  : null;
 
 composite({
   ctx: canvas.getContext('2d') as never,
@@ -53,6 +56,7 @@ composite({
   project,
   cursor: cursor.sample(tMs),
   overlay: overlay.sample(tMs),
+  watermarkImage: marca as never,
 });
 
 await fsp.writeFile(salida, canvas.toBuffer('image/png'));

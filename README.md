@@ -45,6 +45,7 @@ todavía no.
 | Cursor suavizado | hecho |
 | Rótulos y teclas en pantalla | hecho |
 | Editor tipo CapCut · deshacer · memoria | hecho |
+| Looks guardados y marca de agua | hecho |
 | macOS y Windows | hecho (sin probar en Mac) |
 | Grabación vertical (9:16) | hecho |
 
@@ -399,6 +400,26 @@ La app **recuerda** la última dirección, preset, orientación y micrófono en 
 `ajustes.json` en `userData`, y ofrece las últimas grabaciones en la pantalla de
 inicio. Se guardan al grabar, no al teclear: escribir media URL y cerrar no
 debería dejarla puesta para la próxima vez.
+
+## Tu marca en cada demo
+
+Un **look** guarda el fondo, el marco y la marca de agua con un nombre. Se
+guardan en los ajustes y no dentro de la grabación porque son tuyos, no de una
+demo concreta: la gracia es aplicar el mismo a la siguiente. Uno se puede marcar
+con la estrella para que se aplique solo a las grabaciones nuevas.
+
+> Aplicar un look toca el **aspecto y nada más**: zooms, cortes, velocidades,
+> recorte y salida se quedan como estaban. Un look que arrastrara el montaje de
+> otra grabación sería una trampa, y hay un test que lo fija.
+
+La **marca de agua** va anclada al lienzo, no al contenido. Una marca que se
+moviera con el zoom sería un adorno dentro de la demo; quieta en una esquina es
+una firma.
+
+> La imagen se copia **dentro** de la carpeta `.vitrina`, igual que el fondo de
+> imagen, y el proyecto guarda una ruta relativa. Así la carpeta se puede mover
+> de máquina y sigue exportando igual. Guardar la ruta original haría que el
+> export fallara en cuanto se moviera el fichero.
 
 ## Ritmo: acelerar las esperas
 

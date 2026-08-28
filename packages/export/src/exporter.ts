@@ -145,6 +145,17 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
     events, segments: zooms, viewport: sourceSize,
     startedAt: manifest.startedAt, durationMs: manifest.durationMs, config,
   });
+  // La marca se carga como el fondo de imagen: ruta relativa dentro de la
+  // carpeta, para que la grabacion siga siendo autocontenida.
+  let marca: Awaited<ReturnType<typeof loadImage>> | null = null;
+  if (project.watermark?.path) {
+    try {
+      marca = await loadImage(path.join(root, project.watermark.path));
+    } catch {
+      warnings.push(`No se pudo cargar la marca de agua (${project.watermark.path}).`);
+    }
+  }
+
   const cursor = new CursorSource(events, manifest.startedAt);
   const overlay = new OverlaySource(events, manifest.startedAt);
   const index = new FrameIndex(manifest);
@@ -244,6 +255,7 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
         project: renderProject,
         cursor: cursor.sample(tMs),
         overlay: overlay.sample(tMs),
+        watermarkImage: marca as unknown as ImageLike | null,
         backgroundImage: fondo as unknown as ImageLike | null,
       });
 

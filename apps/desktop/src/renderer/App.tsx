@@ -9,7 +9,7 @@ import {
 import type {
   Background, CameraPresetName, CapturePreset, Cut, Orientacion, Project, ZoomSegment,
 } from '@vitrina/core';
-import type { RecordingData, ExportProgressMsg, ExportPresetInfo, GrabacionReciente } from '../preload/index.ts';
+import type { RecordingData, ExportProgressMsg, ExportPresetInfo, GrabacionReciente, Look } from '../preload/index.ts';
 import { Preview, makeTrack } from './preview.ts';
 import { Timeline } from './Timeline.tsx';
 import { grabarMicrofono, listarMicrofonos, type MicHandle, type DispositivoAudio } from './mic.ts';
@@ -380,6 +380,15 @@ function Editor({ datos, onSalir }: { datos: RecordingData; onSalir: () => void 
   // mano, recalcularlos en cada render borraria el trabajo del usuario. Viven
   // dentro del historial, arriba, junto al proyecto.
   const [seleccion, setSeleccion] = useState<number | null>(null);
+  const [looks, setLooks] = useState<Look[]>([]);
+  const [lookPorDefecto, setLookPorDefecto] = useState<string | null>(null);
+
+  useEffect(() => {
+    void window.vitrina.ajustes().then((a) => {
+      setLooks(a.looks);
+      setLookPorDefecto(a.lookPorDefecto);
+    });
+  }, []);
 
   const lienzo = useRef<HTMLCanvasElement>(null);
   const preview = useRef<Preview | null>(null);
@@ -423,6 +432,45 @@ function Editor({ datos, onSalir }: { datos: RecordingData; onSalir: () => void 
   const acelerarEsperas = useCallback(() => {
     setProject((p) => ({ ...p, speeds: propuesta }));
   }, [propuesta]);
+
+  const guardarLook = useCallback(async () => {
+    const nombre = window.prompt('Nombre del look', `Look ${looks.length + 1}`)?.trim();
+    if (!nombre) return;
+    // Un nombre repetido sustituye en vez de duplicar: dos looks iguales en la
+    // lista no le sirven a nadie.
+    const nuevo: Look = {
+      nombre,
+      background: project.background,
+      frame: project.frame,
+      watermark: project.watermark ?? null,
+    };
+    const lista = [...looks.filter((l) => l.nombre !== nombre), nuevo];
+    setLooks(lista);
+    await window.vitrina.guardarAjustes({ looks: lista });
+  }, [looks, project.background, project.frame, project.watermark]);
+
+  const usarLook = useCallback((l: Look) => {
+    setProject((p) => ({
+      ...p,
+      background: l.background,
+      frame: l.frame,
+      watermark: l.watermark ?? null,
+    }));
+  }, [setProject]);
+
+  const marcarPorDefecto = useCallback(async (nombre: string | null) => {
+    setLookPorDefecto(nombre);
+    await window.vitrina.guardarAjustes({ lookPorDefecto: nombre });
+  }, []);
+
+  const elegirMarca = useCallback(async () => {
+    const ruta = await window.vitrina.elegirMarca(datos.dir);
+    if (!ruta) return;
+    setProject((p) => ({
+      ...p,
+      watermark: { path: ruta, esquina: 'se', opacity: 0.75, scale: 0.12 },
+    }));
+  }, [datos.dir, setProject]);
 
   const replanificar = useCallback((preset: CameraPresetName) => {
     const config = cameraConfigForBudget(CAMERA_PRESETS[preset], presupuesto.maxSharpZoom);
@@ -764,6 +812,76 @@ function Editor({ datos, onSalir }: { datos: RecordingData; onSalir: () => void 
                          : p.background,
                      }))} />
             </div>
+          )}
+        </div>
+        <div className="grupo">
+          <h3>Looks</h3>
+          {looks.length === 0 && (
+            <p className="sutil">
+              Guarda el fondo, el marco y la marca para reutilizarlos en la
+              siguiente demo.
+            </p>
+          )}
+          {looks.map((l) => (
+            <div key={l.nombre} className="look">
+              <button onClick={() => usarLook(l)} title="Aplicar a esta grabacion">
+                {l.nombre}
+              </button>
+              <button className={`fijar${lookPorDefecto === l.nombre ? ' on' : ''}`}
+                      title="Aplicar solo a las grabaciones nuevas"
+                      onClick={() => void marcarPorDefecto(
+                        lookPorDefecto === l.nombre ? null : l.nombre)}>
+                ★
+              </button>
+            </div>
+          ))}
+          <button onClick={() => void guardarLook()}>Guardar este look</button>
+        </div>
+
+        <div className="grupo">
+          <h3>Marca de agua</h3>
+          <button onClick={() => void elegirMarca()}
+                  className={project.watermark ? 'on' : ''}>
+            {project.watermark ? 'Cambiar imagen...' : 'Anadir imagen...'}
+          </button>
+          {project.watermark && (
+            <>
+              <div className="fila">
+                {(['no', 'ne', 'so', 'se'] as const).map((e) => (
+                  <button key={e} className={project.watermark!.esquina === e ? 'on' : ''}
+                          title="Esquina"
+                          onClick={() => setProject((p) => ({
+                            ...p,
+                            watermark: p.watermark ? { ...p.watermark, esquina: e } : null,
+                          }))}>
+                    {e.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <div className="deslizador">
+                <label>Opacidad <b>{Math.round(project.watermark.opacity * 100)}%</b></label>
+                <input type="range" min={10} max={100}
+                       value={Math.round(project.watermark.opacity * 100)}
+                       onChange={(e) => setProject((p) => ({
+                         ...p,
+                         watermark: p.watermark
+                           ? { ...p.watermark, opacity: Number(e.target.value) / 100 } : null,
+                       }))} />
+              </div>
+              <div className="deslizador">
+                <label>Tamano <b>{Math.round(project.watermark.scale * 100)}%</b></label>
+                <input type="range" min={4} max={40}
+                       value={Math.round(project.watermark.scale * 100)}
+                       onChange={(e) => setProject((p) => ({
+                         ...p,
+                         watermark: p.watermark
+                           ? { ...p.watermark, scale: Number(e.target.value) / 100 } : null,
+                       }))} />
+              </div>
+              <button onClick={() => setProject((p) => ({ ...p, watermark: null }))}>
+                Quitar marca
+              </button>
+            </>
           )}
         </div>
       </aside>

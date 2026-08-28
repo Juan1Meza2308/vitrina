@@ -17,12 +17,17 @@ export interface RecordingData {
   project: Project;
 }
 
+export type { Look } from '../main/ajustes.ts';
+import type { Look } from '../main/ajustes.ts';
+
 export interface Ajustes {
   url: string;
   presetName: string;
   orientacion: Orientacion;
   micOn: boolean;
   micDeviceId: string;
+  looks: Look[];
+  lookPorDefecto: string | null;
 }
 
 export interface GrabacionReciente {
@@ -89,6 +94,8 @@ const api = {
   recientes: (limite = 5): Promise<GrabacionReciente[]> =>
     ipcRenderer.invoke('recordings:recent', limite),
   ajustes: (): Promise<Ajustes> => ipcRenderer.invoke('settings:get'),
+  elegirMarca: (dir: string): Promise<string | null> =>
+    ipcRenderer.invoke('watermark:choose', dir),
   guardarAjustes: (parcial: Partial<Ajustes>): Promise<Ajustes> =>
     ipcRenderer.invoke('settings:set', parcial),
   loadRecording: (dir: string): Promise<RecordingData> => ipcRenderer.invoke('recording:load', dir),

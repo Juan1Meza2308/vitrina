@@ -6,6 +6,7 @@ describe('normalizarAjustes', () => {
     const guardado = {
       url: 'http://localhost:4321', presetName: 'nitido',
       orientacion: 'vertical' as const, micOn: false, micDeviceId: 'abc',
+      looks: [], lookPorDefecto: null,
     };
     expect(normalizarAjustes(guardado)).toEqual(guardado);
   });

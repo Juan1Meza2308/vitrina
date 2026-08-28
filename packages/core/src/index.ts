@@ -1,6 +1,6 @@
 export type {
   Rect, InputEvent, InputEventType, Frame, CaptureSize, Manifest,
-  Background, FrameStyle, ZoomSegment, Project, ExportSettings,
+  Background, FrameStyle, ZoomSegment, Project, ExportSettings, Watermark,
 } from './types.ts';
 export {
   computeQualityBudget, describeBudget, clampZoom, pickPreset, CAPTURE_PRESETS, MEDIDO_EN,

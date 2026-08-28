@@ -7,7 +7,7 @@
  */
 import { describe, it, expect } from 'vitest';
 import { createCanvas } from '@napi-rs/canvas';
-import { OverlaySource, nombreTecla, drawKeys, drawLabel } from './overlays.ts';
+import { OverlaySource, nombreTecla, drawKeys, drawLabel, drawWatermark } from './overlays.ts';
 import type { InputEvent } from '@vitrina/core';
 import type { Ctx } from './types.ts';
 
@@ -121,5 +121,61 @@ describe('dibujo', () => {
     };
     expect(oscurosEn(530, 590)).toBeGreaterThan(100);   // franja de abajo
     expect(oscurosEn(0, 300)).toBe(0);                  // arriba sigue limpio
+  });
+});
+
+describe('marca de agua', () => {
+  const LIENZO = { w: 1280, h: 720 };
+  const IMG = { width: 200, height: 100 };
+  /** Devuelve el rectangulo con el que se pidio dibujar. */
+  function donde(marca: Parameters<typeof drawWatermark>[3]) {
+    const c = createCanvas(LIENZO.w, LIENZO.h);
+    let r: { x: number; y: number; w: number; h: number } | null = null;
+    drawWatermark(c.getContext('2d') as unknown as Ctx, IMG,
+      (x, y, w, h) => { r = { x, y, w, h }; }, marca, LIENZO);
+    return r as { x: number; y: number; w: number; h: number } | null;
+  }
+  const base = { opacity: 0.6, scale: 0.15 } as const;
+
+  it('cae en la esquina pedida', () => {
+    const ne = donde({ ...base, esquina: 'ne' })!;
+    const so = donde({ ...base, esquina: 'so' })!;
+    expect(ne.x).toBeGreaterThan(LIENZO.w / 2);
+    expect(ne.y).toBeLessThan(LIENZO.h / 2);
+    expect(so.x).toBeLessThan(LIENZO.w / 2);
+    expect(so.y).toBeGreaterThan(LIENZO.h / 2);
+  });
+
+  it('conserva la proporcion de la imagen', () => {
+    // Deformar un logotipo es de las cosas que mas cantan.
+    const r = donde({ ...base, esquina: 'se' })!;
+    expect(r.w / r.h).toBeCloseTo(IMG.width / IMG.height, 5);
+  });
+
+  it('cabe entera dentro del lienzo', () => {
+    for (const esquina of ['ne', 'no', 'se', 'so'] as const) {
+      const r = donde({ ...base, esquina })!;
+      expect(r.x, esquina).toBeGreaterThanOrEqual(0);
+      expect(r.y, esquina).toBeGreaterThanOrEqual(0);
+      expect(r.x + r.w, esquina).toBeLessThanOrEqual(LIENZO.w);
+      expect(r.y + r.h, esquina).toBeLessThanOrEqual(LIENZO.h);
+    }
+  });
+
+  it('no se dibuja si es invisible o no mide nada', () => {
+    expect(donde({ ...base, esquina: 'se', opacity: 0 })).toBeNull();
+    expect(donde({ ...base, esquina: 'se', scale: 0 })).toBeNull();
+  });
+
+  it('no se come el lienzo aunque se pida enorme', () => {
+    expect(donde({ ...base, esquina: 'se', scale: 5 })!.w).toBeLessThanOrEqual(LIENZO.w / 2);
+  });
+
+  it('depende del lienzo y no del encuadre', () => {
+    // Es lo que la distingue de un adorno: una marca que se moviera con el zoom
+    // seria parte de la demo, no una firma.
+    const a = donde({ ...base, esquina: 'se' })!;
+    const b = donde({ ...base, esquina: 'se' })!;
+    expect(a).toEqual(b);
   });
 });

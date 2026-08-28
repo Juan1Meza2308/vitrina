@@ -9,7 +9,20 @@
  * que dar los valores de fabrica: que la app no arranque porque un JSON quedo
  * mal escrito seria un desastre desproporcionado para lo que guarda.
  */
-import type { Orientacion } from '@vitrina/core';
+import type { Background, FrameStyle, Orientacion, Project, Watermark } from '@vitrina/core';
+
+/**
+ * Un "look" guardado: el aspecto, sin nada de una grabacion concreta.
+ *
+ * Se guarda con los ajustes y no dentro de la grabacion porque es del usuario,
+ * no de la demo: la gracia es aplicar el mismo a la siguiente.
+ */
+export interface Look {
+  nombre: string;
+  background: Background;
+  frame: FrameStyle;
+  watermark?: Watermark | null;
+}
 
 export interface Ajustes {
   url: string;
@@ -17,6 +30,9 @@ export interface Ajustes {
   orientacion: Orientacion;
   micOn: boolean;
   micDeviceId: string;
+  looks: Look[];
+  /** Nombre del look que se aplica solo a las grabaciones nuevas. */
+  lookPorDefecto: string | null;
 }
 
 export const AJUSTES_POR_DEFECTO: Ajustes = {
@@ -25,6 +41,8 @@ export const AJUSTES_POR_DEFECTO: Ajustes = {
   orientacion: 'horizontal',
   micOn: true,
   micDeviceId: '',
+  looks: [],
+  lookPorDefecto: null,
 };
 
 /** Campo a campo: uno malo no debe arrastrar a los demas. */
@@ -38,5 +56,31 @@ export function normalizarAjustes(crudo: unknown): Ajustes {
     micOn: typeof o.micOn === 'boolean' ? o.micOn : AJUSTES_POR_DEFECTO.micOn,
     micDeviceId: typeof o.micDeviceId === 'string'
       ? o.micDeviceId : AJUSTES_POR_DEFECTO.micDeviceId,
+    looks: Array.isArray(o.looks) ? o.looks.filter(esLook) : [],
+    lookPorDefecto: typeof o.lookPorDefecto === 'string' ? o.lookPorDefecto : null,
+  };
+}
+
+/** Un look a medias se descarta entero: aplicarlo dejaria el proyecto invalido. */
+function esLook(x: unknown): x is Look {
+  const l = x as Partial<Look>;
+  return typeof l?.nombre === 'string' && l.nombre.length > 0
+    && typeof l.background === 'object' && l.background !== null
+    && typeof l.frame === 'object' && l.frame !== null;
+}
+
+/**
+ * Aplica un look a un proyecto.
+ *
+ * Toca el ASPECTO y nada mas: zooms, cortes, velocidades, recorte y salida se
+ * quedan como estaban. Un look que arrastrara el trabajo de edicion de otra
+ * grabacion seria una trampa.
+ */
+export function aplicarLook(project: Project, look: Look): Project {
+  return {
+    ...project,
+    background: look.background,
+    frame: look.frame,
+    watermark: look.watermark ?? null,
   };
 }

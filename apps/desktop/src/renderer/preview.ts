@@ -29,6 +29,7 @@ export class Preview {
   /** Fondo decodificado, cacheado por ruta: cambiar de imagen es raro, pero
    *  repintar es constante. */
   private fondo: { ruta: string; img: ImageBitmap } | null = null;
+  private marca: { ruta: string; img: ImageBitmap } | null = null;
 
   constructor(
     private manifest: Manifest,
@@ -74,10 +75,27 @@ export class Preview {
       cursor: this.cursor.sample(tMs),
       overlay: this.overlay.sample(tMs),
       backgroundImage: await this.fondoDe(project) as unknown as ImageLike | null,
+      watermarkImage: await this.marcaDe(project) as unknown as ImageLike | null,
     });
   }
 
   /** Decodifica el fondo la primera vez y lo reutiliza mientras no cambie. */
+  /** Misma idea que `fondoDe`, con su propia cache: son dos imagenes distintas. */
+  private async marcaDe(project: Project): Promise<ImageBitmap | null> {
+    const ruta = project.watermark?.path;
+    if (!ruta) return null;
+    if (this.marca?.ruta === ruta) return this.marca.img;
+    try {
+      const res = await fetch(`vitrina://${ruta}`);
+      const img = await createImageBitmap(await res.blob());
+      this.marca?.img.close();
+      this.marca = { ruta, img };
+      return img;
+    } catch {
+      return null;
+    }
+  }
+
   private async fondoDe(project: Project): Promise<ImageBitmap | null> {
     if (project.background.kind !== 'image') return null;
     const ruta = project.background.path;

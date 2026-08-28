@@ -14,7 +14,7 @@ import type { CameraState, CaptureSize, Project } from '@vitrina/core';
 import { paintBackground } from './background.ts';
 import { drawFrame, drawNotch } from './chrome.ts';
 import { drawCursor } from './cursor.ts';
-import { drawLabel, drawKeys } from './overlays.ts';
+import { drawLabel, drawKeys, drawWatermark } from './overlays.ts';
 import type { Ctx, CursorSample, ImageLike } from './types.ts';
 import type { OverlaySample } from './overlays.ts';
 
@@ -32,6 +32,8 @@ export interface CompositeOptions {
   backgroundImage?: ImageLike | null;
   /** Rotulo y teclas del instante. Se calculan con `OverlaySource`. */
   overlay?: OverlaySample | null;
+  /** Imagen de la marca de agua, ya cargada. */
+  watermarkImage?: ImageLike | null;
 }
 
 export function composite(o: CompositeOptions): void {
@@ -113,7 +115,18 @@ export function composite(o: CompositeOptions): void {
     }
   }
 
-  // 5. Cursor, siempre lo ultimo y siempre al mismo tamano en pantalla.
+  // 5. Marca de agua, sobre el lienzo y fuera del recorte de la ventana: es una
+  //    firma, no parte de la demo, asi que no se mueve con el zoom.
+  if (project.watermark && o.watermarkImage) {
+    const img = o.watermarkImage as unknown as { width: number; height: number };
+    drawWatermark(
+      ctx, img,
+      (x, y, w, h) => ctx.drawImage(o.watermarkImage!, x, y, w, h),
+      project.watermark, { w: W, h: H },
+    );
+  }
+
+  // 6. Cursor, siempre lo ultimo y siempre al mismo tamano en pantalla.
   if (o.cursor && project.frame.cursor !== 'none') {
     const at = sourceToOutput(o.cursor, view, content);
     // Fuera del encuadre no se dibuja: si no, se pegaria al borde de la ventana.

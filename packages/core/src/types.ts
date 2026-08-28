@@ -163,9 +163,28 @@ export interface ZoomSegment {
   label?: string | null;
 }
 
+/**
+ * Marca de agua: una imagen anclada al LIENZO.
+ *
+ * Anclada al lienzo y no al contenido a proposito. Una marca que se moviera con
+ * el zoom seria un adorno dentro de la demo; quieta en una esquina es una firma.
+ *
+ * `path` es relativo a la carpeta de la grabacion, como el fondo de imagen: la
+ * carpeta tiene que poder moverse de maquina y seguir exportando igual.
+ */
+export interface Watermark {
+  path: string;
+  esquina: 'ne' | 'no' | 'se' | 'so';
+  /** 0-1. */
+  opacity: number;
+  /** Fraccion del ancho del lienzo que ocupa la marca. */
+  scale: number;
+}
+
 export interface Project {
   version: 1;
   background: Background;
+  watermark?: Watermark | null;
   frame: FrameStyle;
   zooms: ZoomSegment[];
   /** Recorte del material: ms desde el inicio. */

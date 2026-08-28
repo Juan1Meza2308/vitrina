@@ -279,6 +279,48 @@ async function main(): Promise<void> {
   // --- linea de tiempo editable ---------------------------------------------
   await verificarTimeline(client);
 
+  // --- looks -----------------------------------------------------------------
+  // El ciclo entero: guardar el aspecto, cambiarlo, y recuperarlo. Se compara
+  // por pixeles del lienzo, no por el estado de un boton: un look que se guarda
+  // pero no se aplica seria peor que no tenerlo.
+  await ev(client, "window.prompt = () => 'verificacion';");
+  const antesLook = await ev<string>(client, FIRMA_DENSA);
+  await ev(client,
+    "[...document.querySelectorAll('button')].find(b => b.textContent === 'Guardar este look').click()");
+  await sleep(700);
+  check('el look aparece en la lista',
+    await esperarA(client,
+      "[...document.querySelectorAll('.look button')].some(b => b.textContent === 'verificacion')",
+      'look guardado', 6000));
+
+  // Cambiar el fondo a otro cualquiera y comprobar que el lienzo cambia.
+  const otraMuestra = await ev<number>(client,
+    '[...document.querySelectorAll(".muestra")].findIndex(b => !b.classList.contains("on"))');
+  await ev(client, `document.querySelectorAll(".muestra")[${otraMuestra}].click()`);
+  await sleep(800);
+  const conOtroFondo = await ev<string>(client, FIRMA_DENSA);
+  check('cambiar el fondo cambia el lienzo', conOtroFondo !== antesLook);
+
+  await ev(client,
+    "[...document.querySelectorAll('.look button')].find(b => b.textContent === 'verificacion').click()");
+  await sleep(900);
+  const trasAplicar = await ev<string>(client, FIRMA_DENSA);
+  check('aplicar el look devuelve el aspecto guardado', trasAplicar === antesLook,
+    `${conOtroFondo} -> ${trasAplicar}`);
+
+  // Los looks se guardan en los ajustes REALES del usuario, asi que hay que
+  // quitarlo: verificar no puede dejarle basura en su propia configuracion, del
+  // mismo modo que se restaura `project.json` al terminar.
+  await ev(client, `
+    (async () => {
+      const a = await window.vitrina.ajustes();
+      await window.vitrina.guardarAjustes({
+        looks: a.looks.filter((l) => l.nombre !== 'verificacion'),
+        lookPorDefecto: a.lookPorDefecto === 'verificacion' ? null : a.lookPorDefecto,
+      });
+    })()
+  `);
+
   // --- deshacer --------------------------------------------------------------
   // Se comprueba el EFECTO, no que el boton se active: borrar un tramo y que
   // vuelva el mismo numero es lo unico que demuestra que el historial guarda el

@@ -148,6 +148,33 @@ export function drawLabel(
   ctx.restore();
 }
 
+/**
+ * Marca de agua en una esquina del LIENZO.
+ *
+ * Recibe el lienzo entero, no el contenido: si siguiera al encuadre se moveria
+ * con el zoom y dejaria de leerse como una firma.
+ */
+export function drawWatermark(
+  ctx: Ctx,
+  img: { width: number; height: number },
+  dibujar: (x: number, y: number, w: number, h: number) => void,
+  marca: { esquina: 'ne' | 'no' | 'se' | 'so'; opacity: number; scale: number },
+  lienzo: { w: number; h: number },
+): void {
+  if (marca.opacity <= 0 || marca.scale <= 0 || !img.width || !img.height) return;
+
+  const w = lienzo.w * Math.min(0.5, marca.scale);
+  const h = w * (img.height / img.width);
+  const margen = lienzo.w * 0.025;
+  const x = marca.esquina === 'no' || marca.esquina === 'so' ? margen : lienzo.w - w - margen;
+  const y = marca.esquina === 'no' || marca.esquina === 'ne' ? margen : lienzo.h - h - margen;
+
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, marca.opacity);
+  dibujar(x, y, w, h);
+  ctx.restore();
+}
+
 /** Insignias de teclas, centradas en la parte baja de la pantalla. */
 export function drawKeys(
   ctx: Ctx,

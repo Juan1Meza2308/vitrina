@@ -50,7 +50,11 @@ async function main(): Promise<void> {
     startedAt: manifest.startedAt, durationMs: manifest.durationMs, config,
   });
   const cursor = new CursorSource(events, manifest.startedAt);
-const overlay = new OverlaySource(events, manifest.startedAt);
+  const overlay = new OverlaySource(events, manifest.startedAt);
+  const rutaMarca = project.watermark?.path;
+  const marca = rutaMarca
+    ? await loadImage(path.join(root, rutaMarca)).catch(() => null)
+    : null;
   const index = new FrameIndex(manifest);
 
   // El mismo fondo que usa el exportador. Sin esto la hoja de contacto mostraba
@@ -88,6 +92,7 @@ const overlay = new OverlaySource(events, manifest.startedAt);
       project,
       cursor: cursor.sample(tMs),
   overlay: overlay.sample(tMs),
+  watermarkImage: marca as never,
       backgroundImage: fondo as unknown as ImageLike | null,
     });
   };
