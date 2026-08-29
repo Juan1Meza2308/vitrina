@@ -56,6 +56,7 @@ todavía no.
 | Pausa, atajos globales y marcas | hecho |
 | La demo se documenta sola | hecho |
 | Doblar la narración | hecho |
+| Regrabar desde un punto | hecho |
 | macOS y Windows | hecho (sin probar en Mac) |
 | Grabación vertical (9:16) | hecho |
 
@@ -509,6 +510,38 @@ Dos detalles que se cuidan solos:
 
 Si se pide la voz y el fichero no está, se avisa y se cae a la narración:
 quedarse mudo por un fichero perdido sería peor que sonar distinto.
+
+## Regrabar desde un punto
+
+La dolencia peor de todas: te equivocas en el segundo cuarenta de una demo de
+tres minutos y repites los tres minutos. Ningún grabador de píxeles puede
+evitarlo, porque sólo sabe **qué se vio**. Vitrina sabe **qué pasó**.
+
+Pon la aguja donde se torció y pulsa **Regrabar desde ahí**: Vitrina vuelve a
+ejecutar sola la parte buena —con los mismos tiempos, que es lo que deja tu app
+en el mismo estado—, te avisa y sigues tú.
+
+```bash
+node tools/regrabar.ts grabaciones/mi-demo.vitrina --desde=40s
+```
+
+- **La grabación original no se toca**: sale una carpeta nueva.
+- **Los zooms de la cabeza se conservan**, incluidos los que moviste a mano, que
+  es justo lo que no se puede perder. Los de la cola se planifican de cero:
+  ahí hay material nuevo, y copiar los viejos dejaría la cámara encuadrando lo
+  que ya no está.
+- **Lo que se tapó se sigue tapando.** La toma nueva no puede publicar lo que la
+  vieja escondía.
+
+> **La cabeza espera hasta el instante exacto**, aunque el último click cayera
+> antes. Sin eso duraría menos que la original —entre el último click y el punto
+> elegido no pasa nada, pero ese hueco existe— y los zooms conservados, que van
+> por instante, apuntarían un poco antes de donde toca. Lo cazó
+> `verificar-app --regrabar` al ver la cola metida dentro de la cabeza.
+
+Lo que se pierde, dicho claro: **tu voz de la cabeza**. Durante esos segundos no
+estabas hablando, así que la narración empieza en el relevo —el montaje antepone
+el silencio solo—. Si la quieres, se dobla después con la voz.
 
 ## El editor
 

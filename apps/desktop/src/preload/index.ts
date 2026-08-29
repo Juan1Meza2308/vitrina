@@ -135,6 +135,13 @@ const api = {
   onPausaCambiada: (cb: (pausada: boolean) => void) => subscribe<boolean>('record:pausa', cb),
   repetirGrabacion: (dir: string, presetName?: string, texto?: string): Promise<RecordingData> =>
     ipcRenderer.invoke('record:repeat', { dir, presetName, texto }),
+  /**
+   * Regraba desde un instante. La promesa se resuelve EN EL RELEVO, cuando
+   * Vitrina ha ejecutado la cabeza y el control vuelve a la persona.
+   */
+  regrabarDesde: (dir: string, desdeMs: number): Promise<{
+    dir: string; acciones: number; atajosFallidos: string[];
+  }> => ipcRenderer.invoke('record:retake', { dir, desdeMs }),
   onRecordProgress: (cb: (p: RecordProgress) => void) => subscribe('record:progress', cb),
 
   openRecording: (): Promise<RecordingData | null> => ipcRenderer.invoke('recording:open'),

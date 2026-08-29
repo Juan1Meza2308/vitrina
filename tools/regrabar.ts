@@ -89,6 +89,7 @@ const rec = new Recorder({
 
 await rec.launch();
 await rec.start();
+const arranque = Date.now();
 
 // Al target de la pagina y con `local: true`: sin eso, conectar en medio del
 // screencast se come mas de quince segundos y desplaza el guion entero.
@@ -100,6 +101,12 @@ const input = (await CDP({ port: PORT, target: pagina.id, local: true })) as unk
 
 await reproducir(input, cabeza, { relleno: flag('texto') ?? '' });
 await input.close();
+
+// Hasta el instante del relevo, aunque la ultima accion cayera antes: si la
+// cabeza durase menos que la original, los zooms que se conservan —que van por
+// instante— apuntarian un poco antes de donde toca.
+const restante = desde - (Date.now() - arranque);
+if (restante > 0) await sleep(restante);
 
 console.log('  --- AHORA TU ---  sigue la demo en la ventana del navegador');
 console.log('  (pulsa Enter aqui cuando termines)\n');

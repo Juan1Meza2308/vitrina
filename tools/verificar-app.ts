@@ -821,6 +821,132 @@ async function verificarGrabacion(): Promise<void> {
 }
 
 /**
+ * Verifica regrabar desde un punto.
+ *
+ * Lo que se comprueba es lo unico que puede fallar sin dar la cara: que la
+ * CABEZA aterrizo en los mismos elementos. Contar frames no probaria nada —una
+ * regrabacion que empezara en blanco tendria frames igual—; que se pulsaran los
+ * mismos botones en el mismo orden dice que la app quedo donde tenia que
+ * quedar.
+ */
+async function verificarRegrabar(): Promise<void> {
+  const salidas = path.join(os.homedir(), 'Videos', 'Vitrina');
+  const antes = new Set(await listar(salidas));
+  const DESDE_MS = 5000;
+
+  const viejo = JSON.parse(
+    await fsp.readFile(path.join(grabacion, 'events.json'), 'utf8')) as
+    { t: number; type: string; label?: string | null }[];
+  const viejoManifest = JSON.parse(
+    await fsp.readFile(path.join(grabacion, 'manifest.json'), 'utf8')) as
+    { startedAt: number; durationMs: number };
+  const cabezaVieja = viejo
+    .filter((e) => e.type === 'down' && e.t - viejoManifest.startedAt < DESDE_MS)
+    .map((e) => e.label ?? '(sin texto)');
+
+  console.log(`  regrabando ${grabacion} desde ${(DESDE_MS / 1000).toFixed(1)}s\n`);
+  const child = spawn(ELECTRON, [
+    APP, grabacion,
+    `--remote-debugging-port=${PORT}`,
+    '--use-fake-device-for-media-stream',
+    '--use-fake-ui-for-media-stream',
+  ], { stdio: ['ignore', 'ignore', 'inherit'] });
+  const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+  await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+  await sleep(2500);
+
+  /*
+   * La aguja al instante del relevo. Es imprescindible: el boton regraba desde
+   * DONDE ESTE LA AGUJA, y sin moverla se regraba desde cero —cabeza vacia— y
+   * la comprobacion siguiente miente sin decir por que.
+   */
+  const duracion = viejoManifest.durationMs;
+  const pista = JSON.parse(await ev<string>(client, `
+    (() => { const r = document.querySelector('.pista').getBoundingClientRect();
+      return JSON.stringify({ x: r.x, y: r.y, w: r.width, h: r.height }); })()
+  `)) as { x: number; y: number; w: number; h: number };
+  const xRelevo = Math.round(pista.x + pista.w * (DESDE_MS / duracion));
+  const yPista = Math.round(pista.y + pista.h / 2);
+  await client.Input.dispatchMouseEvent({ type: 'mousePressed', x: xRelevo, y: yPista, button: 'left', clickCount: 1 });
+  await client.Input.dispatchMouseEvent({ type: 'mouseReleased', x: xRelevo, y: yPista, button: 'left', clickCount: 1 });
+  await sleep(500);
+
+  const rotulo = await ev<string>(client, `
+    ([...document.querySelectorAll('button')].find(b => /^Regrabar desde/.test(b.textContent))?.textContent ?? '')
+  `);
+  check('el boton apunta al instante de la aguja', /Regrabar desde [45]\.\d/.test(rotulo), rotulo);
+
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => /^Regrabar desde/.test(b.textContent))?.click()
+  `);
+
+  check('la app avisa de que esta repitiendo la parte buena',
+    await esperarA(client,
+      'document.body.textContent.includes("repitiendo la parte buena")', 'cabeza en marcha'));
+
+  // El relevo: el aviso desaparece cuando el control vuelve a la persona.
+  check('el control vuelve a la persona',
+    await esperarA(client,
+      '!document.body.textContent.includes("repitiendo la parte buena")'
+      + ' && !!document.querySelector(".pulso")',
+      'relevo', 60_000));
+
+  // Un par de clicks de cola, para que la toma nueva tenga algo propio.
+  await interactuarConLoGrabado();
+  await sleep(1000);
+
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Parar y editar')?.click()
+  `);
+  check('parar lleva al editor',
+    await esperarA(client, '!!document.querySelector("canvas")', 'editor abierto', 60_000));
+
+  const nuevas = (await listar(salidas)).filter((n) => !antes.has(n));
+  const carpeta = nuevas[0] ? path.join(salidas, nuevas[0]) : null;
+  if (!carpeta) {
+    check('se creo la carpeta de la regrabacion', false);
+  } else {
+    const m = JSON.parse(
+      await fsp.readFile(path.join(carpeta, 'manifest.json'), 'utf8')) as
+      { startedAt: number; frames: unknown[] };
+    const evs = JSON.parse(
+      await fsp.readFile(path.join(carpeta, 'events.json'), 'utf8')) as
+      { t: number; type: string; label?: string | null }[];
+
+    check('la toma nueva tiene material', m.frames.length > 20, `${m.frames.length} frames`);
+
+    const cabezaNueva = evs
+      .filter((e) => e.type === 'down' && e.t - m.startedAt < DESDE_MS)
+      .map((e) => e.label ?? '(sin texto)');
+    const iguales = cabezaVieja.length === cabezaNueva.length
+      && cabezaVieja.every((l, i) => l === cabezaNueva[i]);
+    check('la cabeza pulso los mismos elementos', iguales,
+      `${cabezaVieja.join(' | ')} -> ${cabezaNueva.join(' | ')}`);
+
+    const cola = evs.filter((e) => e.type === 'down' && e.t - m.startedAt >= DESDE_MS);
+    check('y la cola trae lo que se hizo despues', cola.length > 0, `${cola.length} clicks`);
+
+    check('la grabacion original sigue intacta',
+      await fsp.stat(path.join(grabacion, 'manifest.json')).then(() => true).catch(() => false));
+  }
+
+  await capturar(client, 'apps/desktop/captura-regrabar.png');
+  await client.close();
+  child.kill();
+  await sleep(800);
+
+  for (const nombre of await listar(salidas)) {
+    if (antes.has(nombre)) continue;
+    await fsp.rm(path.join(salidas, nombre), { recursive: true, force: true }).catch(() => {});
+    console.log(`  limpiado   ${nombre}`);
+  }
+
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}`);
+  console.log('  captura: apps/desktop/captura-regrabar.png\n');
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
  * Verifica el doblaje de la voz.
  *
  * Se comprueba lo que queda en disco —el fichero de voz con contenido y el
@@ -1570,6 +1696,7 @@ async function verificarSilencios(): Promise<void> {
 
 const flujo = process.argv.includes('--silencios') ? verificarSilencios
   : process.argv.includes('--vertical') ? verificarVertical
+  : process.argv.includes('--regrabar') ? verificarRegrabar
   : process.argv.includes('--doblar') ? verificarDoblaje
   : process.argv.includes('--pausa') ? verificarPausa
   : process.argv.includes('--camara') ? verificarCamara

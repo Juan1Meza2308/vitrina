@@ -20,7 +20,7 @@ import { pathToFileURL } from 'node:url';
 import CDP from 'chrome-remote-interface';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 import {
-  Recorder, ventanaPara, guionDe, reproducir, listaDeSelectores,
+  Recorder, ventanaPara, guionDe, guionHasta, reproducir, listaDeSelectores,
 } from '@vitrina/capture-cdp';
 import {
   CAPTURE_PRESETS, CAMERA_PRESETS, cameraConfigForBudget, computeQualityBudget,
@@ -184,6 +184,13 @@ let audioTrack: AudioTrack | null = null;
 let camStream: fs.WriteStream | null = null;
 /** Escritura en curso de la voz doblada. */
 let vozStream: fs.WriteStream | null = null;
+/**
+ * Regrabacion en curso, si la hay.
+ *
+ * Hace falta al PARAR: la cabeza conserva los zooms de la grabacion vieja y la
+ * cola se planifica de cero, y para eso hay que recordar de donde venia.
+ */
+let regrabando: { origen: string; desdeMs: number } | null = null;
 let camTrack: CamTrack | null = null;
 
 /**
@@ -563,6 +570,92 @@ ipcMain.handle('record:pausa', () => alternarPausa());
 // ademas hay quien prefiere un boton. La marca tiene que poder ponerse igual.
 ipcMain.handle('record:marcar', () => { recorder?.marcar(); });
 
+/**
+ * Regraba una demo desde un instante.
+ *
+ * Vitrina ejecuta sola la cabeza —con los mismos tiempos que la original, que
+ * es lo que deja la app en el mismo estado— y devuelve el control. La promesa
+ * se resuelve justo en el relevo, para que el renderer arranque el microfono
+ * ahi: durante la cabeza no estabas hablando.
+ *
+ * La grabacion original no se toca: sale una carpeta nueva.
+ */
+ipcMain.handle('record:retake', async (_e, opts: { dir: string; desdeMs: number }) => {
+  if (recorder) throw new Error('Ya hay una grabacion en curso');
+
+  const origen = path.resolve(opts.dir);
+  const manifest = JSON.parse(
+    await fsp.readFile(path.join(origen, 'manifest.json'), 'utf8')) as Manifest;
+  const events = JSON.parse(
+    await fsp.readFile(path.join(origen, 'events.json'), 'utf8')) as InputEvent[];
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const destino = path.join(RECORDINGS, `${stamp}-regrabada.vitrina`);
+  await fsp.mkdir(destino, { recursive: true });
+
+  const guion = guionDe(events, manifest.startedAt, {
+    deviceScaleFactor: manifest.deviceScaleFactor ?? 1,
+  });
+  const cabeza = guionHasta(guion, opts.desdeMs);
+
+  const hueco = screen.getPrimaryDisplay().workAreaSize;
+  const viewport = manifest.viewport;
+  const dsf = manifest.deviceScaleFactor ?? 1;
+  recorder = new Recorder({
+    url: manifest.url,
+    viewport,
+    deviceScaleFactor: dsf,
+    window: ventanaPara(
+      { w: Math.round(viewport.w * dsf), h: Math.round(viewport.h * dsf) },
+      { width: Math.round(hueco.width * 0.92), height: Math.round(hueco.height * 0.92) },
+    ),
+    outDir: destino,
+    // Lo que se tapo se sigue tapando: la toma nueva no puede publicar lo que
+    // la vieja escondia.
+    tapado: manifest.tapado ?? null,
+    onProgress: (p) => win?.webContents.send('record:progress', p),
+  });
+
+  try {
+    await recorder.launch();
+    await recorder.start();
+    const arranque = Date.now();
+
+    const objetivos = (await (await fetch('http://127.0.0.1:9222/json/list')).json()) as
+      { type: string; id: string }[];
+    const pagina = objetivos.find((t) => t.type === 'page');
+    if (!pagina) throw new Error('El navegador de regrabacion no expuso una pagina');
+    const input = (await CDP({
+      port: 9222, target: pagina.id, local: true,
+    })) as unknown as Parameters<typeof reproducir>[0] & { close(): Promise<void> };
+
+    await reproducir(input, cabeza);
+    await input.close();
+
+    /*
+     * Se espera hasta el instante del relevo, aunque la ultima accion cayera
+     * antes.
+     *
+     * Sin esto la cabeza dura MENOS que la original —entre el ultimo click y el
+     * punto elegido no pasa nada, pero ese hueco existe— y los zooms que se
+     * conservan, que van por instante, apuntarian un poco antes de donde toca.
+     * Lo caza `verificar-app --regrabar`, que vio la cola metida en la cabeza.
+     */
+    const restante = opts.desdeMs - (Date.now() - arranque);
+    if (restante > 0) await new Promise((r) => setTimeout(r, restante));
+
+    recordingDir = destino;
+    regrabando = { origen, desdeMs: opts.desdeMs };
+    marcoPedido = manifest.capture ?? viewport;
+    return { dir: destino, acciones: cabeza.length, atajosFallidos: registrarAtajos() };
+  } catch (e) {
+    liberarAtajos();
+    await recorder?.close().catch(() => {});
+    recorder = null;
+    throw e;
+  }
+});
+
 ipcMain.handle('record:stop', async () => {
   if (!recorder) throw new Error('No hay grabacion en curso');
   liberarAtajos();
@@ -586,6 +679,51 @@ ipcMain.handle('record:stop', async () => {
   // Planificar la camara nada mas parar: el usuario no deberia tener que pedir
   // el zoom automatico, es la razon de ser de la herramienta.
   await planAndSave(recordingDir, 'normal');
+
+  /*
+   * Si esto era una regrabacion, se cose el proyecto.
+   *
+   * Los zooms de la cabeza siguen valiendo —incluidos los que el usuario movio
+   * a mano, que es justo lo que no puede perderse— porque la cabeza se ejecuto
+   * con los mismos tiempos. Los de la cola no: ahi hay material nuevo, y
+   * copiarlos dejaria la camara encuadrando lo que ya no esta.
+   *
+   * Los cortes y las velocidades tampoco se copian: sus instantes eran del
+   * material viejo y en la toma nueva no significan nada.
+   */
+  if (regrabando) {
+    const { origen, desdeMs } = regrabando;
+    regrabando = null;
+    try {
+      const viejo = JSON.parse(
+        await fsp.readFile(path.join(origen, 'project.json'), 'utf8')) as Project;
+      const viejoManifest = JSON.parse(
+        await fsp.readFile(path.join(origen, 'manifest.json'), 'utf8')) as Manifest;
+      const ruta = path.join(recordingDir, 'project.json');
+      const nuevo = JSON.parse(await fsp.readFile(ruta, 'utf8')) as Project;
+
+      const copiado = reescalarProyecto(
+        viejo,
+        viejoManifest.capture ?? viejoManifest.viewport,
+        result.manifest.capture ?? result.manifest.viewport,
+      );
+      await fsp.writeFile(ruta, JSON.stringify({
+        ...copiado,
+        zooms: [
+          ...copiado.zooms.filter((z) => z.endMs <= desdeMs),
+          ...nuevo.zooms.filter((z) => z.startMs >= desdeMs),
+        ],
+        camara: null,
+        voz: null,
+        pista: undefined,
+        cuts: [],
+        speeds: [],
+        export: nuevo.export,
+      }, null, 2));
+    } catch {
+      // Sin proyecto viejo que copiar, el plan automatico ya es correcto.
+    }
+  }
 
   // Y aplicar el look por defecto, si lo hay. Va aqui y no en `defaultProject`
   // porque ese vive en la libreria de captura, que no sabe nada de ajustes de

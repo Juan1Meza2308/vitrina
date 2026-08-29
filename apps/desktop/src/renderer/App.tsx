@@ -70,6 +70,8 @@ export function App() {
    *  terminar que la tapa estaba puesta o que se sale medio hombro. */
   const [camPreview, setCamPreview] = useState<MediaStream | null>(null);
   const [pausado, setPausado] = useState(false);
+  /** Regrabacion: Vitrina esta ejecutando la cabeza y aun no toca a la persona. */
+  const [cabeza, setCabeza] = useState(false);
   /** Atajos que el sistema no dejo registrar, para poder avisar. */
   const [atajosFallidos, setAtajosFallidos] = useState<string[]>([]);
   const [nivel, setNivel] = useState(0);
@@ -272,6 +274,37 @@ export function App() {
   const pararRef = useRef<(() => Promise<void>) | null>(null);
   pararRef.current = parar;
 
+  /**
+   * Regrabar desde un instante de la grabacion abierta.
+   *
+   * Vitrina ejecuta la cabeza sola y, cuando termina, arranca el microfono y
+   * te devuelve el control: durante la cabeza no estabas hablando, asi que la
+   * narracion empieza en el relevo.
+   */
+  const regrabar = useCallback(async (dir: string, desdeMs: number, conMicro: boolean) => {
+    setError('');
+    setDatos(null);
+    setCabeza(true);
+    setStats({ frames: 0, elapsedMs: 0 });
+    setFase('grabando');
+    try {
+      const r = await window.vitrina.regrabarDesde(dir, desdeMs);
+      setAtajosFallidos(r.atajosFallidos ?? []);
+      setCabeza(false);
+      if (conMicro) {
+        try {
+          mic.current = await grabarMicrofono(micDeviceId || undefined);
+        } catch (e) {
+          setError(`Sin audio: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+    } catch (e) {
+      setCabeza(false);
+      setError(e instanceof Error ? e.message : String(e));
+      setFase('inicio');
+    }
+  }, [micDeviceId]);
+
   const abrirDir = useCallback(async (dir: string) => {
     try {
       setDatos(await window.vitrina.loadRecording(dir));
@@ -316,6 +349,7 @@ export function App() {
         datos={datos}
         onSalir={() => { setDatos(null); setFase('inicio'); }}
         onAbrir={setDatos}
+        onRegrabar={(dir, desdeMs, conMicro) => void regrabar(dir, desdeMs, conMicro)}
       />
     );
   }
@@ -337,7 +371,9 @@ export function App() {
         <div className="centro">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span className="pulso" />
-            <span style={{ fontSize: 17, fontWeight: 600 }}>Grabando</span>
+            <span style={{ fontSize: 17, fontWeight: 600 }}>
+              {cabeza ? 'Vitrina está repitiendo la parte buena' : 'Grabando'}
+            </span>
           </div>
           <div className="stats">
             <span><b>{(stats.elapsedMs / 1000).toFixed(1)}</b> s</span>
@@ -352,6 +388,12 @@ export function App() {
           {/* Si el microfono fallo hay que decirlo AQUI. Enterarse al reproducir
               significa repetir la demo entera. */}
           {error && <p className="error" style={{ maxWidth: 460 }}>{error}</p>}
+          {cabeza && (
+            <p className="sutil" style={{ maxWidth: 460, textAlign: 'center' }}>
+              No toques nada: cuando llegue al punto que elegiste te avisará y
+              seguirás tú.
+            </p>
+          )}
           {pausado && (
             <p className="sutil" style={{ color: 'var(--acc)' }}>
               En pausa · el trozo pausado no saldrá en el vídeo
@@ -576,11 +618,13 @@ export function App() {
 // ---------------------------------------------------------------------------
 
 function Editor(
-  { datos, onSalir, onAbrir }: {
+  { datos, onSalir, onAbrir, onRegrabar }: {
     datos: RecordingData;
     onSalir: () => void;
     /** Cambiar a otra grabacion sin pasar por la pantalla de inicio. */
     onAbrir: (d: RecordingData) => void;
+    /** Regrabar desde un instante. Lo lleva la app: acaba en modo grabacion. */
+    onRegrabar: (dir: string, desdeMs: number, conMicro: boolean) => void;
   },
 ) {
   /**
@@ -1288,6 +1332,14 @@ function Editor(
           <button onClick={() => void repetir()} disabled={repitiendo}>
             {repitiendo ? 'Repitiendo...' : 'Repetir esta grabación'}
           </button>
+          {/* Regrabar desde la aguja: la mitad buena se conserva y solo se
+              vuelve a hacer lo que salio mal. */}
+          <button onClick={() => onRegrabar(datos.dir, tMs, !!pista)}
+                  disabled={repitiendo}
+                  title="Vitrina repite sola la demo hasta aquí y después sigues tú">
+            Regrabar desde {(tMs / 1000).toFixed(1)}s
+          </button>
+
           <p className="sutil">
             Lo que escribiste no se repite: se guarda que pulsaste una tecla,
             nunca cuál.
