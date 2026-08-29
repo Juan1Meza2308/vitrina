@@ -224,3 +224,32 @@ sin tapar—.
 **La lección, otra vez, es del método.** Las dos comprobaciones baratas —¿se
 genera el script?, ¿se ejecuta?— dieron verde en los dos fallos. La única medida
 que los distingue es el píxel del frame guardado.
+
+## M11 · Grabar la cámara no le cuesta fps al screencast
+
+La cámara la captura el renderer de Electron con MediaRecorder mientras otro
+Chromium entrega el screencast: dos procesos peleándose por la misma CPU, y el
+que no puede perder frames es el screencast. Como la pantalla de inicio promete
+fps **medidos**, había que medirlo antes de ofrecer la cámara sin advertencia.
+
+`node spikes/m11-camara-fps.mjs` (1600×900, 8 s por caso, en la máquina de
+desarrollo de este contenedor):
+
+| Condición | Frames | fps |
+|---|---|---|
+| grabando sola | 479 | 59.9 |
+| con la cámara capturando a 640×480 @30 vp8 | 480 | 60.0 |
+
+Caída: **ninguna medible**. A 640×480 el coste de codificar VP8 cabe de sobra en
+el margen, así que la cámara se ofrece sin número de aviso.
+
+**El spike comprueba su propio banco de pruebas.** Antes de medir el segundo
+caso lee el `document.title` de la página de carga, que solo pasa a `grabando`
+cuando `MediaRecorder` ha arrancado de verdad. Sin eso, la primera versión medía
+«grabar sola» dos veces —la navegación por `PUT /json/new` no había abierto
+nada— y daba un 0,2 % de caída con cara de buena noticia. Es la lección de M8
+otra vez: cuando el resultado no depende de lo que se está variando, lo que
+falla es el banco de pruebas.
+
+Conviene repetirlo en un portátil modesto antes de dar el dato por bueno en
+todas partes: aquí sobran núcleos.
