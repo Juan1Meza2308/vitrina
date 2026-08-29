@@ -935,9 +935,33 @@ async function verificarRendimiento(): Promise<void> {
   // --- reproduciendo -------------------------------------------------------
   const play = `[...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Reproducir')?.click()`;
   const pause = `[...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Pausar')?.click()`;
+  const inicio = `[...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Volver al principio')?.click()`;
+  const leerCuentas = async () => JSON.parse(await ev<string>(client,
+    'JSON.stringify(window.__vitrinaMedida ?? {repintados:0,msTotal:0,fallos:0,msDecode:0,enVuelo:0})',
+  )) as { repintados: number; msTotal: number; fallos: number; msDecode: number; enVuelo: number };
+  const reiniciarCuentas = () => ev(client,
+    `document.documentElement.dataset.medir = ''; window.__vitrinaMedida = null`);
+
+  await reiniciarCuentas();
   await ev(client, play);
   const reproduciendo = await medir(5000);
   await ev(client, pause);
+  const enPlay = await leerCuentas();
+  await sleep(500);
+
+  // La misma reproduccion SIN lectura anticipada. Va en segundo lugar a
+  // proposito: para entonces la cache ya esta caliente del pase anterior, asi
+  // que el sesgo del orden juega EN CONTRA de la mejora que se quiere ensenar.
+  // Si aun asi adelantar acierta mas, es que acierta.
+  await ev(client, inicio);
+  await ev(client, `document.documentElement.dataset.preview = 'basico'`);
+  await reiniciarCuentas();
+  await ev(client, play);
+  const repBasico = await medir(5000);
+  await ev(client, pause);
+  const enPlayBasico = await leerCuentas();
+  await ev(client, `delete document.documentElement.dataset.preview`);
+  await ev(client, inicio);
   await sleep(500);
 
   // --- arrastrando la aguja ------------------------------------------------
@@ -948,6 +972,16 @@ async function verificarRendimiento(): Promise<void> {
       return JSON.stringify({ x: r.x, y: r.y, w: r.width, h: r.height }); })()
   `)) as { x: number; y: number; w: number; h: number };
   const yPista = Math.round(pista.y + pista.h / 2);
+
+  /** Los mismos movimientos sin pulsar: el coste del banco, no el de la app. */
+  const moverSinPulsar = async () => {
+    for (let i = 1; i <= 30; i++) {
+      await client.Input.dispatchMouseEvent({
+        type: 'mouseMoved', x: Math.round(pista.x + 20 + (pista.w - 40) * (i / 30)), y: yPista,
+      });
+      await sleep(16);
+    }
+  };
 
   const arrastrarAguja = async () => {
     await client.Input.dispatchMouseEvent({
@@ -964,10 +998,23 @@ async function verificarRendimiento(): Promise<void> {
       type: 'mouseReleased', x: Math.round(pista.x + pista.w - 20), y: yPista, button: 'left', clickCount: 1,
     });
   };
+  // El SUELO del banco: los mismos 30 eventos sin pulsar el boton, que no
+  // disparan nada en la app. Sin esta linea es imposible saber que parte de la
+  // caida es del editor y cual de inyectar eventos por CDP.
+  const controlF = medir(1200);
+  await moverSinPulsar();
+  const control = await controlF;
+
+  await reiniciarCuentas();
   const medida = medir(1200);
   await arrastrarAguja();
   const arrastre = await medida;
+  const cuentas = await leerCuentas();
+  await ev(client, `delete document.documentElement.dataset.medir`);
 
+  // El mismo arrastre sin limitar las cargas, que es como estaba antes. Va en
+  // la misma sesion a proposito: comparar contra una ejecucion de ayer, con la
+  // maquina en otro estado, no compara nada.
   // --- exportando ----------------------------------------------------------
   const tExport = Date.now();
   await ev(client, `
@@ -988,8 +1035,17 @@ async function verificarRendimiento(): Promise<void> {
   console.log('');
   console.log(`  arranque     ${arranque} ms hasta el primer frame`);
   console.log(`  quieto       ${quieto.fps.toFixed(1)} fps · ${quieto.atascos} atascos (${quieto.bloqueo} ms)`);
-  console.log(`  reproducci.  ${reproduciendo.fps.toFixed(1)} fps · ${reproduciendo.atascos} atascos (${reproduciendo.bloqueo} ms)`);
+  console.log(`  reproducci.  ${reproduciendo.fps.toFixed(1)} fps · ${reproduciendo.atascos} atascos (${reproduciendo.bloqueo} ms)`
+    + ` · ${enPlay.fallos} de ${enPlay.repintados} repintados sin cache`);
+  console.log(`   ↑ sin adel. ${repBasico.fps.toFixed(1)} fps`
+    + ` · ${enPlayBasico.fallos} de ${enPlayBasico.repintados} sin cache`
+    + '   (como estaba antes: sin lectura anticipada)');
+  console.log(`  mover        ${control.fps.toFixed(1)} fps   (suelo del banco: eventos por CDP, la app no hace nada)`);
   console.log(`  arrastre     ${arrastre.fps.toFixed(1)} fps · ${arrastre.atascos} atascos (${arrastre.bloqueo} ms)`);
+  console.log(`   ↑ repintado ${(cuentas.msTotal / Math.max(1, cuentas.repintados)).toFixed(1)} ms de media`
+    + ` · ${cuentas.repintados} repintados, ${cuentas.fallos} sin cache`
+    + ` · hasta ${cuentas.enVuelo} decodificaciones a la vez`);
+
   console.log(`  export       ${(msExport / 1000).toFixed(1)} s para ${duracionVideo}s de video`
     + `  (x${(duracionVideo * 1000 / Math.max(1, msExport)).toFixed(2)} tiempo real)`);
   console.log('');
@@ -1000,6 +1056,19 @@ async function verificarRendimiento(): Promise<void> {
   check('la reproduccion no se desploma', reproduciendo.fps > 8,
     `${reproduciendo.fps.toFixed(1)} fps`);
   check('arrastrar la aguja responde', arrastre.fps > 8, `${arrastre.fps.toFixed(1)} fps`);
+  // La comparacion, no el numero absoluto: en una maquina sin GPU el valor
+  // suelto no dice nada, pero que no esperar al decode gane a esperarlo tiene
+  // que cumplirse siempre.
+  // La proporcion, no los fps: los fps bailan varios puntos entre ejecuciones
+  // —el suelo del propio banco se mueve— y una comprobacion que falla sola
+  // ensena a ignorar los fallos. Que adelantar acierte mas en la cache no
+  // baila, y ademas se mide con el orden en contra.
+  const falloDe = (c: { fallos: number; repintados: number }) => c.fallos / Math.max(1, c.repintados);
+  check('la lectura anticipada acierta mas en la cache',
+    falloDe(enPlay) <= falloDe(enPlayBasico),
+    `${(falloDe(enPlay) * 100).toFixed(0)}% de fallos frente a ${(falloDe(enPlayBasico) * 100).toFixed(0)}%`);
+  check('las cargas simultaneas estan limitadas', cuentas.enVuelo <= 3,
+    `hasta ${cuentas.enVuelo} a la vez`);
   check('el editor abre en menos de 15 s', arranque < 15_000, `${arranque} ms`);
   check('la exportacion termina', acabo, `${(msExport / 1000).toFixed(1)} s`);
 

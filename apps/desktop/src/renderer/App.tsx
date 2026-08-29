@@ -896,17 +896,34 @@ function Editor(
     [datos, proyectoVivo, camara, presupuesto.maxSharpZoom],
   );
 
+  /**
+   * Repintar el instante actual.
+   *
+   * Va tambien por una ref porque hay tres sitios que necesitan repintar sin
+   * depender de `tMs`: el <video> de la camara cuando termina de decodificar, el
+   * cambio de camara, y el aviso del preview cuando llega un fotograma que se
+   * estaba cargando. Con la ref no hace falta reinstalar esos oyentes en cada
+   * fotograma.
+   */
+  const dibujar = useCallback(() => {
+    if (lienzo.current) void preview.current?.draw(lienzo.current, tMs, proyectoVivo);
+  }, [tMs, proyectoVivo]);
+  const dibujarRef = useRef(dibujar);
+  useEffect(() => { dibujarRef.current = dibujar; }, [dibujar]);
+
   useEffect(() => {
     const p = new Preview(datos.manifest, datos.events, track);
+    // El preview ya no espera al decode: compone con el fotograma anterior y
+    // avisa cuando llega el bueno. Sin este aviso, el ultimo movimiento de un
+    // arrastre se quedaria pintado con la imagen de antes.
+    p.onFrame(() => dibujarRef.current());
     preview.current = p;
-    return () => { p.destroy(); preview.current = null; };
+    return () => { p.onFrame(null); p.destroy(); preview.current = null; };
   }, [datos]);
 
   useEffect(() => { preview.current?.setTrack(track); }, [track]);
 
-  useEffect(() => {
-    if (lienzo.current) void preview.current?.draw(lienzo.current, tMs, proyectoVivo);
-  }, [tMs, proyectoVivo]);
+  useEffect(() => { dibujar(); }, [dibujar]);
 
   useEffect(() => {
     if (!reproduciendo) return;
@@ -1152,7 +1169,7 @@ function Editor(
   // ningun sitio, se le pasa el <video> tal cual.
   useEffect(() => {
     preview.current?.setCam(camUrl ? camEl.current : null);
-    if (lienzo.current) void preview.current?.draw(lienzo.current, tMs, proyectoVivo);
+    dibujarRef.current();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [camUrl, datos]);
 
@@ -1169,9 +1186,7 @@ function Editor(
   useEffect(() => {
     const el = camEl.current;
     if (!el || !camUrl) return;
-    const repintar = () => {
-      if (lienzo.current) void preview.current?.draw(lienzo.current, tMs, proyectoVivo);
-    };
+    const repintar = () => dibujarRef.current();
     el.addEventListener('loadeddata', repintar);
     el.addEventListener('seeked', repintar);
     return () => {
