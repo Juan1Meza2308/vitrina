@@ -225,6 +225,43 @@ export interface Encoder {
   abort(): void;
 }
 
+/**
+ * Extrae un video a JPEG numerados.
+ *
+ * Hace falta para la camara web: el compositor dibuja la burbuja con Canvas 2D
+ * —es el mismo que pinta el preview, y esa es la regla que no se rompe—, asi
+ * que necesita imagenes decodificables, no un webm. Componer la burbuja con un
+ * filtro `overlay` de ffmpeg seria una segunda implementacion y el preview
+ * dejaria de decir la verdad sobre el video final.
+ *
+ * Se extrae ya escalado al tamano que va a ocupar la burbuja: decodificar
+ * 640x480 para pintar 180 px es trabajo tirado, multiplicado por cada frame.
+ */
+export function extraerFrames(
+  ffmpegPath: string,
+  entrada: string,
+  patronSalida: string,
+  opts: { fps: number; alto: number },
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(ffmpegPath, [
+      '-y', '-loglevel', 'error',
+      '-i', entrada,
+      '-vf', `fps=${opts.fps},scale=-2:${Math.max(2, Math.round(opts.alto))}`,
+      '-q:v', '4',
+      patronSalida,
+    ], { stdio: ['ignore', 'ignore', 'pipe'] });
+
+    const err: string[] = [];
+    proc.stderr?.on('data', (c: Buffer) => { err.push(c.toString()); });
+    proc.on('error', (e) => reject(new Error(`No se pudo ejecutar ffmpeg: ${e.message}`)));
+    proc.on('close', (code) => {
+      if (code === 0) resolve();
+      else reject(new Error(`ffmpeg no pudo extraer la camara (codigo ${code}). ${err.join(' ').trim()}`));
+    });
+  });
+}
+
 export function startEncoder(
   ffmpegPath: string,
   settings: ExportSettings,

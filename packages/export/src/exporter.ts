@@ -8,6 +8,7 @@
  */
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 import fsp from 'node:fs/promises';
+import os from 'node:os';
 import path from 'node:path';
 import {
   buildCameraTrack, cameraConfigForBudget, computeQualityBudget,
@@ -18,8 +19,17 @@ import type {
 } from '@vitrina/core';
 import { composite, CursorSource, OverlaySource } from '@vitrina/renderer';
 import type { Ctx, ImageLike } from '@vitrina/renderer';
-import { findFfmpeg, startEncoder, type AudioInput } from './ffmpeg.ts';
+import { findFfmpeg, startEncoder, extraerFrames, type AudioInput } from './ffmpeg.ts';
 import { extensionFor, resolvePreset, type ExportPreset } from './presets.ts';
+
+/**
+ * Frames por segundo a los que se extrae la camara.
+ *
+ * Bastan para una cara —no hay movimiento rapido en un plano de busto— y
+ * cuestan una cuarta parte que muestrear a 60: cada frame de mas es una
+ * decodificacion mas dentro del bucle.
+ */
+const CAM_FPS = 15;
 
 export interface ExportProgress {
   frame: number;
@@ -223,6 +233,40 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
     }
   }
 
+  // La camara web se extrae a imagenes ANTES de empezar.
+  //
+  // El compositor dibuja la burbuja con Canvas 2D porque es el mismo que pinta
+  // el preview, y necesita imagenes decodificables, no un webm. 15 fps bastan
+  // para una cara y evitan decodificar cuatro veces mas de lo que se ve.
+  let cam: { dir: string; total: number } | null = null;
+  if (manifest.camara && renderProject.camara) {
+    const pista = manifest.camara;
+    const ruta = path.join(root, pista.file);
+    if (await exists(ruta)) {
+      const dir = await fsp.mkdtemp(path.join(os.tmpdir(), 'vitrina-cam-'));
+      try {
+        // Se extrae al tamano que va a ocupar la burbuja, no al nativo.
+        const lado = Math.round(settings.height * Math.min(0.45, renderProject.camara.tamano));
+        await extraerFrames(findFfmpeg(), ruta, path.join(dir, '%06d.jpg'),
+          { fps: CAM_FPS, alto: lado });
+        const total = (await fsp.readdir(dir)).length;
+        if (total > 0) {
+          cam = { dir, total };
+        } else {
+          await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
+          warnings.push('La camara no tenia frames utiles: el video sale sin burbuja.');
+        }
+      } catch (e) {
+        await fsp.rm(dir, { recursive: true, force: true }).catch(() => {});
+        warnings.push(
+          `No se pudo preparar la camara (${e instanceof Error ? e.message : String(e)}); `
+          + 'el video sale sin burbuja.');
+      }
+    } else {
+      warnings.push(`El manifest declara camara (${pista.file}) pero el fichero no esta.`);
+    }
+  }
+
   const canvas = createCanvas(settings.width, settings.height);
   const ctx = canvas.getContext('2d') as unknown as Ctx;
   // Media unidad de frame de margen para que el redondeo no se coma el ultimo.
@@ -231,6 +275,8 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
 
   let cachedFile = '';
   let cachedImg: Awaited<ReturnType<typeof loadImage>> | null = null;
+  let camFile = '';
+  let camImg: Awaited<ReturnType<typeof loadImage>> | null = null;
   const t0 = Date.now();
 
   try {
@@ -247,6 +293,23 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
       }
       if (!cachedImg) continue;
 
+      // La camara se muestrea por el MISMO instante de material que el video,
+      // asi que los cortes y las aceleraciones le salen gratis: no hay que
+      // volver a sumar tiempos aqui.
+      if (cam && manifest.camara) {
+        const sec = audioTimeFor(manifest.camara, manifest.startedAt, tMs);
+        const n = Math.round(sec * CAM_FPS) + 1;
+        // Fuera del material grabado no se dibuja nada. Congelar la ultima cara
+        // durante los ultimos segundos se leeria como un video colgado.
+        const ruta = n >= 1 && n <= cam.total
+          ? path.join(cam.dir, `${String(n).padStart(6, '0')}.jpg`)
+          : '';
+        if (ruta !== camFile) {
+          camFile = ruta;
+          camImg = ruta ? await loadImage(ruta).catch(() => null) : null;
+        }
+      }
+
       composite({
         ctx,
         source: cachedImg as unknown as ImageLike,
@@ -257,6 +320,13 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
         overlay: overlay.sample(tMs),
         watermarkImage: marca as unknown as ImageLike | null,
         backgroundImage: fondo as unknown as ImageLike | null,
+        // El tamano es el de la imagen EXTRAIDA, no el nativo de la camara: el
+        // pre-pase la escala al tamano de la burbuja, y recortar con las medidas
+        // del manifest apuntaria a una region que ya no existe —dibujaba nada, y
+        // sin error—.
+        cam: cam && camImg
+          ? { img: camImg as unknown as ImageLike, w: camImg.width, h: camImg.height }
+          : null,
       });
 
       await encoder.write(canvas.data());
@@ -280,6 +350,10 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
     // Un fichero a medias es peor que ninguno: parece valido y no lo es.
     await fsp.rm(file, { force: true }).catch(() => {});
     throw e;
+  } finally {
+    // Los frames de la camara son de usar y tirar, y son cientos: se borran
+    // salga bien o mal.
+    if (cam) await fsp.rm(cam.dir, { recursive: true, force: true }).catch(() => {});
   }
 
   const stat = await fsp.stat(file);
