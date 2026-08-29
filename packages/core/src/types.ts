@@ -238,6 +238,28 @@ export interface CamaraStyle {
   sombra: number;
 }
 
+/**
+ * Voz grabada DESPUES, viendo el video ya montado.
+ *
+ * Narrar mientras operas es donde se estropea la mayoria de las demos: o la voz
+ * va a trompicones, o el raton espera a la voz. Esta pista se graba contra el
+ * tiempo de la SALIDA, no el del material, y por eso no hay que remapear nada:
+ * es una capa sobre el video final.
+ */
+export interface Voz {
+  /** Nombre del fichero dentro de la carpeta `.vitrina`. */
+  file: string;
+  /**
+   * Instante de la SALIDA en el que empieza el fichero.
+   *
+   * Positivo: la voz entra mas tarde y hay que anteponer silencio. Negativo: se
+   * empezo a grabar antes y hay que saltar dentro del fichero. Sale de medir el
+   * arranque real de MediaRecorder contra el reloj del preview, que es el mismo
+   * cuidado que ya tiene la narracion en vivo.
+   */
+  desfaseMs: number;
+}
+
 /** Esquina del lienzo. La comparten la marca de agua y la camara web. */
 export type Esquina = 'ne' | 'no' | 'se' | 'so';
 
@@ -286,6 +308,15 @@ export interface Project {
    * volver a grabar—.
    */
   camara?: CamaraStyle | null;
+  /** Voz doblada despues, si se grabo. Ver `Voz`. */
+  voz?: Voz | null;
+  /**
+   * Que se oye en el video.
+   *
+   * Ausente vale por "la voz doblada si la hay, y si no la narracion": es lo
+   * que espera quien acaba de doblar, sin tener que ir a marcarlo.
+   */
+  pista?: 'micro' | 'voz' | 'ninguna';
   export: ExportSettings;
 }
 

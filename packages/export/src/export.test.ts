@@ -228,6 +228,31 @@ async function probeAudio(file: string): Promise<string> {
   return stdout.trim();
 }
 
+/**
+ * Volumen medio del audio del fichero, en dB.
+ *
+ * Es como se distingue QUE pista acabo dentro sin analizar frecuencias: los
+ * fixtures se graban a volumenes muy distintos, asi que el numero dice cual es
+ * sin ambiguedad.
+ */
+async function volumenMedio(file: string): Promise<number> {
+  const { stderr } = await run(findFfmpeg(), [
+    '-v', 'info', '-i', file, '-af', 'volumedetect', '-f', 'null', '-',
+  ]);
+  const m = /mean_volume:\s*(-?[\d.]+) dB/.exec(stderr);
+  return m ? Number(m[1]) : 0;
+}
+
+/** Voz doblada sintetica, a un volumen muy bajo para poder reconocerla. */
+async function makeVoz(dir: string, segundos: number): Promise<void> {
+  await run(findFfmpeg(), [
+    '-y', '-loglevel', 'error',
+    '-f', 'lavfi', '-i', `sine=frequency=880:duration=${segundos}`,
+    '-af', 'volume=0.02',
+    '-c:a', 'libopus', path.join(dir, 'voz.webm'),
+  ]);
+}
+
 async function probe(file: string): Promise<string> {
   const { stdout } = await run(ffprobePath(), [
     '-v', 'error', '-select_streams', 'v:0',
@@ -422,6 +447,69 @@ describe('exportRecording', () => {
       expect(r.warnings.join(' ')).toContain('camara');
     } finally {
       await fsp.rm(roto, { recursive: true, force: true }).catch(() => {});
+    }
+  }, 90_000);
+
+  it('la voz doblada sustituye a la narracion', async () => {
+    // Se distinguen por volumen: la del micro va fuerte y la voz muy floja.
+    // Sin eso habria que analizar frecuencias para saber cual entro.
+    const dir2 = await makeRecording({
+      voz: { file: 'voz.webm', desfaseMs: 0 },
+      pista: 'voz',
+    });
+    try {
+      await makeAudio(dir2, 3);
+      await makeVoz(dir2, 3);
+      const m = JSON.parse(await fsp.readFile(path.join(dir2, 'manifest.json'), 'utf8')) as Manifest;
+      m.audio = { file: 'mic.webm', startedAt: T0, mimeType: 'audio/webm;codecs=opus' };
+      await fsp.writeFile(path.join(dir2, 'manifest.json'), JSON.stringify(m));
+
+      const out = path.join(dir2, 'doblada.mp4');
+      await exportRecording({ recordingDir: dir2, preset: PRESET_MINI, outFile: out });
+
+      expect(await probeAudio(out)).toContain('aac');
+      // El volumen delata que dentro esta la voz floja y no el micro fuerte.
+      expect(await volumenMedio(out)).toBeLessThan(-30);
+    } finally {
+      await fsp.rm(dir2, { recursive: true, force: true }).catch(() => {});
+    }
+  }, 90_000);
+
+  it('con la pista puesta en micro se oye la narracion aunque haya voz', async () => {
+    const dir2 = await makeRecording({
+      voz: { file: 'voz.webm', desfaseMs: 0 },
+      pista: 'micro',
+    });
+    try {
+      await makeAudio(dir2, 3);
+      await makeVoz(dir2, 3);
+      const m = JSON.parse(await fsp.readFile(path.join(dir2, 'manifest.json'), 'utf8')) as Manifest;
+      m.audio = { file: 'mic.webm', startedAt: T0, mimeType: 'audio/webm;codecs=opus' };
+      await fsp.writeFile(path.join(dir2, 'manifest.json'), JSON.stringify(m));
+
+      const out = path.join(dir2, 'con-micro.mp4');
+      await exportRecording({ recordingDir: dir2, preset: PRESET_MINI, outFile: out });
+      expect(await volumenMedio(out)).toBeGreaterThan(-25);
+    } finally {
+      await fsp.rm(dir2, { recursive: true, force: true }).catch(() => {});
+    }
+  }, 90_000);
+
+  it('avisa si la voz declarada no esta, y no deja el video mudo', async () => {
+    // Quedarse sin sonido por un fichero perdido seria peor que sonar distinto.
+    const dir2 = await makeRecording({ voz: { file: 'voz.webm', desfaseMs: 0 }, pista: 'voz' });
+    try {
+      await makeAudio(dir2, 3);
+      const m = JSON.parse(await fsp.readFile(path.join(dir2, 'manifest.json'), 'utf8')) as Manifest;
+      m.audio = { file: 'mic.webm', startedAt: T0, mimeType: 'audio/webm;codecs=opus' };
+      await fsp.writeFile(path.join(dir2, 'manifest.json'), JSON.stringify(m));
+
+      const out = path.join(dir2, 'sin-voz.mp4');
+      const r = await exportRecording({ recordingDir: dir2, preset: PRESET_MINI, outFile: out });
+      expect(r.warnings.join(' ')).toContain('voz');
+      expect(await volumenMedio(out)).toBeGreaterThan(-25);   // cayo al micro
+    } finally {
+      await fsp.rm(dir2, { recursive: true, force: true }).catch(() => {});
     }
   }, 90_000);
 

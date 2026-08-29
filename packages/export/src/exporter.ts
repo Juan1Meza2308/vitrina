@@ -189,10 +189,50 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
     ? path.resolve(opts.outFile)
     : path.join(root, `export-${preset.name}${extensionFor(settings.format)}`);
 
-  // El audio se grabo en otro proceso y arranco antes que el video; el desfase
-  // se resuelve al montarlo, no al grabarlo.
+  /*
+   * Que se oye en el video.
+   *
+   * Sin marcar nada manda la voz doblada si la hay, porque es lo que espera
+   * quien acaba de doblar. Si se pidio la voz y el fichero no esta, se avisa y
+   * se cae a la narracion en vivo: quedarse mudo por un fichero perdido seria
+   * peor que sonar distinto.
+   */
+  const quiere = renderProject.pista ?? (renderProject.voz ? 'voz' : 'micro');
+  const llevaAudio = supportsAudio(settings.format);
   let audio: AudioInput | undefined;
-  if (manifest.audio && supportsAudio(settings.format)) {
+
+  if (!llevaAudio && quiere !== 'ninguna' && (renderProject.voz || manifest.audio)) {
+    warnings.push(`El formato ${settings.format} no lleva audio: no saldra en este export.`);
+  }
+
+  /*
+   * La voz doblada no pasa por el mapa de tiempo.
+   *
+   * Se grabo contra el video YA montado, asi que los cortes y las
+   * aceleraciones ya estan dentro de ella: es un solo tramo de principio a fin.
+   * Trocearla por los `keeps` del material la cortaria dos veces y sonaria a
+   * saltos. Lo unico que se ajusta es donde empieza.
+   */
+  if (llevaAudio && quiere === 'voz' && renderProject.voz) {
+    const voz = renderProject.voz;
+    const ruta = path.join(root, voz.file);
+    if (await exists(ruta)) {
+      const desfaseSec = voz.desfaseMs / 1000;
+      // Desfase negativo: el fichero empezo antes que el video, asi que se
+      // salta dentro de el en vez de anteponer silencio.
+      const dentro = Math.max(0, -desfaseSec);
+      const silencio = Math.max(0, desfaseSec);
+      audio = {
+        file: ruta,
+        keeps: [{ start: dentro, end: dentro + Math.max(0, spanMs / 1000 - silencio), rate: 1 }],
+        delaySec: silencio,
+      };
+    } else {
+      warnings.push(`El proyecto declara una voz (${voz.file}) pero el fichero no esta.`);
+    }
+  }
+
+  if (!audio && llevaAudio && quiere !== 'ninguna' && manifest.audio) {
     const pista = manifest.audio;
     const ruta = path.join(root, pista.file);
     if (await exists(ruta)) {
@@ -211,8 +251,6 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
     } else {
       warnings.push(`El manifest declara audio (${pista.file}) pero el fichero no esta.`);
     }
-  } else if (manifest.audio && !supportsAudio(settings.format)) {
-    warnings.push(`El formato ${settings.format} no lleva audio: la narracion no saldra en este export.`);
   }
 
   const quitados = (project.cuts ?? []).length;
