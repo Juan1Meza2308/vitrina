@@ -21,7 +21,10 @@ de escritorio no puede tener:
   reloj, así que no hay que alinear nada.
 
 Y una garantía de privacidad: el log de teclado registra `"char"`, nunca la
-tecla pulsada. Una demo con login no puede filtrar credenciales.
+tecla pulsada. Una demo con login no puede filtrar credenciales. Y lo que salga
+en pantalla y no deba salir —un saldo, un correo— se tapa **al grabar**, así que
+no llega a existir en los frames: ver [Tapar lo que no debe
+salir](#tapar-lo-que-no-debe-salir).
 
 ## Estado
 
@@ -47,6 +50,7 @@ todavía no.
 | Editor tipo CapCut · deshacer · memoria | hecho |
 | Looks guardados y marca de agua | hecho |
 | Repetir la grabación | hecho |
+| Tapar datos sensibles | hecho |
 | macOS y Windows | hecho (sin probar en Mac) |
 | Grabación vertical (9:16) | hecho |
 
@@ -141,6 +145,8 @@ Opciones:
 --out=<ruta>        carpeta de salida
 --secs=<n>          parar solo tras n segundos
 --quality=<n>       calidad JPEG 1-100 (por defecto 92)
+--tapar=<sel>       selectores CSS a difuminar al grabar: "#saldo, .email"
+--desenfoque=<n>    radio del desenfoque en px (por defecto 12)
 ```
 
 Deja una carpeta `.vitrina` autocontenida con los frames, el log de eventos, el
@@ -402,6 +408,62 @@ La app **recuerda** la última dirección, preset, orientación y micrófono en 
 inicio. Se guardan al grabar, no al teclear: escribir media URL y cerrar no
 debería dejarla puesta para la próxima vez.
 
+## Tapar lo que no debe salir
+
+Una demo de una app real enseña datos reales: el saldo de un cliente, un correo,
+una clave de API en la pantalla de ajustes. En la pantalla de inicio hay un campo
+para los **selectores CSS** de lo que no debe salir:
+
+```
+#saldo, .email, [data-privado]
+```
+
+Y por línea de comandos:
+
+```bash
+node bin/vitrina-record.ts http://localhost:3000 --tapar="#saldo, .email"
+```
+
+**Se tapa al grabar, no al exportar.** Es la diferencia que importa: el JPEG que
+se escribe en disco ya va difuminado, así que el dato en claro no llega a
+existir. Difuminarlo en el editor sería una garantía falsa —seguiría dentro de
+cada frame de la carpeta `.vitrina`, y quien la reciba lo tiene entero—.
+
+Tres decisiones que no son evidentes:
+
+- **Se difumina, no se oculta.** `display:none` mueve la maqueta y la demo deja
+  de ser la demo: los botones cambian de sitio y la cámara encuadra otra cosa.
+  El desenfoque deja el hueco donde estaba.
+- **Es CSS, no un script que recorra el DOM.** Una hoja de estilos cubre también
+  lo que aparezca después —una fila que llega por fetch, un modal que se abre a
+  mitad de demo— sin volver a mirar. Un script tendría que reaccionar a cada
+  mutación, y llegaría tarde justo cuando importa.
+- **El log tampoco guarda el texto.** Cada click registra la etiqueta del
+  elemento pulsado, así que tapar los píxeles y dejar el correo escrito en
+  `events.json` sería tapar solo lo que se ve. La caja sí se guarda: se tapa el
+  contenido, no la geometría, y un click sobre un dato tapado sigue generando su
+  zoom.
+
+> **El detalle que costó encontrar.** El estilo se inyecta antes de que el parser
+> construya el documento —tiene que estar puesto antes de la primera pintura—, y
+> a esa altura el documento está vacío: el parser lo reemplaza después y se lleva
+> por delante el `<style>`. El script corría, no fallaba, y no tapaba nada. Por
+> eso la hoja se **repone**: un `MutationObserver` la devuelve en cuanto aparece
+> el documento, en la misma microtarea, sin un frame con el dato al aire.
+
+Dos límites, dichos claros:
+
+- **Un iframe de otro origen no se tapa.** Vitrina se engancha a la página, y un
+  iframe cross-origin corre en otro proceso al que no llega el script.
+- **Un desenfoque es tapar, no cifrar.** Con el radio por defecto un texto de
+  interfaz queda ilegible en el vídeo; lo que no quieras enseñar de ninguna
+  manera es mejor no tenerlo en pantalla.
+
+Lo fija un test que graba [`spikes/sensible.html`](spikes/sensible.html) —dos
+filas idénticas, una tapada y otra no— y **mide el contraste del frame guardado**
+comparándolas. Es la única comprobación que habría cazado el fallo del párrafo de
+arriba: el script se generaba, se ejecutaba, y el dato salía igual.
+
 ## Repetir la grabación
 
 La dolencia número uno de cualquier herramienta de demos: un fallo en el minuto
@@ -425,8 +487,10 @@ cortes— se copia a la grabación nueva. La original no se toca.
 > Medido al implementarlo: un tramo que encuadraba el 6 % del ancho pasaba a
 > apuntar al 4 %.
 
-Dos cosas que conviene saber:
+Tres cosas que conviene saber:
 
+- **Vuelve a tapar lo mismo.** Los selectores quedan en el manifest, así que una
+  segunda toma no publica el dato que se tapó en la primera.
 - **Lo que se escribió no se puede reproducir.** El log guarda que se pulsó una
   tecla, nunca cuál — es la misma garantía que impide que una demo con un login
   filtre credenciales. Para los formularios se puede dar un texto de relleno.
