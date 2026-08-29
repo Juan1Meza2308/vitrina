@@ -15,6 +15,30 @@ electronVersion: 44.0.0
 
 directories:
   output: ../../dist
+  # El icono se genera con `node tools/icono.ts`. De este PNG de 1024
+  # electron-builder saca solo el .ico de Windows y el .icns de macOS.
+  buildResources: build
+
+# De donde se baja la actualizacion. Es tambien lo que hace que el build
+# escriba `latest.yml` en la Release: sin ese fichero, electron-updater no tiene
+# como saber que hay una version nueva.
+# Se comprueba que ffmpeg entro de verdad, y con los codecs que hacen falta.
+# electron-builder, si un extraResources no esta, avisa en el log y SIGUE: sin
+# esto se publicaria un instalador sin exportador.
+# La ruta va desde donde se ejecuta el comando (la raiz del repo), no desde
+# `projectDir` como el resto del fichero. Es una rareza de electron-builder, y
+# cuesta un rato averiguarla: el error dice "Cannot find module" y no donde
+# buscaba.
+afterPack: apps/desktop/build/comprobar-empaquetado.cjs
+
+publish:
+  provider: github
+  owner: Juan1Meza2308
+  repo: vitrina
+  # Publicada, no borrador. Una Release en borrador no la ve nadie —ni las apps
+  # instaladas, que es lo que dispara el aviso de version nueva—, asi que
+  # quedaria una publicacion que parece hecha y que no llega a nadie.
+  releaseType: release
 
 files:
   - out/**/*
@@ -25,8 +49,19 @@ files:
 asarUnpack:
   - '**/node_modules/@napi-rs/canvas*/**'
 
+# ffmpeg viaja CON la app, en los recursos y no dentro del asar: se ejecuta como
+# proceso aparte, y un ejecutable dentro de un archivo empaquetado no se puede
+# lanzar. `findFfmpeg()` lo busca ahi antes que en ningun otro sitio.
+#
+# Va declarado por plataforma porque el nombre del binario cambia, y porque el
+# de cada sistema solo aparece en el node_modules de esa maquina: cada instalador
+# se compila en un runner de su sistema.
+
 mac:
   category: public.app-category.developer-tools
+  extraResources:
+    - from: ../../node_modules/ffmpeg-static/ffmpeg
+      to: ffmpeg
   target:
     - dmg
     - zip
@@ -45,3 +80,14 @@ mac:
 
 win:
   target: nsis
+  extraResources:
+    - from: ../../node_modules/ffmpeg-static/ffmpeg.exe
+      to: ffmpeg.exe
+
+# El instalador deja elegir carpeta y crea acceso directo: un instalador que no
+# pregunta nada asusta mas de lo que ahorra.
+nsis:
+  oneClick: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  shortcutName: Vitrina

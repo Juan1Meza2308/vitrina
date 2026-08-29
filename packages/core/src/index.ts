@@ -1,7 +1,7 @@
 export type {
   Rect, InputEvent, InputEventType, Frame, CaptureSize, Manifest,
   Background, FrameStyle, ZoomSegment, Project, ExportSettings, Watermark, Tapado,
-  Esquina, CamTrack, CamaraStyle,
+  Esquina, CamTrack, CamaraStyle, Voz,
 } from './types.ts';
 export {
   computeQualityBudget, describeBudget, clampZoom, pickPreset, CAPTURE_PRESETS, MEDIDO_EN,
@@ -9,6 +9,8 @@ export {
 } from './quality.ts';
 export type { QualityBudget, CapturePreset, Orientacion } from './quality.ts';
 export { FrameIndex } from './frames.ts';
+export { pasosDe, capitulosDe, srtDe, guiaMarkdown, reloj } from './guia.ts';
+export type { Paso, TipoPaso, Capitulo, OpcionesGuia } from './guia.ts';
 export { audioAlignment, audioTimeFor, supportsAudio } from './audio.ts';
 export { TimeMap } from './timemap.ts';
 export { parseSilenceReport, silenceFilter, UMBRAL_DB, MIN_SILENCIO_S, MARGEN_MS } from './silence.ts';
@@ -20,7 +22,7 @@ export { RATE_MIN, RATE_MAX } from './timemap.ts';
 export type { AudioTrack, AudioAlignment } from './audio.ts';
 export { layoutFrame, notchRect } from './layout.ts';
 export type { FrameLayout, FrameStyleInput, Insets } from './layout.ts';
-export { defaultProject, defaultExportFor, hostFromUrl } from './project.ts';
+export { defaultProject, defaultExportFor, hostFromUrl, colorDominante } from './project.ts';
 export { reescalarProyecto } from './reescalar.ts';
 export type { ProjectDefaults } from './project.ts';
 export {

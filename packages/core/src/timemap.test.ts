@@ -227,3 +227,30 @@ describe('TimeMap.rateAt', () => {
     expect(t).toBeCloseTo(m.sourceAt(m.outputDurationMs), -1);
   });
 });
+
+describe('TimeMap.outputAt', () => {
+  it('es el inverso de sourceAt en los tramos que salen', () => {
+    const m = new TimeMap({ durationMs: DUR, cuts: [{ startMs: 2000, endMs: 4000 }] });
+    for (const t of [0, 1000, 4500, 8000]) {
+      expect(m.sourceAt(m.outputAt(t)!)).toBeCloseTo(t, 6);
+    }
+  });
+
+  it('devuelve null para lo que no llega al video', () => {
+    // Distinguir "esta en el segundo 3" de "esto no sale" es el motivo de que
+    // exista: un paso de la guia no puede apuntar a un instante cortado.
+    const m = new TimeMap({
+      durationMs: DUR, trimStartMs: 1000, cuts: [{ startMs: 3000, endMs: 5000 }],
+    });
+    expect(m.outputAt(500)).toBeNull();      // antes del recorte
+    expect(m.outputAt(4000)).toBeNull();     // dentro del corte
+    expect(m.outputAt(2000)).toBeCloseTo(1000, 6);
+  });
+
+  it('la velocidad acorta el instante de salida', () => {
+    const m = new TimeMap({ durationMs: DUR, speeds: [{ startMs: 0, endMs: 4000, rate: 2 }] });
+    // 4 s de material a 2x ocupan 2 s de video.
+    expect(m.outputAt(4000)).toBeCloseTo(2000, 6);
+    expect(m.outputAt(6000)).toBeCloseTo(4000, 6);
+  });
+});

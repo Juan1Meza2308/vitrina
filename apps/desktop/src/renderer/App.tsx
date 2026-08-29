@@ -3,9 +3,10 @@ import {
   CAMERA_PRESETS, cameraConfigForBudget, computeQualityBudget, describeBudget,
   planSegments, deleteSegment, setSegmentScale, insertSegment, hasManualEdits,
   clampTrim, CursorPath, moveSegmentTarget, layoutFrame, viewRect, TimeMap,
-  paraOrientacion, defaultExportFor,
+  paraOrientacion, defaultExportFor, colorDominante,
   tramosSinActividad, ahorroDe,
 } from '@vitrina/core';
+import { withAlpha } from '@vitrina/renderer';
 import type {
   Background, CameraPresetName, CapturePreset, Cut, Orientacion, Project, ZoomSegment,
 } from '@vitrina/core';
@@ -14,16 +15,25 @@ import type {
 } from '../preload/index.ts';
 import { Preview, makeTrack } from './preview.ts';
 import { Timeline } from './Timeline.tsx';
+import { Recientes } from './Recientes.tsx';
+import { Bienvenida } from './Bienvenida.tsx';
+import { AvisoActualizacion } from './Actualizacion.tsx';
+import { instalarReflejo } from './reflejo.ts';
 import {
   IconoGrabacion, IconoAjustes, IconoRepetir, IconoImagen, IconoReproducir,
   IconoPausa, IconoInicio, IconoSonido, IconoSilencio, IconoAnadir, IconoBorrar,
+  IconoCarpeta,
 } from './Iconos.tsx';
-import { grabarMicrofono, listarMicrofonos, type MicHandle, type DispositivoAudio } from './mic.ts';
+import {
+  grabarMicrofono, listarMicrofonos,
+  type MicHandle, type DispositivoAudio, type DestinoAudio,
+} from './mic.ts';
 import {
   grabarCamara, listarCamaras, abrirCamara,
   type CamHandle, type DispositivoVideo,
 } from './camara.ts';
 import { picos } from './timeline-calc.ts';
+import { Reloj } from './reloj.ts';
 import { inicial, empujar, deshacer, rehacer, puedeDeshacer, puedeRehacer }
   from './historial.ts';
 
@@ -48,6 +58,7 @@ const FONDOS: { nombre: string; bg: Background; css: string }[] = [
 
 export function App() {
   const [fase, setFase] = useState<Fase>('inicio');
+  const [bienvenida, setBienvenida] = useState(false);
   const [presets, setPresets] = useState<CapturePreset[]>([]);
   const [presetName, setPresetName] = useState('equilibrado');
   const [orientacion, setOrientacion] = useState<Orientacion>('horizontal');
@@ -66,6 +77,11 @@ export function App() {
   /** Stream de previsualizacion: verse ANTES de grabar evita descubrir al
    *  terminar que la tapa estaba puesta o que se sale medio hombro. */
   const [camPreview, setCamPreview] = useState<MediaStream | null>(null);
+  const [pausado, setPausado] = useState(false);
+  /** Regrabacion: Vitrina esta ejecutando la cabeza y aun no toca a la persona. */
+  const [cabeza, setCabeza] = useState(false);
+  /** Atajos que el sistema no dejo registrar, para poder avisar. */
+  const [atajosFallidos, setAtajosFallidos] = useState<string[]>([]);
   const [nivel, setNivel] = useState(0);
   const mic = useRef<MicHandle | null>(null);
   const cam = useRef<CamHandle | null>(null);
@@ -74,6 +90,7 @@ export function App() {
   const [recientes, setRecientes] = useState<GrabacionReciente[]>([]);
   const [arrastrando, setArrastrando] = useState(false);
   const [tema, setTema] = useState<'oscuro' | 'claro'>('oscuro');
+  const [detalleVertical, setDetalleVertical] = useState(false);
 
   useEffect(() => {
     void window.vitrina.capturePresets().then(setPresets);
@@ -90,6 +107,12 @@ export function App() {
       setCamOn(a.camOn);
       setCamDeviceId(a.camDeviceId);
       setTema(a.tema);
+      // La bienvenida sale solo si no se ha visto NUNCA. Lo que se guarda es la
+      // version que se leyo, no un si/no: el dia que una version traiga algo que
+      // contar, ya esta el dato para poder saludar otra vez sin inventar otro
+      // ajuste. Pero comparar versiones AQUI seria enseñar la misma bienvenida
+      // en cada actualizacion, que es justo lo que nadie quiere.
+      setBienvenida(a.bienvenidaVista === '');
     });
   }, []);
 
@@ -141,6 +164,10 @@ export function App() {
     );
   }, [preset?.capture.w, preset?.capture.h, salidaInicial?.w, salidaInicial?.h, orientacion]);
 
+  // La luz que sigue al cursor sobre el cristal. Un solo oyente para toda la
+  // app, montado una vez.
+  useEffect(instalarReflejo, []);
+
   // El tema se aplica a la raiz y se guarda al cambiarlo, no al grabar: es un
   // ajuste de la ventana, no de la demo.
   useEffect(() => {
@@ -181,6 +208,9 @@ export function App() {
     if (videoPreview.current) videoPreview.current.srcObject = camPreview;
   }, [camPreview]);
 
+  /** Cuantos selectores hay puestos, para decirlo en el resumen de avanzadas. */
+  const selectoresTapados = tapar.split(/[\n,]/).filter((t) => t.trim()).length;
+
   const grabar = useCallback(async () => {
     setError('');
     setFase('cuenta');
@@ -220,7 +250,9 @@ export function App() {
       void window.vitrina.guardarAjustes({
         url, presetName, orientacion, micOn, micDeviceId, tapar, camOn, camDeviceId,
       });
-      await window.vitrina.startRecording(url, presetName, orientacion, tapar);
+      const r = await window.vitrina.startRecording(url, presetName, orientacion, tapar);
+      setAtajosFallidos(r?.atajosFallidos ?? []);
+      setPausado(false);
       setStats({ frames: 0, elapsedMs: 0 });
       setFase('grabando');
     } catch (e) {
@@ -232,6 +264,14 @@ export function App() {
       setFase('inicio');
     }
   }, [url, presetName, orientacion, micOn, micDeviceId, tapar, camOn, camDeviceId, camPreview]);
+
+  // El atajo global de parar pasa por aqui y no por el proceso principal: el
+  // microfono lo lleva el renderer y hay que cerrarlo antes de que se escriba
+  // el manifest.
+  useEffect(() => window.vitrina.onAtajoGrabacion((que) => {
+    if (que === 'parar') void pararRef.current?.();
+  }), []);
+  useEffect(() => window.vitrina.onPausaCambiada(setPausado), []);
 
   const parar = useCallback(async () => {
     try {
@@ -250,6 +290,42 @@ export function App() {
       setFase('inicio');
     }
   }, []);
+
+  // `parar` se crea despues del efecto que escucha el atajo, asi que va por
+  // referencia: capturarla directamente dejaria la version del primer render.
+  const pararRef = useRef<(() => Promise<void>) | null>(null);
+  pararRef.current = parar;
+
+  /**
+   * Regrabar desde un instante de la grabacion abierta.
+   *
+   * Vitrina ejecuta la cabeza sola y, cuando termina, arranca el microfono y
+   * te devuelve el control: durante la cabeza no estabas hablando, asi que la
+   * narracion empieza en el relevo.
+   */
+  const regrabar = useCallback(async (dir: string, desdeMs: number, conMicro: boolean) => {
+    setError('');
+    setDatos(null);
+    setCabeza(true);
+    setStats({ frames: 0, elapsedMs: 0 });
+    setFase('grabando');
+    try {
+      const r = await window.vitrina.regrabarDesde(dir, desdeMs);
+      setAtajosFallidos(r.atajosFallidos ?? []);
+      setCabeza(false);
+      if (conMicro) {
+        try {
+          mic.current = await grabarMicrofono(micDeviceId || undefined);
+        } catch (e) {
+          setError(`Sin audio: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
+    } catch (e) {
+      setCabeza(false);
+      setError(e instanceof Error ? e.message : String(e));
+      setFase('inicio');
+    }
+  }, [micDeviceId]);
 
   const abrirDir = useCallback(async (dir: string) => {
     try {
@@ -288,14 +364,38 @@ export function App() {
     }
   }, []);
 
+  // La bienvenida va ANTES que cualquier fase: si se abriera la app con una
+  // grabacion desde la linea de comandos, saludar encima del editor seria
+  // interrumpir, no recibir.
+  if (bienvenida) {
+    return (
+      <Bienvenida onEmpezar={() => {
+        setBienvenida(false);
+        void window.vitrina.estadoDelSistema().then((e) => {
+          void window.vitrina.guardarAjustes({ bienvenidaVista: e.version });
+        });
+      }} />
+    );
+  }
+
+  // El aviso de version nueva acompana a las pantallas donde se puede atender
+  // —inicio y editor— y NO a la cuenta atras ni a la grabacion: ahi la demo esta
+  // corriendo y cualquier cosa que aparezca sale en el video o distrae a quien
+  // esta narrando.
+  const avisoVersion = fase === 'inicio' || fase === 'editor' ? <AvisoActualizacion /> : null;
+
   if (fase === 'editor' && datos) {
     return (
-      <Editor
-        key={datos.dir}
-        datos={datos}
-        onSalir={() => { setDatos(null); setFase('inicio'); }}
-        onAbrir={setDatos}
-      />
+      <>
+        {avisoVersion}
+        <Editor
+          key={datos.dir}
+          datos={datos}
+          onSalir={() => { setDatos(null); setFase('inicio'); }}
+          onAbrir={setDatos}
+          onRegrabar={(dir, desdeMs, conMicro) => void regrabar(dir, desdeMs, conMicro)}
+        />
+      </>
     );
   }
 
@@ -316,7 +416,9 @@ export function App() {
         <div className="centro">
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span className="pulso" />
-            <span style={{ fontSize: 17, fontWeight: 600 }}>Grabando</span>
+            <span style={{ fontSize: 17, fontWeight: 600 }}>
+              {cabeza ? 'Vitrina está repitiendo la parte buena' : 'Grabando'}
+            </span>
           </div>
           <div className="stats">
             <span><b>{(stats.elapsedMs / 1000).toFixed(1)}</b> s</span>
@@ -331,7 +433,39 @@ export function App() {
           {/* Si el microfono fallo hay que decirlo AQUI. Enterarse al reproducir
               significa repetir la demo entera. */}
           {error && <p className="error" style={{ maxWidth: 460 }}>{error}</p>}
-          <button className="primario" onClick={() => void parar()}>Parar y editar</button>
+          {cabeza && (
+            <p className="sutil" style={{ maxWidth: 460, textAlign: 'center' }}>
+              No toques nada: cuando llegue al punto que elegiste te avisará y
+              seguirás tú.
+            </p>
+          )}
+          {pausado && (
+            <p className="sutil" style={{ color: 'var(--acc)' }}>
+              En pausa · el trozo pausado no saldrá en el vídeo
+            </p>
+          )}
+          <div className="fila" style={{ gap: 10 }}>
+            <button onClick={() => void window.vitrina.pausarGrabacion()}>
+              {pausado ? 'Reanudar' : 'Pausar'}
+            </button>
+            <button onClick={() => void window.vitrina.marcarMomento()} disabled={pausado}
+                    title="Deja una chincheta en este instante para encontrarlo luego">
+              Señalar momento
+            </button>
+            <button className="primario" onClick={() => void parar()}>Parar y editar</button>
+          </div>
+          {/* Los atajos se dicen aqui porque su gracia es usarlos con esta
+              ventana detras: leerlos en el README no sirve de nada. */}
+          <p className="sutil" style={{ maxWidth: 460, textAlign: 'center' }}>
+            Sin volver aquí: <b>Ctrl+Mayús+S</b> para parar, <b>Ctrl+Mayús+P</b>{' '}
+            para pausar y <b>Ctrl+Mayús+M</b> para señalar un momento.
+          </p>
+          {atajosFallidos.length > 0 && (
+            <p className="sutil" style={{ maxWidth: 460, textAlign: 'center' }}>
+              Estos no los concedió el sistema, seguramente porque otra app los
+              usa: <b>{atajosFallidos.join(', ')}</b>. Los demás sí funcionan.
+            </p>
+          )}
         </div>
       </div>
     );
@@ -342,6 +476,7 @@ export function App() {
          onDragOver={(e) => { e.preventDefault(); setArrastrando(true); }}
          onDragLeave={() => setArrastrando(false)}
          onDrop={soltar}>
+      {avisoVersion}
       <div className="inicio">
         <div className="marca">
           <h1>Vitrina</h1>
@@ -356,170 +491,190 @@ export function App() {
           </button>
         </div>
 
-        <div className="campo">
-          <label htmlFor="url">Dirección de tu app</label>
-          <input id="url" type="text" value={url} onChange={(e) => setUrl(e.target.value)}
-                 placeholder="http://localhost:3000" spellCheck={false} />
-        </div>
+        {/* Columna izquierda: lo que hay que decidir para grabar, y el boton
+            DENTRO de la tarjeta. Antes vivia al final de la pagina, detras de
+            todo lo demas y fuera de la ventana en un portatil. */}
+        <section className="tarjeta cristal">
+          <h2 className="titulo-panel"><IconoGrabacion /> Nueva grabación</h2>
 
-        <div className="campo">
-          <label>Formato</label>
-          <div className="fila">
-            <button className={orientacion === 'horizontal' ? 'on' : ''}
-                    onClick={() => setOrientacion('horizontal')}>
-              Horizontal <small>16:9</small>
-            </button>
-            <button className={orientacion === 'vertical' ? 'on' : ''}
-                    onClick={() => setOrientacion('vertical')}>
-              Vertical <small>9:16 · TikTok, Reels</small>
-            </button>
+          <div className="campo">
+            <label htmlFor="url">Dirección de tu app</label>
+            <input id="url" type="text" value={url} spellCheck={false}
+                   onChange={(e) => setUrl(e.target.value)}
+                   onKeyDown={(e) => { if (e.key === 'Enter') void grabar(); }}
+                   placeholder="http://localhost:3000" />
           </div>
-          {orientacion === 'vertical' && (
-            <p className="nota-formato">
-              La ventana se abre a <b>{preset?.css?.w ?? 430} px</b> como un móvil
-              de verdad, así que tu web enseña su diseño móvil. Se captura a
-              escala ×{preset?.dsf ?? 2}: sale nítida pese a la pantalla pequeña.
-              <br />
-              {/* Los fps de abajo son los medidos EN HORIZONTAL. Se dicen asi de
-                  claro porque todo el proyecto se apoya en no prometer numeros
-                  sin medir, y en vertical no se han medido. */}
-              Los fps de abajo están medidos en horizontal; en vertical pueden ser
-              menores. Para medirlo en tu equipo:{' '}
-              <code>node tools/calibrar.ts --vertical</code>.
-            </p>
-          )}
-        </div>
 
-        <div className="campo">
-          <label>Calidad de captura</label>
-          <div className="presets">
-            {presets.map((p) => {
-              const t = paraOrientacion(p, orientacion);
-              return (
-                <button key={p.name} className={`preset${p.name === presetName ? ' on' : ''}`}
-                        onClick={() => setPresetName(p.name)}>
-                  <b>{t.capture.w}×{t.capture.h}</b>
-                  {/* El ancho de maquetacion explica por que la UI se ve del
-                      tamano que se ve, y es lo que antes se inflaba hasta 2560
-                      para comprar margen de zoom. Ahora se compra con escala. */}
-                  <small>tu web a {t.css?.w ?? t.capture.w} px</small>
-                  <small>~{p.measuredFps} fps</small>
+          <div className="campo">
+            <label>Formato</label>
+            <div className="fila">
+              <button className={orientacion === 'horizontal' ? 'on' : ''}
+                      onClick={() => setOrientacion('horizontal')}>
+                Horizontal <small>16:9</small>
+              </button>
+              <button className={orientacion === 'vertical' ? 'on' : ''}
+                      onClick={() => setOrientacion('vertical')}>
+                Vertical <small>9:16 · TikTok, Reels</small>
+              </button>
+            </div>
+            {orientacion === 'vertical' && (
+              <p className="nota-formato">
+                La ventana se abre a <b>{preset?.css?.w ?? 430} px</b> como un
+                móvil de verdad, así que tu web enseña su diseño móvil.{' '}
+                <button className="mas" onClick={() => setDetalleVertical((v) => !v)}>
+                  {detalleVertical ? 'menos' : 'más'}
                 </button>
-              );
-            })}
+                {detalleVertical && (
+                  <>
+                    <br />
+                    Se captura a escala ×{preset?.dsf ?? 2}: sale nítida pese a la
+                    pantalla pequeña. Los fps de abajo están medidos en
+                    horizontal; en vertical pueden ser menores. Para medirlo en tu
+                    equipo: <code>node tools/calibrar.ts --vertical</code>.
+                  </>
+                )}
+              </p>
+            )}
           </div>
-        </div>
 
-        <div className="campo">
-          <label>Narración</label>
-          <div className="fila">
-            <button className={micOn ? 'on' : ''} onClick={() => setMicOn(true)}>Con micrófono</button>
-            <button className={!micOn ? 'on' : ''} onClick={() => setMicOn(false)}>Sin audio</button>
+          <div className="campo">
+            <label>Calidad de captura</label>
+            <div className="presets">
+              {presets.map((p) => {
+                const t = paraOrientacion(p, orientacion);
+                return (
+                  <button key={p.name} className={`preset${p.name === presetName ? ' on' : ''}`}
+                          onClick={() => setPresetName(p.name)}>
+                    <b>{t.capture.w}×{t.capture.h}</b>
+                    <small>tu web a {t.css?.w ?? t.capture.w} px</small>
+                    <small>~{p.measuredFps} fps</small>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          {micOn && micDevices.length > 1 && (
-            <select value={micDeviceId} onChange={(e) => setMicDeviceId(e.target.value)}>
-              <option value="">Micrófono predeterminado</option>
-              {micDevices.map((d) => (
-                <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
-              ))}
-            </select>
+
+          {presupuestoInicial && (
+            <div className={`nota-calidad${presupuestoInicial.maxSharpZoom < 1.15 ? ' aviso' : ''}`}>
+              <span>Exportando a {salidaInicial?.w}×{salidaInicial?.h}:</span>
+              <b>{describeBudget(presupuestoInicial)}</b>
+            </div>
           )}
-        </div>
 
-        <div className="campo">
-          <label>Cámara</label>
-          <div className="fila">
-            <button className={camOn ? 'on' : ''} onClick={() => setCamOn(true)}>
-              Con cámara
-            </button>
-            <button className={!camOn ? 'on' : ''} onClick={() => setCamOn(false)}>
-              Sin cámara
-            </button>
-          </div>
-          {camOn && (
-            <>
-              {camDevices.length > 1 && (
-                <select value={camDeviceId} onChange={(e) => setCamDeviceId(e.target.value)}>
-                  <option value="">Cámara predeterminada</option>
-                  {camDevices.map((d) => (
+          {/* Lo avanzado se pliega, pero SIGUE EN EL DOM: `details` no quita el
+              campo, solo lo esconde. Y el resumen dice si hay algo puesto, o
+              nadie recordara que dejo un selector tapando media pantalla. */}
+          <details className="avanzado">
+            <summary>
+              Opciones avanzadas
+              {selectoresTapados > 0 && (
+                <span className="pastilla">
+                  {selectoresTapados} {selectoresTapados === 1 ? 'selector' : 'selectores'} tapados
+                </span>
+              )}
+            </summary>
+            <div className="campo">
+              <label htmlFor="tapar">Tapar datos sensibles</label>
+              <input id="tapar" type="text" value={tapar} spellCheck={false}
+                     onChange={(e) => setTapar(e.target.value)}
+                     placeholder="#saldo, .email, [data-privado]" />
+              <p className="nota-formato">
+                Selectores CSS de lo que no debe salir. Se difuminan{' '}
+                <b>mientras grabas</b>, así que el dato nunca llega al vídeo ni
+                queda en la carpeta. Se difuminan en vez de ocultarse para no
+                mover nada de sitio.
+              </p>
+            </div>
+          </details>
+
+          <button className="primario grabar" onClick={() => void grabar()}>Grabar</button>
+        </section>
+
+        {/* Columna derecha: de donde sale el material, y lo ya grabado. */}
+        <div className="lado">
+          <section className="tarjeta cristal">
+            <h2 className="titulo-panel"><IconoSonido /> Micrófono y cámara</h2>
+
+            <div className="campo">
+              <label>Narración</label>
+              <div className="fila">
+                <button className={micOn ? 'on' : ''} onClick={() => setMicOn(true)}>
+                  Con micrófono
+                </button>
+                <button className={!micOn ? 'on' : ''} onClick={() => setMicOn(false)}>
+                  Sin audio
+                </button>
+              </div>
+              {micOn && micDevices.length > 1 && (
+                <select value={micDeviceId} onChange={(e) => setMicDeviceId(e.target.value)}>
+                  <option value="">Micrófono predeterminado</option>
+                  {micDevices.map((d) => (
                     <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
                   ))}
                 </select>
               )}
-              {/* Redonda y del tamano de la burbuja: lo que se ve aqui es lo que
-                  va a salir, incluido el recorte. Un rectangulo mentiria sobre
-                  cuanto encuadre se pierde por los lados. */}
-              <video ref={videoPreview} className="camara-previa"
-                     autoPlay muted playsInline />
+            </div>
+
+            <div className="campo">
+              <label>Cámara</label>
+              <div className="fila">
+                <button className={camOn ? 'on' : ''} onClick={() => setCamOn(true)}>
+                  Con cámara
+                </button>
+                <button className={!camOn ? 'on' : ''} onClick={() => setCamOn(false)}>
+                  Sin cámara
+                </button>
+              </div>
+              {camOn && (
+                <>
+                  {camDevices.length > 1 && (
+                    <select value={camDeviceId} onChange={(e) => setCamDeviceId(e.target.value)}>
+                      <option value="">Cámara predeterminada</option>
+                      {camDevices.map((d) => (
+                        <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
+                      ))}
+                    </select>
+                  )}
+                  {/* Redonda y del tamano de la burbuja: lo que se ve aqui es lo
+                      que va a salir, recorte incluido. */}
+                  <div className="fila-camara">
+                    <video ref={videoPreview} className="camara-previa"
+                           autoPlay muted playsInline />
+                    <p className="nota-formato">
+                      Se graba aparte del vídeo: luego puedes moverla, cambiar su
+                      tamaño o quitarla sin volver a grabar.
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+          </section>
+
+          <section className="tarjeta cristal">
+            <h2 className="titulo-panel"><IconoCarpeta /> Recientes</h2>
+            {recientes.length > 0 ? (
+              <Recientes
+                items={recientes}
+                onAbrir={(dir) => void abrirDir(dir)}
+                onAbrirOtra={() => void abrir()}
+              />
+            ) : (
               <p className="nota-formato">
-                Se graba aparte del vídeo, así que luego puedes moverla, cambiar
-                su tamaño o quitarla sin volver a grabar.
+                Aquí aparecerán tus grabaciones, con su imagen. También puedes
+                arrastrar una carpeta <code>.vitrina</code> hasta esta ventana.
               </p>
-            </>
-          )}
+            )}
+          </section>
         </div>
-
-        <div className="campo">
-          <label htmlFor="tapar">Tapar datos sensibles</label>
-          <input id="tapar" type="text" value={tapar} spellCheck={false}
-                 onChange={(e) => setTapar(e.target.value)}
-                 placeholder="#saldo, .email, [data-privado]" />
-          <p className="nota-formato">
-            Escribe qué partes de tu web no deben salir, con el selector CSS de
-            cada una. Se difuminan <b>mientras grabas</b>, así que el dato nunca
-            llega al vídeo ni queda en la carpeta.
-            <br />
-            Se difuminan en vez de ocultarse para no mover nada de sitio: si
-            desaparecieran, los botones cambiarían de sitio y el zoom acabaría
-            encuadrando otra cosa.
-          </p>
-        </div>
-
-        {presupuestoInicial && (
-          <div className={`nota-calidad${presupuestoInicial.maxSharpZoom < 1.15 ? ' aviso' : ''}`}>
-            <span>Exportando a {salidaInicial?.w}×{salidaInicial?.h}:</span>
-            <b>{describeBudget(presupuestoInicial)}</b>
-          </div>
-        )}
 
         {/* Flotante y no en la columna: apareciendo entre los campos empujaba
             todo hacia abajo y el boton de Grabar se movia debajo del cursor. */}
         {error && (
-          <div className="aviso-flotante" role="alert" onClick={() => setError('')}>
+          <div className="aviso-flotante cristal flota" role="alert" onClick={() => setError('')}>
             {error}
             <span>Toca para cerrar</span>
           </div>
         )}
-
-        <div className="acciones">
-          <button className="primario" onClick={() => void grabar()}>Grabar</button>
-          <button onClick={() => void abrir()}>Abrir grabación</button>
-        </div>
-
-        <div className="campo">
-          <label>Recientes</label>
-          {recientes.length > 0 ? (
-            <div className="recientes">
-              {recientes.map((r) => (
-                <button key={r.dir} className="reciente" title={r.dir}
-                        onClick={() => void abrirDir(r.dir)}>
-                  {/* El sello dice cual es cual mucho antes que la fecha: una
-                      lista de horas no distingue dos demos del mismo dia. */}
-                  {r.miniatura
-                    ? <img src={r.miniatura} alt="" />
-                    : <span className="sello-vacio" />}
-                  <b>{new Date(r.startedAt).toLocaleString()}</b>
-                  <small>{(r.durationMs / 1000).toFixed(1)}s</small>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="nota-formato">
-              Aquí aparecerán tus grabaciones. También puedes arrastrar una
-              carpeta <code>.vitrina</code> hasta esta ventana para abrirla.
-            </p>
-          )}
-        </div>
 
       </div>
     </div>
@@ -529,11 +684,13 @@ export function App() {
 // ---------------------------------------------------------------------------
 
 function Editor(
-  { datos, onSalir, onAbrir }: {
+  { datos, onSalir, onAbrir, onRegrabar }: {
     datos: RecordingData;
     onSalir: () => void;
     /** Cambiar a otra grabacion sin pasar por la pantalla de inicio. */
     onAbrir: (d: RecordingData) => void;
+    /** Regrabar desde un instante. Lo lleva la app: acaba en modo grabacion. */
+    onRegrabar: (dir: string, desdeMs: number, conMicro: boolean) => void;
   },
 ) {
   /**
@@ -572,6 +729,15 @@ function Editor(
   }, []);
   const [camara, setCamara] = useState<CameraPresetName>('normal');
   const [tMs, setTMs] = useState(0);
+  /**
+   * El mismo instante, por un canal que no pasa por React. La linea de tiempo
+   * esta memorizada y mueve su aguja escuchando esto; el estado de arriba sigue
+   * sirviendo a lo que necesita re-render (el reloj en texto, si la aguja cae
+   * dentro de un tramo). Un solo efecto los mantiene en sintonia, en vez de
+   * tener que acordarse en cada sitio que mueve el tiempo.
+   */
+  const reloj = useMemo(() => new Reloj(), []);
+  useEffect(() => { reloj.set(tMs); }, [reloj, tMs]);
   const [reproduciendo, setReproduciendo] = useState(false);
 
   // Los tramos son ESTADO, no un valor derivado. En cuanto se pueden editar a
@@ -586,7 +752,21 @@ function Editor(
    * entra desvaneciendose y sale de golpe se lee como un fallo.
    */
   const [mudo, setMudo] = useState(false);
+  const [doblando, setDoblando] = useState(false);
+  const voz = useRef<MicHandle | null>(null);
+  const desfaseVoz = useRef(0);
   const [atajos, setAtajos] = useState<'oculto' | 'abierto' | 'cerrando'>('oculto');
+  const recortar = useCallback(
+    (t: { trimStartMs: number; trimEndMs: number | null }) => setProject((p) => ({ ...p, ...t })),
+    [setProject],
+  );
+
+  /** Llevar la aguja a un punto para. Estable, para no romper el memo. */
+  const irA = useCallback((ms: number) => {
+    setReproduciendo(false);
+    setTMs(ms);
+  }, []);
+
   const cerrarAtajos = useCallback(() => {
     setAtajos((v) => (v === 'abierto' ? 'cerrando' : v));
     // Lo mismo que dura la animacion de salida. Quitarla antes la cortaria a
@@ -749,17 +929,34 @@ function Editor(
     [datos, proyectoVivo, camara, presupuesto.maxSharpZoom],
   );
 
+  /**
+   * Repintar el instante actual.
+   *
+   * Va tambien por una ref porque hay tres sitios que necesitan repintar sin
+   * depender de `tMs`: el <video> de la camara cuando termina de decodificar, el
+   * cambio de camara, y el aviso del preview cuando llega un fotograma que se
+   * estaba cargando. Con la ref no hace falta reinstalar esos oyentes en cada
+   * fotograma.
+   */
+  const dibujar = useCallback(() => {
+    if (lienzo.current) void preview.current?.draw(lienzo.current, tMs, proyectoVivo);
+  }, [tMs, proyectoVivo]);
+  const dibujarRef = useRef(dibujar);
+  useEffect(() => { dibujarRef.current = dibujar; }, [dibujar]);
+
   useEffect(() => {
     const p = new Preview(datos.manifest, datos.events, track);
+    // El preview ya no espera al decode: compone con el fotograma anterior y
+    // avisa cuando llega el bueno. Sin este aviso, el ultimo movimiento de un
+    // arrastre se quedaria pintado con la imagen de antes.
+    p.onFrame(() => dibujarRef.current());
     preview.current = p;
-    return () => { p.destroy(); preview.current = null; };
+    return () => { p.onFrame(null); p.destroy(); preview.current = null; };
   }, [datos]);
 
   useEffect(() => { preview.current?.setTrack(track); }, [track]);
 
-  useEffect(() => {
-    if (lienzo.current) void preview.current?.draw(lienzo.current, tMs, proyectoVivo);
-  }, [tMs, proyectoVivo]);
+  useEffect(() => { dibujar(); }, [dibujar]);
 
   useEffect(() => {
     if (!reproduciendo) return;
@@ -875,7 +1072,9 @@ function Editor(
     setSeleccion(nuevos.findIndex((z) => z.startMs <= tMs && z.endMs > tMs));
   };
 
-  const cortes = project.cuts ?? [];
+  // Memorizado porque viaja a la linea de tiempo memorizada: `?? []` en el
+  // render crearia un array nuevo cada vez y el memo no serviria de nada.
+  const cortes = useMemo(() => project.cuts ?? [], [project.cuts]);
   const [buscando, setBuscando] = useState(false);
   const [sinSilencios, setSinSilencios] = useState(false);
 
@@ -916,6 +1115,15 @@ function Editor(
   // La camara tiene el mismo desfase que la narracion y se resuelve igual: se
   // grabo en otro proceso y arranco antes que el video.
   const pistaCam = datos.manifest.camara ?? null;
+
+  // Momentos senalados durante la grabacion. Se calculan una vez: el log no
+  // cambia mientras el editor esta abierto.
+  const hitos = useMemo(
+    () => datos.events
+      .filter((e) => e.type === 'mark')
+      .map((e) => ({ ms: e.t - datos.manifest.startedAt, label: e.label })),
+    [datos],
+  );
   const tiempoCam = (ms: number) =>
     (datos.manifest.startedAt - (pistaCam?.startedAt ?? 0) + ms) / 1000;
 
@@ -994,7 +1202,7 @@ function Editor(
   // ningun sitio, se le pasa el <video> tal cual.
   useEffect(() => {
     preview.current?.setCam(camUrl ? camEl.current : null);
-    if (lienzo.current) void preview.current?.draw(lienzo.current, tMs, proyectoVivo);
+    dibujarRef.current();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [camUrl, datos]);
 
@@ -1011,9 +1219,7 @@ function Editor(
   useEffect(() => {
     const el = camEl.current;
     if (!el || !camUrl) return;
-    const repintar = () => {
-      if (lienzo.current) void preview.current?.draw(lienzo.current, tMs, proyectoVivo);
-    };
+    const repintar = () => dibujarRef.current();
     el.addEventListener('loadeddata', repintar);
     el.addEventListener('seeked', repintar);
     return () => {
@@ -1059,6 +1265,87 @@ function Editor(
     el.currentTime = Math.max(0, tiempoAudio(tMs));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tMs, audioUrl, reproduciendo]);
+
+  /**
+   * Doblar: grabar la voz viendo el video ya montado.
+   *
+   * El orden importa. Primero arranca el micro y DESPUES la reproduccion: asi
+   * el desfase es la ventaja que le saco el fichero al video, un numero que se
+   * mide en vez de estimarse. Y se silencia la narracion original antes de
+   * nada, o el micro la volveria a grabar por los altavoces.
+   */
+  const doblar = useCallback(async () => {
+    if (doblando) return;
+    setErrorRepeticion('');
+    setMudo(true);
+    setReproduciendo(false);
+    setTMs(0);
+    try {
+      const destino: DestinoAudio = {
+        start: () => window.vitrina.vozStart(datos.dir),
+        chunk: (b) => window.vitrina.vozChunk(b),
+        stop: () => window.vitrina.vozStop(),
+      };
+      const h = await grabarMicrofono(undefined, destino);
+      voz.current = h;
+      // Negativo a proposito: el fichero empezo ANTES que el video, asi que al
+      // montarlo hay que saltar dentro de el.
+      desfaseVoz.current = h.startedAt - Date.now();
+      setDoblando(true);
+      setReproduciendo(true);
+    } catch (e) {
+      setMudo(false);
+      setErrorRepeticion(`Sin voz: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, [doblando, datos.dir]);
+
+  const pararDoblaje = useCallback(async () => {
+    const h = voz.current;
+    voz.current = null;
+    setDoblando(false);
+    setReproduciendo(false);
+    if (!h) return;
+    await h.detener().catch(() => {});
+    setProject((p) => ({
+      ...p,
+      voz: { file: 'voz.webm', desfaseMs: Math.round(desfaseVoz.current) },
+      pista: 'voz',
+    }));
+    setMudo(false);
+  }, []);
+
+  // Llegar al final para el doblaje solo: seguir grabando sobre un video parado
+  // solo anade silencio al fichero.
+  useEffect(() => {
+    if (doblando && !reproduciendo) void pararDoblaje();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reproduciendo]);
+
+  /*
+   * El cristal de la app se tine con la demo abierta.
+   *
+   * El material toma un poco del color de lo que hay detras, y aqui detras esta
+   * el fondo del proyecto. Cambiar de fondo tine la ventana entera, que es
+   * justo lo que hace que el cristal parezca material y no gris translucido.
+   *
+   * Se limpia al salir del editor: en la pantalla de inicio no hay demo de la
+   * que tomar color.
+   */
+  useEffect(() => {
+    const raiz = document.documentElement;
+    const color = colorDominante(project.background);
+    if (color) {
+      raiz.style.setProperty(
+        '--tinte',
+        `linear-gradient(150deg, ${withAlpha(color, 0.16)}, transparent 65%)`);
+    } else {
+      raiz.style.removeProperty('--tinte');
+    }
+    return () => { raiz.style.removeProperty('--tinte'); };
+  }, [project.background]);
+
+  /** Que se oye: sin marcar nada manda la voz doblada si la hay. */
+  const pistaElegida = project.pista ?? (project.voz ? 'voz' : 'micro');
 
   const sel = seleccion !== null ? zooms[seleccion] : undefined;
 
@@ -1109,7 +1396,7 @@ function Editor(
   return (
     <div className="editor">
       <div className="fila-alta">
-      <aside className="biblioteca">
+      <aside className="biblioteca cristal">
         <div className="grupo">
           <h2 className="titulo-panel"><IconoGrabacion /> Grabación</h2>
           <p className="sutil">
@@ -1171,6 +1458,14 @@ function Editor(
           <button onClick={() => void repetir()} disabled={repitiendo}>
             {repitiendo ? 'Repitiendo...' : 'Repetir esta grabación'}
           </button>
+          {/* Regrabar desde la aguja: la mitad buena se conserva y solo se
+              vuelve a hacer lo que salio mal. */}
+          <button onClick={() => onRegrabar(datos.dir, tMs, !!pista)}
+                  disabled={repitiendo}
+                  title="Vitrina repite sola la demo hasta aquí y después sigues tú">
+            Regrabar desde {(tMs / 1000).toFixed(1)}s
+          </button>
+
           <p className="sutil">
             Lo que escribiste no se repite: se guarda que pulsaste una tecla,
             nunca cuál.
@@ -1270,7 +1565,7 @@ function Editor(
               los controles estan donde se esta mirando y no en otra fila que
               obliga a bajar la vista. Cada icono lleva su texto en `title`,
               porque un dibujo solo se adivina. */}
-          <div className="transporte">
+          <div className="transporte cristal flota">
             <button className="redondo primario"
                     title={reproduciendo ? 'Pausar (Espacio)' : 'Reproducir (Espacio)'}
                     aria-label={reproduciendo ? 'Pausar' : 'Reproducir'}
@@ -1297,7 +1592,7 @@ function Editor(
         {atajos !== 'oculto' && (
           <div className={`atajos${atajos === 'cerrando' ? ' saliendo' : ''}`}
                onClick={cerrarAtajos}>
-            <div className="hoja" onClick={(e) => e.stopPropagation()}>
+            <div className="hoja cristal modal" onClick={(e) => e.stopPropagation()}>
               <h3>Atajos</h3>
               <dl>
                 <dt>Espacio</dt><dd>reproducir o parar</dd>
@@ -1324,7 +1619,7 @@ function Editor(
 
       </div>
 
-      <aside className="panel">
+      <aside className="panel cristal">
         <h2 className="titulo-panel"><IconoAjustes /> Configuración</h2>
         <div className="grupo">
           <h3>Marco</h3>
@@ -1526,6 +1821,41 @@ function Editor(
         )}
 
         <div className="grupo">
+          <h3>Doblar la voz</h3>
+          <p className="sutil">
+            Graba tu voz viendo el vídeo ya montado, en vez de narrar mientras
+            operas. La narración original se silencia mientras doblas.
+          </p>
+          <button className={doblando ? 'peligro' : ''}
+                  onClick={() => void (doblando ? pararDoblaje() : doblar())}>
+            {doblando ? 'Parar y guardar la voz' : 'Grabar mi voz'}
+          </button>
+          {doblando && (
+            <p className="sutil" style={{ color: 'var(--acc)' }}>
+              Grabando tu voz · el vídeo se está reproduciendo
+            </p>
+          )}
+          {project.voz && !doblando && (
+            <>
+              <p className="sutil">Qué se oye en el vídeo:</p>
+              <div className="fila">
+                {([
+                  ['micro', 'Narración'],
+                  ['voz', 'Tu voz'],
+                  ['ninguna', 'Nada'],
+                ] as const).map(([v, texto]) => (
+                  <button key={v} className={pistaElegida === v ? 'on' : ''}
+                          disabled={v === 'micro' && !pista}
+                          onClick={() => setProject((p) => ({ ...p, pista: v }))}>
+                    {texto}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
+
+        <div className="grupo">
           <h3>Cursor</h3>
           <div className="fila">
             <button className={project.frame.cursor !== 'none' ? 'on' : ''}
@@ -1582,7 +1912,7 @@ function Editor(
       </aside>
       </div>
 
-      <div className="linea">
+      <div className="linea cristal">
         <div className="barra">
           <button onClick={() => setHist(deshacer)} disabled={!puedeDeshacer(hist)}
                   title="Deshacer (Ctrl+Z)">Deshacer</button>
@@ -1611,8 +1941,8 @@ function Editor(
 
         <Timeline
           durationMs={duracion}
-          tMs={tMs}
-          onSeek={(ms) => { setReproduciendo(false); setTMs(ms); }}
+          reloj={reloj}
+          onSeek={irA}
           zooms={zooms}
           onZoomsChange={setZooms}
           seleccion={seleccion}
@@ -1620,10 +1950,11 @@ function Editor(
           trimStartMs={project.trimStartMs}
           trimEndMs={project.trimEndMs}
           cuts={cortes}
-          speeds={project.speeds ?? []}
+          speeds={project.speeds}
           escala={escalaTl}
           onda={onda}
-          onTrim={(t) => setProject((p) => ({ ...p, ...t }))}
+          hitos={hitos}
+          onTrim={recortar}
         />
       </div>
     </div>
@@ -1642,6 +1973,21 @@ function Exportar(
   const [elegido, setElegido] = useState('720p');
   const [progreso, setProgreso] = useState<ExportProgressMsg | null>(null);
   const [resultado, setResultado] = useState<ResultadoExport | null>(null);
+  const [guia, setGuia] = useState<'no' | 'yendo' | { pasos: number }>('no');
+
+  const escribirGuia = async () => {
+    setGuia('yendo');
+    try {
+      // Se guarda antes: la guia lee project.json del disco, y el guardado
+      // normal va con retardo. Es el mismo cuidado que ya tiene el export.
+      await guardar();
+      const r = await window.vitrina.exportarGuia(dir);
+      setGuia({ pasos: r.pasos });
+    } catch (e) {
+      setGuia('no');
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -1703,6 +2049,20 @@ function Exportar(
         </>
       ) : (
         <button className="primario" onClick={() => void lanzar()}>Exportar</button>
+      )}
+
+      {/* La guia escrita sale del mismo log que el video: mismos pasos, mismas
+          marcas de tiempo. Va aqui porque es otra forma de exportar la demo. */}
+      <button className="con-icono" disabled={!!activo || guia === 'yendo'}
+              title="Escribe guia.md con los pasos y sus capturas, capitulos.txt y guia.srt"
+              onClick={() => void escribirGuia()}>
+        {guia === 'yendo' ? 'Escribiendo la guía...' : 'Exportar guía escrita'}
+      </button>
+      {typeof guia === 'object' && (
+        <p className="sutil">
+          Guía escrita · {guia.pasos} {guia.pasos === 1 ? 'paso' : 'pasos'} ·{' '}
+          guia.md, capitulos.txt y guia.srt en la carpeta
+        </p>
       )}
 
       {resultado && (

@@ -74,6 +74,20 @@ export function guionDe(
   return out.sort((a, b) => a.tMs - b.tMs);
 }
 
+/**
+ * El guion hasta un instante, sin incluirlo.
+ *
+ * Es lo que hace posible regrabar desde la mitad: Vitrina ejecuta sola la
+ * cabeza —con los mismos tiempos que la original, que es lo que deja la app en
+ * el mismo estado— y a partir de ahi graba lo que haga la persona.
+ *
+ * Va aqui y no en quien llama porque lo usan la app y la linea de comandos, y
+ * un recorte repartido en dos sitios acaba siendo dos recortes distintos.
+ */
+export function guionHasta(guion: Accion[], tMs: number): Accion[] {
+  return guion.filter((a) => a.tMs < tMs);
+}
+
 /** Duracion del guion, para saber cuanto durara la repeticion. */
 export function duracionDeGuion(guion: Accion[]): number {
   return guion.length === 0 ? 0 : guion[guion.length - 1]!.tMs;

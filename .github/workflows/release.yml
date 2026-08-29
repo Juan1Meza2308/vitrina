@@ -1,0 +1,97 @@
+name: Publicar
+
+# Publica los instaladores cuando cambia la VERSIÓN, no en cada commit.
+#
+# El disparador es `version` en package.json: al empujar a master un commit que
+# la sube, este flujo crea el tag y publica la Release con el .exe y el .dmg. Es
+# deliberado que no sea cada push — cada Release enciende el aviso de "hay una
+# versión nueva" en las aplicaciones instaladas, y avisar cada tarde enseña a
+# ignorar el aviso justo el día que traiga algo importante.
+#
+# También se puede lanzar a mano desde la pestaña Actions.
+on:
+  push:
+    branches: [master]
+    paths: ['package.json', 'apps/desktop/package.json']
+  workflow_dispatch:
+
+# Para crear el tag y la Release.
+permissions:
+  contents: write
+
+jobs:
+  # ¿Hay versión nueva que publicar? Si el tag ya existe, no hay nada que hacer:
+  # un commit que toca package.json por otra cosa no debe republicar.
+  decidir:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+      publicar: ${{ steps.v.outputs.publicar }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - id: v
+        run: |
+          # La de la app, que es la que acaba dentro del instalador y la que
+          # `app.getVersion()` devuelve. Un test comprueba que no se separa de
+          # la del repositorio.
+          V=$(node -p "require('./apps/desktop/package.json').version")
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          if git rev-parse -q --verify "refs/tags/v$V" >/dev/null; then
+            echo "La versión v$V ya está publicada. No hay nada que hacer."
+            echo "publicar=no" >> "$GITHUB_OUTPUT"
+          else
+            echo "publicar=si" >> "$GITHUB_OUTPUT"
+          fi
+
+  construir:
+    needs: decidir
+    if: needs.decidir.outputs.publicar == 'si'
+    strategy:
+      # Sin `fail-fast`: si el .dmg falla, el .exe se publica igual. Media
+      # Release es mejor que ninguna, y la que falta se ve en el momento.
+      fail-fast: false
+      matrix:
+        include:
+          - so: windows-latest
+            nombre: Windows
+          - so: macos-latest
+            nombre: macOS
+    runs-on: ${{ matrix.so }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Cada instalador se compila en un runner de SU sistema: `ffmpeg-static`
+      # baja el binario de la plataforma donde se instala, y el empaquetado
+      # incluye ese. Compilar el .exe desde Linux metería el ffmpeg de Linux —o
+      # ninguno—, que es justo lo que el hook `afterPack` no deja pasar.
+      - run: npm ci
+
+      - run: npm run app:build
+
+      - name: Empaquetar y publicar
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx electron-builder --projectDir apps/desktop --config electron-builder.yml --publish always
+
+  # Un resumen legible en la propia ejecución: si algo salió a medias, se ve sin
+  # abrir los registros.
+  resumen:
+    needs: [decidir, construir]
+    if: always() && needs.decidir.outputs.publicar == 'si'
+    runs-on: ubuntu-latest
+    steps:
+      - run: |
+          {
+            echo "## Vitrina v${{ needs.decidir.outputs.version }}"
+            echo ""
+            echo "Instaladores: ${{ needs.construir.result }}"
+            echo ""
+            echo "La aplicación no está firmada digitalmente: Windows avisa con"
+            echo "SmartScreen (Más información → Ejecutar de todas formas) y macOS"
+            echo "pide abrirla con clic derecho → Abrir la primera vez."
+          } >> "$GITHUB_STEP_SUMMARY"

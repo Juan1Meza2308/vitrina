@@ -1,3 +1,27 @@
+/*
+ * ===========================================================================
+ * CRISTAL: las cuatro reglas
+ * ===========================================================================
+ *
+ * Todo lo visual de esta hoja sale de aqui. Van escritas arriba del todo porque
+ * son lo que hay que respetar al anadir la siguiente pantalla, no una nota al
+ * pie de lo que ya existe.
+ *
+ *  1. EL CRISTAL ES DEL CONTENEDOR, NUNCA DEL CONTENIDO. Panel, pildora, hoja y
+ *     tarjeta son cristal; boton, campo, preset, carril y chip son superficie
+ *     SOLIDA con filo de luz. Dos velos apilados no se leen —cada uno suma su
+ *     propia neblina sobre el texto— y un `backdrop-filter` por boton se paga en
+ *     cada repintado del lienzo.
+ *  2. LA LUZ VIENE DE ARRIBA. Filo claro en el borde superior, filo oscuro en el
+ *     inferior y un brillo diagonal que cae desde la esquina de arriba a la
+ *     izquierda. Un borde uniforme se lee como un rectangulo, no como un canto.
+ *  3. CUANTO MAS FLOTA, MAS GRUESO. Tres niveles y no mas —panel, flotante,
+ *     modal— y en cada uno suben a la vez opacidad, desenfoque y sombra: asi es
+ *     como se lee la distancia.
+ *  4. EL COLOR LO PONE LO QUE HAY DETRAS. El material toma un poco del fondo del
+ *     proyecto abierto. Es lo que separa "cristal" de "gris translucido".
+ */
+
 :root {
   --bg: #0b0d10;
   --panel: #14181d;
@@ -18,16 +42,55 @@
   --radio-l: 16px;
 
   /*
-   * Materiales translucidos.
-   *
-   * Un panel deja pasar el fondo desenfocado en vez de taparlo: la jerarquia se
-   * lee sin dibujar una caja opaca mas. El filo claro de arriba es la luz
-   * cogiendo el canto del material, y es lo que separa "cristal" de "gris".
+   * Los tres niveles de cristal. Opacidad y desenfoque suben juntos: un panel
+   * que flota mas y desenfoca igual se lee como un error de dibujo.
    */
-  --material: rgba(20, 24, 29, .72);
-  --material-alto: rgba(27, 32, 39, .82);
-  --desenfoque: blur(24px) saturate(180%);
-  --filo: inset 0 1px 0 rgba(255, 255, 255, .06);
+  --vidrio-1: rgba(20, 24, 29, .66);
+  --vidrio-2: rgba(24, 29, 35, .78);
+  --vidrio-3: rgba(27, 32, 39, .88);
+  --desenfoque-1: blur(18px) saturate(170%);
+  --desenfoque-2: blur(28px) saturate(180%);
+  --desenfoque-3: blur(40px) saturate(190%);
+
+  /* El canto: claro arriba, oscuro abajo. La luz viene de arriba. */
+  --filo-alto: inset 0 1px 0 rgba(255, 255, 255, .10);
+  --filo-bajo: inset 0 -1px 0 rgba(0, 0, 0, .30);
+
+  /* Brillo fijo del material, y color de la luz que sigue al cursor
+     (`reflejo.ts` la mueve; la forma esta en `.cristal > .luz`). */
+  --brillo: linear-gradient(150deg, rgba(255, 255, 255, .07), transparent 45%);
+  --reflejo: rgba(255, 255, 255, .10);
+
+  /*
+   * Superficies SOLIDAS: todo lo que va DENTRO de un cristal.
+   *
+   * Existen para poder cumplir la regla 1 sin que lo de dentro se vea plano:
+   * llevan el mismo filo de luz, pero no desenfocan nada.
+   */
+  --capa: #171b21;
+  --capa-hundida: #10141a;
+
+  /* Tinte del contenido. Lo pone el editor con el fondo del proyecto. */
+  --tinte: transparent;
+
+  /*
+   * Tintas de la linea de tiempo.
+   *
+   * Estaban escritas a pelo en cada regla, asi que en tema claro seguian siendo
+   * las de oscuro y los carriles se veian sucios.
+   */
+  --tinta-video: linear-gradient(180deg, #d6f96a, #a6e04e);
+  --tinta-video-texto: rgba(11, 13, 16, .82);
+  --tinta-ritmo: 120, 190, 255;
+  --tinta-audio: rgba(140, 200, 255, .55);
+  --tinta-marca: #ffcc4d;
+  --tinta-quitado: rgba(11, 13, 16, .72);
+
+  /* Compatibilidad: el nombre viejo sigue valiendo mientras quede algun uso. */
+  --material: var(--vidrio-1);
+  --material-alto: var(--vidrio-2);
+  --desenfoque: var(--desenfoque-1);
+  --filo: var(--filo-alto);
 
   /*
    * Sombras por peso. Una superficie mas grande se lee mas gruesa: el mismo
@@ -77,11 +140,26 @@
   --peligro: #c33b2e;
   --acc-fg: #ffffff;
   --acc-suave: rgba(78, 125, 14, .10);
-  --material: rgba(255, 255, 255, .74);
-  --material-alto: rgba(255, 255, 255, .88);
-  /* En claro el filo va casi blanco: sobre un material claro, un filo oscuro
-     se leeria como una linea sucia y no como luz. */
-  --filo: inset 0 1px 0 rgba(255, 255, 255, .9);
+  /* En claro el cristal va MAS opaco: un velo claro sobre fondo claro se come
+     el texto, que es el fallo tipico de este material. */
+  --vidrio-1: rgba(255, 255, 255, .78);
+  --vidrio-2: rgba(255, 255, 255, .86);
+  --vidrio-3: rgba(255, 255, 255, .93);
+  /* Y el filo va casi blanco: uno oscuro se leeria como una linea sucia. */
+  --filo-alto: inset 0 1px 0 rgba(255, 255, 255, .9);
+  --filo-bajo: inset 0 -1px 0 rgba(16, 24, 40, .06);
+  --brillo: linear-gradient(150deg, rgba(255, 255, 255, .5), transparent 45%);
+  /* En claro la luz es MUCHO mas fuerte: sobre un material casi blanco, un
+     reflejo tenue no se ve. */
+  --reflejo: rgba(255, 255, 255, .55);
+  --capa: #ffffff;
+  --capa-hundida: #eef1f5;
+  --tinta-video: linear-gradient(180deg, #8fce3a, #6fb32c);
+  --tinta-video-texto: rgba(255, 255, 255, .95);
+  --tinta-ritmo: 60, 120, 200;
+  --tinta-audio: rgba(70, 130, 200, .55);
+  --tinta-marca: #d79a12;
+  --tinta-quitado: rgba(16, 24, 40, .14);
   --sombra-1: 0 1px 2px rgba(16, 24, 40, .06);
   --sombra-2: 0 10px 30px rgba(16, 24, 40, .10);
   --sombra-3: 0 28px 70px rgba(16, 24, 40, .18);
@@ -89,6 +167,96 @@
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
+
+/*
+ * EL CRISTAL.
+ *
+ * Una sola clase y dos modificadores; todas las superficies translucidas de la
+ * app pasan por aqui.
+ *
+ * El brillo, el tinte y el reflejo van como CAPAS DE FONDO y no como
+ * pseudoelementos. La primera version los puso en `::before`/`::after` con
+ * `z-index: -1` y no se veian: un z negativo los manda detras del fondo del
+ * propio elemento. Subirlos por encima taparia el texto. Como capas de fondo
+ * caen justo donde tienen que caer —sobre el color, debajo del contenido— y
+ * ademas no crean dos cajas mas por panel.
+ *
+ * La LUZ que sigue al cursor es la excepcion, y por rendimiento: como capa de
+ * fondo obligaba a repintar el panel entero en cada movimiento del raton, y eso
+ * medido costaba dos tercios de los fotogramas (M13: arrastrar la aguja a 20 fps
+ * en vez de 60). Ahora es una caja propia que se mueve con `transform`, que el
+ * compositor resuelve sin repintar nada. La crea `reflejo.ts` la primera vez que
+ * el cursor entra, asi que un panel que nadie toca no paga ni el nodo.
+ */
+
+/*
+ * EL DESENFOQUE SOLO SE PONE DONDE SE LO GANA: encima de algo.
+ *
+ * Los paneles y las tarjetas van AL LADO del lienzo, no sobre el, asi que
+ * detras de ellos solo hay un fondo plano: desenfocarlo no cambia un pixel de
+ * lo que se ve y cuesta recomponer toda esa superficie en cada repintado.
+ *
+ * Medido con `verificar-app --cristal`: con desenfoque en los paneles, la
+ * reproduccion del editor caia de 27 a 13 fps. Quitandolo de este nivel, el
+ * cristal sigue siendo cristal —vidrio translucido, brillo, tinte, filo y
+ * sombra— y la caida desaparece.
+ *
+ * Lo que SI flota sobre contenido —la pildora del transporte, la hoja de
+ * atajos, los avisos— si desenfoca: ahi detras hay video.
+ */
+.cristal {
+  position: relative;
+  /* Crea contexto de apilamiento para que la luz, con z negativo, caiga DONDE
+     TIENE QUE CAER: sobre el fondo del panel y debajo de su contenido. Sin esto
+     un z negativo se va detras del propio fondo y no se ve —ya paso—. */
+  isolation: isolate;
+  background-color: var(--vidrio-1);
+  background-image: var(--brillo), var(--tinte);
+  border: 1px solid var(--linea);
+  border-radius: var(--radio-l);
+  box-shadow: var(--filo-alto), var(--filo-bajo), var(--sombra-2);
+}
+
+/* La luz solo con el cursor encima: una superficie que brilla sola no se lee
+   como luz, se lee como un degradado. */
+.cristal > .luz {
+  position: absolute; inset: 0; z-index: -1;
+  overflow: hidden; border-radius: inherit; pointer-events: none;
+  opacity: 0; transition: opacity .3s var(--curva);
+}
+.cristal:hover > .luz { opacity: 1; }
+.cristal > .luz > i {
+  position: absolute; left: 0; top: 0;
+  width: 440px; height: 440px; margin: -220px 0 0 -220px;
+  border-radius: 50%;
+  background: radial-gradient(circle closest-side, var(--reflejo), transparent);
+  /* La promesa que hace barato el efecto: el navegador le da su propia capa y
+     moverla no repinta el panel. */
+  will-change: transform;
+}
+
+.cristal.flota {
+  background-color: var(--vidrio-2);
+  backdrop-filter: var(--desenfoque-2);
+}
+.cristal.modal {
+  background-color: var(--vidrio-3);
+  backdrop-filter: var(--desenfoque-3);
+  box-shadow: var(--filo-alto), var(--filo-bajo), var(--sombra-3);
+}
+
+/*
+ * Interruptor para medir el coste del desenfoque sin recompilar.
+ *
+ * `backdrop-filter` obliga a recomponer lo que hay detras, y en el editor detras
+ * hay un lienzo repintando a 60 fps. Con esto se mide A/B en la misma sesion.
+ */
+:root[data-cristal="no"] .cristal {
+  backdrop-filter: none;
+  background-color: var(--capa);
+  background-image: none;
+}
+:root[data-cristal="no"] .cristal > .luz { display: none; }
 
 /*
  * Tipografia.
@@ -160,7 +328,7 @@ button.on { border-color: var(--acc); color: var(--acc); background: var(--acc-s
 input[type="text"] {
   font: inherit;
   color: var(--fg);
-  background: var(--panel);
+  background: var(--capa-hundida);
   border: 1px solid var(--linea);
   border-radius: var(--radio);
   padding: 10px 12px;
@@ -212,22 +380,44 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.12); }
 /* ---------- pantalla de inicio ---------- */
 
 /*
- * La pantalla de inicio se centra cuando cabe y SE DEJA DESPLAZAR cuando no.
+ * La pantalla de inicio, en dos columnas.
  *
- * `margin: auto` dentro de un flex la centra, pero si el contenido crece mas
- * que la ventana el desbordamiento se va hacia arriba y no hay forma de llegar
- * a el: con `overflow: hidden` en el body, los primeros campos quedaban fuera
- * de la ventana y sin barra. Paso al anadir camara y tapado, que hicieron la
- * pantalla mas alta que un portatil de 768 px.
+ * En una sola no cabia: siete bloques apilados dejaban el boton de Grabar fuera
+ * de la ventana en un portatil, y habia que desplazar para empezar a grabar. A
+ * la izquierda lo que hay que decidir; a la derecha de donde sale el material y
+ * lo que ya esta grabado.
+ *
+ * Sigue pudiendose desplazar —`margin: auto` centra, pero si el contenido crece
+ * mas que la ventana el desbordamiento se va hacia arriba y sin barra no hay
+ * forma de llegar a el—.
  */
 .inicio {
   margin: auto;
-  padding: 24px 0;
-  width: 560px;
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
+  padding: 20px;
+  width: min(1180px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 560px) minmax(360px, 1fr);
+  align-items: start;
+  gap: 16px;
 }
+.inicio > .marca { grid-column: 1 / -1; }
+.lado { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+/* Una ventana estrecha vuelve a una columna. La app se abre a 1280 pero se
+   puede encoger, y a dos columnas los presets se aplastarian. */
+@media (max-width: 1040px) {
+  .inicio { grid-template-columns: minmax(0, 620px); justify-content: center; }
+}
+
+/* Tarjeta de la pantalla de inicio: el mismo material que los paneles del
+   editor, para que las dos pantallas se lean como la misma app. */
+.tarjeta {
+  display: flex; flex-direction: column; gap: 16px;
+  padding: 18px;
+  min-width: 0;
+}
+.tarjeta .grabar { margin-top: 2px; padding: 12px; font-size: 15px; }
+
 .app { overflow-y: auto; }
 .marca { display: flex; align-items: baseline; gap: 10px; }
 /* Interlineado apretado y tracking negativo: los dos van con el tamano. */
@@ -241,7 +431,8 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.12); }
 .preset {
   display: flex; flex-direction: column; gap: 3px; align-items: flex-start;
   padding: 11px 12px; text-align: left; line-height: 1.35;
-  background: var(--material); box-shadow: var(--filo);
+  /* Solido: va DENTRO de un cristal, y dos velos apilados no se leen. */
+  background: var(--capa); box-shadow: var(--filo-alto);
 }
 .preset b { font-size: 13px; font-weight: 600; }
 .preset small { display: block; color: var(--dim); font-size: 10.5px; line-height: 1.35; }
@@ -251,8 +442,7 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.12); }
   display: flex; align-items: center; gap: 8px;
   color: var(--dim); font-size: 12.5px;
   padding: 10px 12px; border: 1px solid var(--linea); border-radius: var(--radio);
-  background: var(--material); backdrop-filter: var(--desenfoque);
-  box-shadow: var(--filo);
+  background: var(--capa); box-shadow: var(--filo-alto);
 }
 .nota-calidad b { color: var(--acc); font-weight: 600; }
 .nota-calidad.aviso b { color: var(--peligro); }
@@ -302,9 +492,6 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.12); }
  * scroll de iOS, y ensucia mucho menos que una linea de 1 px.
  */
 .biblioteca {
-  border: 1px solid var(--linea); border-radius: var(--radio-l);
-  background: var(--material); backdrop-filter: var(--desenfoque);
-  box-shadow: var(--filo), var(--sombra-2);
   padding: 16px 14px; overflow-y: auto; min-height: 0;
   display: flex; flex-direction: column; gap: 20px;
   mask-image: linear-gradient(to bottom,
@@ -319,9 +506,6 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.12); }
 
 .linea {
   margin: 0 12px 12px;
-  border: 1px solid var(--linea); border-radius: var(--radio-l);
-  background: var(--material); backdrop-filter: var(--desenfoque);
-  box-shadow: var(--filo), var(--sombra-2);
   display: flex; flex-direction: column; overflow: hidden;
 }
 .barra {
@@ -365,8 +549,19 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.12); }
 .carril.regla { height: 20px; }
 .carril .riel {
   position: absolute; left: 0; right: 0; top: 4px; bottom: 4px;
-  background: var(--panel-alto); border-radius: 8px; box-shadow: var(--filo);
+  background: var(--capa-hundida); border-radius: 8px; box-shadow: var(--filo-alto);
 }
+/* Chincheta de un momento senalado al grabar. Se pincha y la aguja va ahi. */
+.hito {
+  position: absolute; top: 1px; left: 0; transform: translateX(-50%);
+  width: 12px; height: 12px; padding: 0;
+  border: none; border-radius: 3px 3px 6px 6px;
+  background: var(--tinta-marca);
+  box-shadow: var(--sombra-1);
+  cursor: pointer;
+}
+.hito:hover { filter: brightness(1.12); }
+
 /* Marca de la regla del timeline. Se llama `tl-marca` y no `marca` porque ese
    nombre ya era el del titulo de la pantalla de inicio: al compartirlo, esta
    regla —que va despues— posicionaba el titulo en absoluto y lo dejaba encima
@@ -378,12 +573,13 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.12); }
   white-space: nowrap; pointer-events: none;
 }
 
+/* La onda es un lienzo estirado, no 900 elementos: se dibuja una vez al cargar
+   la narracion y el zoom de la linea de tiempo la escala. `color` esta aqui y
+   no en el JS para que el dibujo siga al tema. */
 .onda {
   position: absolute; left: 0; right: 0; top: 6px; bottom: 6px;
-  display: flex; align-items: center; gap: 0; pointer-events: none;
-}
-.onda span {
-  flex: 1; min-width: 0; background: rgba(140, 200, 255, .55); border-radius: 1px;
+  width: 100%; height: calc(100% - 12px); pointer-events: none;
+  color: var(--tinta-audio);
 }
 .sin-audio {
   position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
@@ -391,7 +587,7 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.12); }
 }
 .tramo .etiqueta {
   position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
-  font-size: 10.5px; font-weight: 500; color: rgba(11, 13, 16, .82);
+  font-size: 10.5px; font-weight: 500; color: var(--tinta-video-texto);
   pointer-events: none;
   white-space: nowrap; overflow: hidden; max-width: calc(100% - 16px);
 }
@@ -420,9 +616,7 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.12); }
   position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
   display: flex; align-items: center; gap: 6px;
   padding: 7px 14px 7px 7px;
-  background: var(--material-alto); backdrop-filter: var(--desenfoque);
-  border: 1px solid var(--linea); border-radius: 999px;
-  box-shadow: var(--filo), var(--sombra-2);
+  border-radius: 999px;
 }
 button.redondo {
   width: 34px; height: 34px; padding: 0; border-radius: 50%;
@@ -437,7 +631,7 @@ button.redondo {
    que el recorte es reversible. */
 .recorte {
   position: absolute; top: 20px; bottom: 0;
-  background: rgba(11, 13, 16, .72); border-radius: 4px; pointer-events: none;
+  background: var(--tinta-quitado); border-radius: 4px; pointer-events: none;
 }
 /* Los silencios se distinguen de los acelerados con unas rayas y otro color:
    son ideas distintas —el corte quita material, el acelerado lo conserva— y
@@ -445,7 +639,7 @@ button.redondo {
 .carril .corte {
   position: absolute; top: 4px; bottom: 4px; border-radius: 4px; pointer-events: none;
   background: repeating-linear-gradient(
-    -45deg, rgba(11, 13, 16, .85) 0 5px, rgba(139, 152, 165, .35) 5px 10px);
+    -45deg, var(--tinta-quitado) 0 5px, rgba(139, 152, 165, .28) 5px 10px);
 }
 
 /* El tramo de zoom se pinta como una pieza de montaje: relleno solido con
@@ -453,7 +647,7 @@ button.redondo {
    confunde con el carril. */
 .tramo {
   position: absolute; top: 11px; height: 22px;
-  background: linear-gradient(180deg, #d6f96a, #a6e04e);
+  background: var(--tinta-video);
   border: 1px solid rgba(0, 0, 0, .25);
   border-radius: 7px; cursor: grab;
   box-shadow: var(--sombra-1);
@@ -485,8 +679,11 @@ button.redondo {
 
 /* La aguja lleva cabeza: una linea de 2 px sola se pierde sobre los carriles,
    y la cabeza dice donde agarrarla aunque el gesto sea sobre toda la pista. */
+/* La posicion viene de una variable que escribe el editor sin re-render: mover
+   la aguja es una escritura de estilo, no un ciclo de React. */
 .aguja {
   position: absolute; top: 0; bottom: 0; width: 2px;
+  left: calc(var(--aguja, 0%) - 1px);
   background: var(--fg); border-radius: 1px; pointer-events: none;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, .35);
 }
@@ -500,9 +697,6 @@ button.redondo {
 /* ---------- panel lateral ---------- */
 
 .panel {
-  border: 1px solid var(--linea); border-radius: var(--radio-l);
-  background: var(--material); backdrop-filter: var(--desenfoque);
-  box-shadow: var(--filo), var(--sombra-2);
   overflow-y: auto; padding: 16px;
   display: flex; flex-direction: column; gap: 20px;
   mask-image: linear-gradient(to bottom,
@@ -544,13 +738,14 @@ button.redondo {
 .veloz {
   position: absolute; top: 0; bottom: 0; pointer-events: none;
   background: repeating-linear-gradient(115deg,
-    rgba(120, 190, 255, .18) 0 6px, rgba(120, 190, 255, .04) 6px 12px);
-  border-left: 1px solid rgba(120, 190, 255, .5);
-  border-right: 1px solid rgba(120, 190, 255, .5);
+    rgba(var(--tinta-ritmo), .20) 0 6px, rgba(var(--tinta-ritmo), .05) 6px 12px);
+  border-left: 1px solid rgba(var(--tinta-ritmo), .5);
+  border-right: 1px solid rgba(var(--tinta-ritmo), .5);
 }
 .veloz span {
   position: absolute; top: 2px; left: 50%; transform: translateX(-50%);
-  font-size: 9.5px; font-variant-numeric: tabular-nums; color: #9fd0ff;
+  font-size: 9.5px; font-variant-numeric: tabular-nums;
+  color: rgb(var(--tinta-ritmo));
 }
 .nota-formato code { font-size: 11px; color: #b7c2d0; }
 .deslizador { display: flex; flex-direction: column; gap: 5px; }
@@ -560,7 +755,7 @@ button.redondo {
 .muestras { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
 .muestra {
   height: 38px; border-radius: var(--radio-s); border: 1px solid var(--linea);
-  cursor: pointer; padding: 0; box-shadow: var(--filo);
+  cursor: pointer; padding: 0; box-shadow: var(--filo-alto);
 }
 .muestra.on { border-color: var(--acc); box-shadow: 0 0 0 1px var(--acc); }
 
@@ -568,7 +763,9 @@ button.redondo {
    timeline, y al ir despues le imponia `height: 6px` y `overflow: hidden`: la
    botonera salia aplastada y con los botones cortados. Segunda colision de
    nombres del fichero, despues de la de `.marca`. */
-.barra-progreso { height: 6px; background: var(--panel-alto); border-radius: 3px; overflow: hidden; }
+.barra-progreso {
+  height: 6px; background: var(--capa-hundida); border-radius: 3px; overflow: hidden;
+}
 /* Se escala en vez de cambiar el ancho: animar `width` fuerza un calculo de
    layout en cada actualizacion, y durante una exportacion llegan varias por
    segundo mientras la maquina ya esta compilando frames. Al ser un color
@@ -585,7 +782,7 @@ button.redondo {
   border-radius: 8px; padding: 9px 11px;
 }
 .medidor {
-  width: 220px; height: 8px; background: var(--panel-alto);
+  width: 220px; height: 8px; background: var(--capa-hundida);
   border-radius: 4px; overflow: hidden;
 }
 .medidor > div {
@@ -594,7 +791,7 @@ button.redondo {
 }
 
 select {
-  font: inherit; color: var(--fg); background: var(--bg);
+  font: inherit; color: var(--fg); background: var(--capa-hundida);
   border: 1px solid var(--linea); border-radius: var(--radio);
   padding: 9px 10px; width: 100%;
 }
@@ -677,9 +874,6 @@ select:focus {
 }
 .atajos.saliendo { animation: velo-entra .18s var(--curva) reverse forwards; }
 .atajos .hoja {
-  background: var(--material-alto); backdrop-filter: var(--desenfoque);
-  border: 1px solid var(--linea); border-radius: var(--radio-l);
-  box-shadow: var(--filo), var(--sombra-3);
   padding: 22px 24px; min-width: 340px;
   display: flex; flex-direction: column; gap: 14px;
   animation: hoja-entra .32s var(--curva);
@@ -707,11 +901,9 @@ select:focus {
   position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
   z-index: 70; max-width: 520px;
   display: flex; flex-direction: column; gap: 4px;
-  background: var(--material-alto); backdrop-filter: var(--desenfoque);
   color: var(--fg);
-  border: 1px solid var(--peligro); border-radius: var(--radio-l);
+  border-color: var(--peligro);
   padding: 12px 16px; cursor: pointer;
-  box-shadow: var(--filo), var(--sombra-2);
   animation: aviso-entra .32s var(--curva);
 }
 /* Aparece desde donde va a quedarse, no desde fuera de la pantalla: el aviso no
@@ -732,6 +924,9 @@ select:focus {
 @media (prefers-reduced-motion: reduce) {
   button:active:not(:disabled) { transform: none; background: var(--acc-suave); }
   .atajos, .atajos .hoja, .aviso-flotante, .app.soltando::after { animation: none; }
+  /* Sin luz que persiga al cursor: el reflejo ni se registra (`reflejo.ts`),
+     y si algo la hubiera creado antes, aqui no se enciende. */
+  .cristal > .luz, .cristal:hover > .luz { opacity: 0; transition: none; }
   .pulso { animation: none; opacity: .85; }
   .barra-progreso > div { transition: none; }
 }
@@ -741,9 +936,23 @@ select:focus {
  * legibilidad. Se quita el desenfoque, que sin translucidez no pinta nada.
  */
 @media (prefers-reduced-transparency: reduce) {
-  .biblioteca, .panel, .linea, .atajos .hoja, .aviso-flotante {
-    background: var(--panel); backdrop-filter: none;
+  /*
+   * Sin translucidez, el brillo y el reflejo no pintan nada: se apagan enteros
+   * en vez de quedarse como dos degradados sobre un fondo opaco.
+   *
+   * Los tres selectores van escritos aunque parezcan redundantes: `.cristal`
+   * solo no gana a `.cristal.flota`, que tiene una clase mas, y el panel
+   * flotante seguia desenfocando con la preferencia puesta. Lo caza
+   * `verificar-app --cristal`.
+   */
+  .cristal,
+  .cristal.flota,
+  .cristal.modal {
+    background-color: var(--capa);
+    background-image: none;
+    backdrop-filter: none;
   }
+  .cristal > .luz { display: none; }
   .atajos { backdrop-filter: none; }
   /* Sin translucidez, el desvanecido de los bordes tampoco tiene sentido: la
      linea vuelve a ser el separador. */
@@ -753,5 +962,198 @@ select:focus {
 /* Mas contraste: bordes definidos en vez de insinuados. */
 @media (prefers-contrast: more) {
   button, input[type="text"], select, .nota-calidad, .muestra { border-color: var(--fg); }
+  /* El filo deja de ser una insinuacion y pasa a borde definido, y el tinte se
+     apaga: con mas contraste, un velo de color juega en contra. */
+  .cristal { border-color: var(--fg); box-shadow: var(--sombra-2); background-image: none; }
+  .cristal > .luz { display: none; }
   .sutil, .nota-formato, .campo > label, .grupo > h3 { color: var(--fg); }
 }
+
+/*
+ * Grabaciones recientes, en tarjetas.
+ *
+ * La imagen manda: una lista de fechas no distingue dos demos del mismo dia.
+ * `aspect-ratio` fija la caja antes de que llegue la portada, para que la
+ * rejilla no de un salto cuando entren las imagenes.
+ */
+.rejilla-recientes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+.tarjeta-reciente {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 8px; text-align: left;
+  border-radius: var(--radio);
+  min-width: 0;
+}
+.tarjeta-reciente .lienzo {
+  position: relative; display: block;
+  aspect-ratio: 16 / 9; width: 100%;
+  border-radius: var(--radio-s); overflow: hidden;
+  background: var(--capa-hundida);
+  box-shadow: var(--filo-alto);
+  margin-bottom: 6px;
+}
+.tarjeta-reciente img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tarjeta-reciente .sin-portada {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  color: var(--dim); font-size: 20px;
+}
+/* La duracion sobre la imagen, como en cualquier reproductor: ocupa cero sitio
+   en la maqueta y se lee siempre, sea clara u oscura la portada. */
+.tarjeta-reciente .duracion {
+  position: absolute; right: 5px; bottom: 5px;
+  padding: 1px 6px; border-radius: 999px;
+  background: rgba(0, 0, 0, .68); color: #fff;
+  font-size: 10.5px; font-variant-numeric: tabular-nums;
+}
+.tarjeta-reciente b {
+  font-size: 12.5px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tarjeta-reciente small { color: var(--dim); font-size: 11px; }
+.tarjeta-reciente:hover:not(:disabled) { border-color: var(--acc); }
+.tarjeta-reciente.abrir { border-style: dashed; }
+.tarjeta-reciente.abrir .sin-portada { font-size: 24px; }
+
+/* Camara: la previa redonda al lado de su explicacion, no debajo. */
+.fila-camara { display: flex; gap: 12px; align-items: flex-start; }
+.fila-camara .nota-formato { margin: 0; }
+.fila-camara .camara-previa { width: 104px; height: 104px; flex: none; }
+
+/*
+ * Opciones avanzadas.
+ *
+ * `details` nativo: accesible, sin JavaScript y —lo que importa aqui— el campo
+ * de dentro SIGUE en el DOM aunque este plegado, asi que lo que lo busca no se
+ * rompe.
+ */
+.avanzado { border-top: 1px solid var(--linea); padding-top: 12px; }
+.avanzado > summary {
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer; color: var(--dim); font-size: 12.5px;
+  list-style: none;
+}
+.avanzado > summary::-webkit-details-marker { display: none; }
+.avanzado > summary::before {
+  content: "›"; display: inline-block; transition: transform .15s var(--curva);
+  font-size: 15px;
+}
+.avanzado[open] > summary::before { transform: rotate(90deg); }
+.avanzado > summary:hover { color: var(--fg); }
+.avanzado .campo { margin-top: 12px; }
+.pastilla {
+  padding: 1px 8px; border-radius: 999px;
+  background: var(--acc-suave); color: var(--acc);
+  font-size: 11px;
+}
+
+/* "más"/"menos" dentro de una nota: es texto que se despliega, no un boton. */
+button.mas {
+  display: inline; padding: 0; border: none; background: none;
+  color: var(--acc); font-size: inherit; text-decoration: underline;
+}
+button.mas:hover:not(:disabled) { background: none; border: none; }
+
+
+/*
+ * Bienvenida: lo primero que se ve, una sola vez.
+ *
+ * Ocupa la ventana entera y no flota sobre nada porque no hay nada detras
+ * todavia: interrumpir no es el gesto, recibir si. El ancho se limita a 620 px
+ * —unos 70 caracteres— porque son tres parrafos para leer, no una hoja de
+ * datos, y una linea larga se lee peor.
+ */
+.bienvenida-fondo {
+  position: fixed; inset: 0; z-index: 70;
+  display: flex; align-items: center; justify-content: center;
+  padding: 28px; overflow: auto;
+  background: var(--bg);
+}
+.bienvenida {
+  width: min(620px, 100%);
+  padding: 30px 32px 26px;
+  display: flex; flex-direction: column; gap: 22px;
+  animation: bienvenida-entra .4s var(--curva) both;
+}
+@keyframes bienvenida-entra {
+  from { opacity: 0; transform: translateY(10px) scale(.99); }
+  to { opacity: 1; transform: none; }
+}
+.bienvenida header { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; }
+.bienvenida .marca-app { grid-row: span 2; align-self: center; border-radius: 10px; }
+.bienvenida h1 {
+  margin: 0; font-size: 30px; font-weight: 600; letter-spacing: -.02em;
+  align-self: end;
+}
+.bienvenida header p { margin: 0; align-self: start; }
+.bienvenida h2 {
+  margin: 0 0 6px; font-size: 14.5px; font-weight: 600; letter-spacing: -.01em;
+}
+.bienvenida .bloque p { margin: 0; color: var(--dim); line-height: 1.55; }
+
+/* Cada requisito en una linea: marca, nombre, lo que se ha encontrado, y el
+   boton que lo arregla si falta. */
+.requisitos { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.requisito {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: var(--radio-m);
+  background: var(--capa-hundida); border: 1px solid var(--linea);
+  font-size: 13px;
+}
+.requisito .marca {
+  width: 20px; height: 20px; flex: none; border-radius: 50%;
+  display: grid; place-items: center; font-size: 12px; font-weight: 700;
+}
+.requisito.bien .marca { background: var(--acc-suave); color: var(--acc); }
+.requisito.falta .marca { background: rgba(220, 90, 80, .18); color: var(--peligro); }
+.requisito.comprobando .marca { background: var(--capa); color: var(--dim); }
+.requisito .nombre { font-weight: 500; }
+.requisito .detalle {
+  color: var(--dim); margin-left: auto; text-align: right;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%;
+}
+.requisito button { flex: none; padding: 5px 10px; font-size: 12px; }
+
+/* Un boton que se lee como enlace: para lo secundario que abre algo fuera. */
+button.enlace {
+  background: none; border: none; padding: 0; color: var(--acc);
+  font: inherit; text-decoration: underline; text-underline-offset: 2px;
+}
+button.enlace:hover:not(:disabled) { filter: brightness(1.15); background: none; }
+
+.bienvenida footer {
+  display: flex; align-items: center; gap: 16px;
+  padding-top: 4px;
+}
+.bienvenida footer .primario { padding: 10px 22px; font-size: 14px; }
+
+
+/*
+ * Aviso de version nueva: una barra fina arriba del todo.
+ *
+ * Flota sobre el contenido en vez de empujarlo: si empujara, la interfaz daria
+ * un salto al llegar la respuesta de GitHub —que llega cuando llega— y el
+ * puntero acabaria sobre otro boton distinto del que se iba a pulsar.
+ */
+.aviso-version {
+  position: fixed; z-index: 65;
+  top: 12px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 12px 9px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  max-width: calc(100vw - 24px);
+  animation: aviso-version-entra .3s var(--curva) both;
+}
+@keyframes aviso-version-entra {
+  from { opacity: 0; transform: translate(-50%, -12px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+.aviso-version .punto {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--acc);
+  flex: none;
+}
+.aviso-version button { padding: 5px 12px; font-size: 12.5px; }

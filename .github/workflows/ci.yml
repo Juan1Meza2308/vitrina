@@ -1,0 +1,41 @@
+name: CI
+
+# En cada push y en cada pull request. Es la red mínima: tipos y batería de
+# tests. Lo que NO está aquí es `verificar-app`, que conduce la aplicación de
+# verdad por CDP: necesita pantalla, navegador y varios minutos, y un CI que
+# tarda diez minutos deja de leerse. Esa verificación se corre a mano antes de
+# publicar, y está explicada en docs/desarrollo.md.
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # Dos cosas que los tests necesitan y la app no:
+      #
+      #  - ffprobe, que ffmpeg-static no trae: los tests del exportador MIDEN el
+      #    vídeo que acaban de producir (dimensiones, duración, pistas).
+      #  - xvfb, una pantalla virtual: los tests de integración graban de verdad,
+      #    con un navegador de verdad, y el navegador abre una ventana.
+      - name: Herramientas de prueba
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg xvfb
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      # Entre ellos, el que comprueba que el ffmpeg empaquetado trae prores_ks
+      # y libopus: si un día deja de traerlos, esto se pone rojo antes de que
+      # nadie descargue un instalador que no sabe exportar. Y los de integración,
+      # que lanzan Chrome y graban unos segundos: de ahí el `xvfb-run`.
+      - run: xvfb-run -a npm test

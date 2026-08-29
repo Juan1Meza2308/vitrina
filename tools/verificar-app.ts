@@ -15,6 +15,7 @@
 import CDP from 'chrome-remote-interface';
 import { spawn } from 'node:child_process';
 import fsp from 'node:fs/promises';
+import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { pathToFileURL } from 'node:url';
@@ -31,7 +32,11 @@ const ejecutar = promisify(execFile);
 
 const PORT = 9500;
 const APP = path.resolve('apps/desktop');
-const grabacion = path.resolve(process.argv[2] ?? 'grabaciones/demo.vitrina');
+// El primer argumento QUE NO SEA UNA BANDERA. Con `argv[2]` a secas, invocar
+// `--doblar grabaciones/x` tomaba "--doblar" por carpeta y fallaba diciendo que
+// no existe project.json, que no es lo que estaba mal.
+const grabacion = path.resolve(
+  process.argv.slice(2).find((a) => !a.startsWith('--')) ?? 'grabaciones/demo.vitrina');
 /** En macOS el ejecutable vive dentro del bundle; lanzar el .app no vale. */
 const ELECTRON = path.resolve(process.platform === 'darwin'
   ? 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron'
@@ -39,7 +44,88 @@ const ELECTRON = path.resolve(process.platform === 'darwin'
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Aviso si lo compilado es mas viejo que el codigo.
+ *
+ * Esta comprobacion existe porque paso dos veces: media tarde midiendo cambios
+ * que no estaban dentro de la app, y sacando conclusiones —"esto no mejora
+ * nada"— de un binario de hacia trece horas. Verificar por pixeles no sirve de
+ * nada si los pixeles son de otra version.
+ *
+ * Se avisa y se sigue, no se compila solo: compilar desde aqui escondería el
+ * problema en vez de ensenarlo, y quien mide tiene que saber que esta midiendo.
+ */
+function avisarSiRancio(): void {
+  const masNuevo = (dir: string): number => {
+    let max = 0;
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
+      const p = path.join(dir, e.name);
+      max = Math.max(max, e.isDirectory() ? masNuevo(p) : fs.statSync(p).mtimeMs);
+    }
+    return max;
+  };
+  const salida = path.resolve('apps/desktop/out');
+  if (!fs.existsSync(salida)) {
+    console.log('\n  AVISO: no hay nada compilado. Ejecuta: npm run app:build\n');
+    return;
+  }
+  const fuentes = ['apps/desktop/src', 'packages'].map((d) => masNuevo(path.resolve(d)));
+  if (Math.max(...fuentes) > masNuevo(salida)) {
+    console.log('\n  AVISO: hay codigo mas nuevo que lo compilado.'
+      + ' Lo que sigue mide la version ANTERIOR.\n         Ejecuta: npm run app:build\n');
+  }
+}
+
+avisarSiRancio();
+
+/**
+ * Fichero de ajustes de la app instalada en esta maquina.
+ *
+ * Se calcula igual que `app.getPath('userData')`, con el nombre del paquete de
+ * la app —`@vitrina/desktop`— porque es lo que Electron usa para la carpeta.
+ */
+function ficheroDeAjustes(): string {
+  const base = process.platform === 'win32'
+    ? (process.env['APPDATA'] ?? path.join(os.homedir(), 'AppData', 'Roaming'))
+    : process.platform === 'darwin'
+      ? path.join(os.homedir(), 'Library', 'Application Support')
+      : (process.env['XDG_CONFIG_HOME'] ?? path.join(os.homedir(), '.config'));
+  return path.join(base, '@vitrina', 'desktop', 'ajustes.json');
+}
+
+/**
+ * Marca la bienvenida como vista (o como no vista) antes de arrancar.
+ *
+ * Hace falta porque la bienvenida sale ANTES que cualquier otra pantalla: sin
+ * esto, el primer flujo que se ejecutara en una maquina limpia se quedaria
+ * mirandola y todos los demas fallarian con "no encuentro el boton Grabar", que
+ * no dice nada de lo que pasa. Se escribe el fichero directamente porque es un
+ * JSON y esto es la herramienta de verificacion, no la app.
+ */
+function marcarBienvenida(vista: boolean): void {
+  const f = ficheroDeAjustes();
+  let datos: Record<string, unknown> = {};
+  try {
+    datos = JSON.parse(fs.readFileSync(f, 'utf8')) as Record<string, unknown>;
+  } catch {
+    datos = {};
+  }
+  // Cualquier version vale para darla por vista: la app compara con la suya y
+  // lo unico que mira es si coinciden.
+  datos['bienvenidaVista'] = vista ? 'verificacion' : '';
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(f, JSON.stringify(datos, null, 2));
+}
+
 interface Cliente {
+  Emulation: {
+    setDeviceMetricsOverride(p: {
+      width: number; height: number; deviceScaleFactor: number; mobile: boolean;
+    }): Promise<void>;
+    clearDeviceMetricsOverride(): Promise<void>;
+    setEmulatedMedia(p: { features?: { name: string; value: string }[] }): Promise<void>;
+  };
   Page: {
     enable(): Promise<void>;
     captureScreenshot(p: { format?: string }): Promise<{ data: string }>;
@@ -105,15 +191,53 @@ const FIRMA = `
  * fallaba con el dibujo funcionando perfectamente. Cuesta una sola llamada a
  * `getImageData`, menos que las 589 de la dispersa.
  */
+/**
+ * Firma DENSA: el lienzo entero resumido en medias por bloques.
+ *
+ * Empezo siendo un hash byte a byte y era DEMASIADO exacta: los degradados se
+ * dibujan con tramado, y Chromium lo reparte distinto en cada repintado. Dos
+ * lienzos identicos a la vista daban hashes distintos por diferencias de ±1 en
+ * un canal —medido: 147.000 bytes cambiados, ninguno visible— y la comprobacion
+ * de los looks fallaba sin que nada estuviera roto.
+ *
+ * Con medias por bloques el ruido de tramado se promedia y desaparece, mientras
+ * que cualquier cambio de verdad —otro fondo, un rotulo, otro encuadre— mueve la
+ * media de su bloque en decenas.
+ */
 const FIRMA_DENSA = `
   (() => {
     const c = document.querySelector('canvas');
     const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
-    let h = 0;
-    for (let i = 0; i < d.length; i += 4) h = (h * 31 + d[i]) % 2147483647;
-    return String(h);
+    const COLS = 16, FILAS = 9;
+    const bw = Math.floor(c.width / COLS), bh = Math.floor(c.height / FILAS);
+    const out = [];
+    for (let f = 0; f < FILAS; f++) {
+      for (let col = 0; col < COLS; col++) {
+        let r = 0, g = 0, b = 0, n = 0;
+        for (let y = f * bh; y < (f + 1) * bh; y += 3) {
+          for (let x = col * bw; x < (col + 1) * bw; x += 3) {
+            const i = (y * c.width + x) * 4;
+            r += d[i]; g += d[i + 1]; b += d[i + 2]; n++;
+          }
+        }
+        out.push(Math.round(r / n), Math.round(g / n), Math.round(b / n));
+      }
+    }
+    return out.join(',');
   })()
 `;
+
+/**
+ * Dos firmas densas se parecen si ningun bloque se mueve mas de `tol`.
+ *
+ * El tramado mueve una media menos de una unidad; un cambio real, decenas.
+ */
+function parecidas(a: string, b: string, tol = 2): boolean {
+  const x = a.split(',').map(Number);
+  const y = b.split(',').map(Number);
+  if (x.length !== y.length || x.length === 0) return false;
+  return x.every((v, i) => Math.abs(v - (y[i] ?? 0)) <= tol);
+}
 
 /**
  * Firma de la REGION de la burbuja de camara, en la esquina de siempre.
@@ -321,14 +445,14 @@ async function main(): Promise<void> {
   await ev(client, `document.querySelectorAll(".muestra")[${otraMuestra}].click()`);
   await sleep(800);
   const conOtroFondo = await ev<string>(client, FIRMA_DENSA);
-  check('cambiar el fondo cambia el lienzo', conOtroFondo !== antesLook);
+  check('cambiar el fondo cambia el lienzo', !parecidas(conOtroFondo, antesLook));
 
   await ev(client,
     "[...document.querySelectorAll('.look button')].find(b => b.textContent === 'verificacion').click()");
   await sleep(900);
   const trasAplicar = await ev<string>(client, FIRMA_DENSA);
-  check('aplicar el look devuelve el aspecto guardado', trasAplicar === antesLook,
-    `${conOtroFondo} -> ${trasAplicar}`);
+  check('aplicar el look devuelve el aspecto guardado', parecidas(trasAplicar, antesLook),
+    'mismo aspecto que antes de guardarlo');
 
   // Los looks se guardan en los ajustes REALES del usuario, asi que hay que
   // quitarlo: verificar no puede dejarle basura en su propia configuracion, del
@@ -404,7 +528,7 @@ async function main(): Promise<void> {
       "[...document.querySelectorAll('button')].find(x => x.textContent === 'Rótulos').click()");
     await sleep(900);
     const sinRotulos = await ev<string>(client, FIRMA_DENSA);
-    check('los rotulos llegan al lienzo', conRotulos !== sinRotulos,
+    check('los rotulos llegan al lienzo', !parecidas(conRotulos, sinRotulos),
       `"${conTexto.label}" en ${Math.round(enRotulo)}ms`);
     await ev(client,
       "[...document.querySelectorAll('button')].find(x => x.textContent === 'Rótulos').click()");
@@ -461,6 +585,22 @@ async function main(): Promise<void> {
   check('la exportacion termina', listo);
   check('el fichero exportado existe',
     await fsp.stat(destino).then((s) => s.size > 10_000).catch(() => false));
+
+  // --- la guia escrita ------------------------------------------------------
+  // Sale del mismo log que el video, asi que se comprueba en la misma sesion:
+  // que se escriba el fichero y que tenga pasos de verdad, no una plantilla.
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Exportar guía escrita')?.click()
+  `);
+  const guiaLista = await esperarA(client,
+    'document.body.textContent.includes("Guía escrita ·")', 'guia escrita', 90_000);
+  check('la guia se escribe desde el editor', guiaLista);
+
+  const guiaMd = await fsp.readFile(path.join(grabacion, 'guia.md'), 'utf8').catch(() => '');
+  check('guia.md tiene pasos', /^## 1\. /m.test(guiaMd), `${guiaMd.length} caracteres`);
+  check('capitulos.txt empieza en 0:00',
+    (await fsp.readFile(path.join(grabacion, 'capitulos.txt'), 'utf8')
+      .catch(() => '')).startsWith('0:00 '));
 
   // Este bloque va el ULTIMO a proposito: deja el editor abierto en OTRA
   // grabacion. Puesto antes, el resto de comprobaciones miraban un lienzo
@@ -708,6 +848,15 @@ async function verificarGrabacion(): Promise<void> {
   await Promise.all([client.Page.enable(), client.Runtime.enable()]);
   await sleep(2000);
 
+  // El microfono se enciende A PROPOSITO antes de grabar: los ajustes se
+  // guardan entre sesiones, asi que una verificacion anterior que lo dejara
+  // apagado hacia fallar las comprobaciones de audio de esta. Es el mismo
+  // cuidado que ya tiene el flujo vertical.
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Con micrófono')?.click()
+  `);
+  await sleep(300);
+
   await ev(client, `
     (() => {
       const i = document.querySelector('#url');
@@ -797,6 +946,957 @@ async function verificarGrabacion(): Promise<void> {
 
   console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}`);
   console.log('  captura: apps/desktop/captura-grabacion.png\n');
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
+ * Verifica el aviso de version nueva, con una version fingida.
+ *
+ * Sin esto solo se podria comprobar publicando una Release de verdad, es decir,
+ * nunca: la primera vez que alguien viera esta barra seria un usuario. Con
+ * `VITRINA_FINGIR_ACTUALIZACION` el proceso principal manda el mismo aviso que
+ * mandaria GitHub, y lo que se comprueba —la barra, el texto, el boton de
+ * cerrar, y que no aparece grabando— es exactamente lo que se va a ver.
+ */
+async function verificarActualizacion(): Promise<void> {
+  console.log('  aviso de version nueva\n');
+  const abrir = async () => {
+    const child = spawn(ELECTRON, [
+      APP,
+      `--remote-debugging-port=${PORT}`,
+      '--use-fake-device-for-media-stream',
+      '--use-fake-ui-for-media-stream',
+    ], {
+      stdio: ['ignore', 'ignore', 'inherit'],
+      env: { ...process.env, VITRINA_FINGIR_ACTUALIZACION: '9.9.9' },
+    });
+    const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+    await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+    return { child, client };
+  };
+
+  let { child, client } = await abrir();
+  check('aparece el aviso de version nueva',
+    await esperarA(client, '!!document.querySelector(".aviso-version")', 'aviso', 15_000));
+  const texto = await ev<string>(client,
+    'document.querySelector(".aviso-version")?.textContent ?? ""');
+  check('dice que version es', texto.includes('9.9.9'), texto.trim());
+
+  // La barra flota: no puede tapar lo que se usa para empezar a grabar.
+  const solapa = await ev<boolean>(client, `
+    (() => {
+      const a = document.querySelector('.aviso-version').getBoundingClientRect();
+      const b = [...document.querySelectorAll('button')]
+        .find(x => x.textContent === 'Grabar')?.getBoundingClientRect();
+      if (!b) return true;
+      return !(a.bottom < b.top || a.top > b.bottom || a.right < b.left || a.left > b.right);
+    })()
+  `);
+  check('y no tapa el boton de Grabar', !solapa);
+
+  await capturar(client, path.join(APP, 'captura-actualizacion.png'));
+
+  await ev(client, `[...document.querySelectorAll('.aviso-version button')].find(b => b.textContent === 'Ahora no').click()`);
+  await sleep(400);
+  check('se puede cerrar',
+    !(await ev<boolean>(client, '!!document.querySelector(".aviso-version")')));
+
+  // Grabando no aparece: la cuenta atras ya es "en marcha".
+  await ev(client, `[...document.querySelectorAll('button')].find(b => b.textContent === 'Grabar').click()`);
+  await sleep(900);
+  const enCuenta = await ev<boolean>(client, '!!document.querySelector(".cuenta")');
+  check('la cuenta atras ha empezado', enCuenta);
+  check('y ahi no se ensena ningun aviso',
+    !(await ev<boolean>(client, '!!document.querySelector(".aviso-version")')));
+
+  await client.close();
+  child.kill();
+  await sleep(1500);
+
+  // Al reabrir vuelve: cerrarlo es "ahora no", no "nunca".
+  ({ child, client } = await abrir());
+  check('al reabrir la app vuelve a avisar',
+    await esperarA(client, '!!document.querySelector(".aviso-version")', 'aviso', 15_000));
+
+  await client.close();
+  child.kill();
+  await sleep(800);
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}\n`);
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
+ * Verifica la bienvenida: la pantalla que se ve la primera vez.
+ *
+ * Se comprueban las dos mitades del trato, y la segunda es la que se olvida:
+ * que aparezca cuando toca, y que NO aparezca despues. Una bienvenida que
+ * vuelve en cada arranque deja de ser una bienvenida y pasa a ser un obstaculo.
+ */
+async function verificarBienvenida(): Promise<void> {
+  console.log('  bienvenida\n');
+  marcarBienvenida(false);
+
+  const abrir = async () => {
+    const child = spawn(ELECTRON, [
+      APP,
+      `--remote-debugging-port=${PORT}`,
+      '--use-fake-device-for-media-stream',
+      '--use-fake-ui-for-media-stream',
+    ], { stdio: ['ignore', 'ignore', 'inherit'] });
+    const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+    await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+    return { child, client };
+  };
+
+  let { child, client } = await abrir();
+  check('la bienvenida aparece la primera vez',
+    await esperarA(client, '!!document.querySelector(".bienvenida")', 'bienvenida'));
+
+  // Los requisitos se comprueban de verdad: hay que esperar a que el proceso
+  // principal responda, y lo que se mira es el resultado, no que exista la fila.
+  const listos = await esperarA(client,
+    '[...document.querySelectorAll(".requisito")].every(r => !r.classList.contains("comprobando"))',
+    'requisitos comprobados', 20_000);
+  check('los requisitos terminan de comprobarse', listos);
+
+  const req = JSON.parse(await ev<string>(client, `
+    JSON.stringify([...document.querySelectorAll('.requisito')].map(r => ({
+      nombre: r.querySelector('.nombre')?.textContent ?? '',
+      estado: r.className.replace('requisito', '').trim(),
+      detalle: r.querySelector('.detalle')?.textContent ?? '',
+    })))
+  `)) as { nombre: string; estado: string; detalle: string }[];
+  for (const r of req) console.log(`     ${r.nombre}: ${r.estado} · ${r.detalle}`);
+
+  check('encuentra el navegador', req.some((r) => r.nombre.includes('Navegador') && r.estado === 'bien'),
+    req.find((r) => r.nombre.includes('Navegador'))?.detalle);
+  check('encuentra ffmpeg, y dice que viene con la app',
+    req.some((r) => r.nombre.includes('ffmpeg') && r.estado === 'bien'
+      && r.detalle.includes('Incluido')),
+    req.find((r) => r.nombre.includes('ffmpeg'))?.detalle);
+
+  // Lo que se cuenta importa tanto como lo que se comprueba: quien abre esto por
+  // primera vez tiene que salir sabiendo que Vitrina graba paginas web.
+  const texto = await ev<string>(client, 'document.querySelector(".bienvenida").textContent');
+  check('dice que graba paginas web y no la pantalla',
+    /páginas web/i.test(texto) && /No captura el escritorio/i.test(texto));
+  check('dice que las teclas no se guardan', /nunca cuál/i.test(texto));
+
+  await capturar(client, path.join(APP, 'captura-bienvenida.png'));
+
+  await ev(client, `[...document.querySelectorAll('button')].find(b => b.textContent === 'Empezar').click()`);
+  check('al pulsar Empezar se llega a la pantalla de grabar',
+    await esperarA(client,
+      '[...document.querySelectorAll("button")].some(b => b.textContent === "Grabar")',
+      'pantalla de inicio'));
+
+  await client.close();
+  child.kill();
+  await sleep(1200);
+
+  ({ child, client } = await abrir());
+  await sleep(2500);
+  check('y no vuelve a aparecer al reabrir',
+    !(await ev<boolean>(client, '!!document.querySelector(".bienvenida")')));
+  check('la app abre directamente en la pantalla de grabar',
+    await ev<boolean>(client,
+      '[...document.querySelectorAll("button")].some(b => b.textContent === "Grabar")'));
+
+  await client.close();
+  child.kill();
+  await sleep(800);
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}\n`);
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
+ * Mide el rendimiento del editor, en la app de verdad.
+ *
+ * Se mide ANTES de tocar nada y despues del arreglo, en la misma sesion y sobre
+ * la misma grabacion: los numeros absolutos de una maquina sin GPU no valen
+ * para presumir, pero el antes/despues relativo si dice si el cambio sirvio.
+ *
+ * Lo que se mide son las tres cosas que se sienten: si la reproduccion va
+ * fluida, si arrastrar responde, y cuanto tarda en salir el video.
+ */
+async function verificarRendimiento(): Promise<void> {
+  console.log(`  rendimiento  ${grabacion}\n`);
+  const t0 = Date.now();
+  const child = spawn(ELECTRON, [
+    APP, grabacion,
+    `--remote-debugging-port=${PORT}`,
+    '--use-fake-device-for-media-stream',
+    '--use-fake-ui-for-media-stream',
+  ], { stdio: ['ignore', 'ignore', 'inherit'] });
+  const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+  await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+
+  const pintado = await esperarA(client, `(${FIRMA}) !== '0'`, 'primer frame', 30_000);
+  const arranque = Date.now() - t0;
+  check('el editor abre y pinta', pintado, `${arranque} ms`);
+
+  /** Cuenta ticks de rAF y tareas largas mientras corre lo que sea. */
+  const medir = async (ms: number): Promise<{ fps: number; atascos: number; bloqueo: number }> =>
+    JSON.parse(await ev<string>(client, `
+      new Promise((r) => {
+        let n = 0, atascos = 0, bloqueo = 0;
+        let obs = null;
+        try {
+          obs = new PerformanceObserver((l) => {
+            for (const e of l.getEntries()) { atascos++; bloqueo += e.duration; }
+          });
+          obs.observe({ entryTypes: ['longtask'] });
+        } catch (e) { /* sin soporte: se informa solo de fps */ }
+        const t = performance.now();
+        const tick = () => {
+          n++;
+          if (performance.now() - t < ${ms}) requestAnimationFrame(tick);
+          else {
+            if (obs) obs.disconnect();
+            r(JSON.stringify({
+              fps: n / (${ms} / 1000),
+              atascos,
+              bloqueo: Math.round(bloqueo),
+            }));
+          }
+        };
+        requestAnimationFrame(tick);
+      })
+    `)) as { fps: number; atascos: number; bloqueo: number };
+
+  // --- quieto: la linea base de la maquina --------------------------------
+  const quieto = await medir(3000);
+
+  // --- reproduciendo -------------------------------------------------------
+  const play = `[...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Reproducir')?.click()`;
+  const pause = `[...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Pausar')?.click()`;
+  const inicio = `[...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Volver al principio')?.click()`;
+  const leerCuentas = async () => JSON.parse(await ev<string>(client,
+    'JSON.stringify(window.__vitrinaMedida ?? {repintados:0,msTotal:0,fallos:0,msDecode:0,enVuelo:0})',
+  )) as { repintados: number; msTotal: number; fallos: number; msDecode: number; enVuelo: number };
+  const reiniciarCuentas = () => ev(client,
+    `document.documentElement.dataset.medir = ''; window.__vitrinaMedida = null`);
+
+  await reiniciarCuentas();
+  await ev(client, play);
+  const reproduciendo = await medir(5000);
+  await ev(client, pause);
+  const enPlay = await leerCuentas();
+  await sleep(500);
+
+  // La misma reproduccion SIN lectura anticipada. Va en segundo lugar a
+  // proposito: para entonces la cache ya esta caliente del pase anterior, asi
+  // que el sesgo del orden juega EN CONTRA de la mejora que se quiere ensenar.
+  // Si aun asi adelantar acierta mas, es que acierta.
+  await ev(client, inicio);
+  await ev(client, `document.documentElement.dataset.preview = 'basico'`);
+  await reiniciarCuentas();
+  await ev(client, play);
+  const repBasico = await medir(5000);
+  await ev(client, pause);
+  const enPlayBasico = await leerCuentas();
+  await ev(client, `delete document.documentElement.dataset.preview`);
+  await ev(client, inicio);
+  await sleep(500);
+
+  // --- arrastrando la aguja ------------------------------------------------
+  // El arrastre va desde Node mientras la pagina cuenta sus propios frames: las
+  // dos cosas corren a la vez, que es justo la situacion que se quiere medir.
+  const pista = JSON.parse(await ev<string>(client, `
+    (() => { const r = document.querySelector('.pista').getBoundingClientRect();
+      return JSON.stringify({ x: r.x, y: r.y, w: r.width, h: r.height }); })()
+  `)) as { x: number; y: number; w: number; h: number };
+  const yPista = Math.round(pista.y + pista.h / 2);
+
+  /** Los mismos movimientos sin pulsar: el coste del banco, no el de la app. */
+  const moverSinPulsar = async () => {
+    for (let i = 1; i <= 30; i++) {
+      await client.Input.dispatchMouseEvent({
+        type: 'mouseMoved', x: Math.round(pista.x + 20 + (pista.w - 40) * (i / 30)), y: yPista,
+      });
+      await sleep(16);
+    }
+  };
+
+  const arrastrarAguja = async () => {
+    await client.Input.dispatchMouseEvent({
+      type: 'mousePressed', x: Math.round(pista.x + 20), y: yPista, button: 'left', clickCount: 1,
+    });
+    for (let i = 1; i <= 30; i++) {
+      await client.Input.dispatchMouseEvent({
+        type: 'mouseMoved', x: Math.round(pista.x + 20 + (pista.w - 40) * (i / 30)), y: yPista,
+        button: 'left',
+      });
+      await sleep(16);
+    }
+    await client.Input.dispatchMouseEvent({
+      type: 'mouseReleased', x: Math.round(pista.x + pista.w - 20), y: yPista, button: 'left', clickCount: 1,
+    });
+  };
+  // El SUELO del banco: los mismos 30 eventos sin pulsar el boton, que no
+  // disparan nada en la app. Sin esta linea es imposible saber que parte de la
+  // caida es del editor y cual de inyectar eventos por CDP.
+  const controlF = medir(1200);
+  await moverSinPulsar();
+  const control = await controlF;
+
+  await reiniciarCuentas();
+  const medida = medir(1200);
+  await arrastrarAguja();
+  const arrastre = await medida;
+  const cuentas = await leerCuentas();
+  await ev(client, `delete document.documentElement.dataset.medir`);
+
+  // El mismo arrastre sin limitar las cargas, que es como estaba antes. Va en
+  // la misma sesion a proposito: comparar contra una ejecucion de ayer, con la
+  // maquina en otro estado, no compara nada.
+  // --- exportando ----------------------------------------------------------
+  const tExport = Date.now();
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Exportar').click()
+  `);
+  const acabo = await esperarA(client,
+    "[...document.querySelectorAll('button')].some(b => b.textContent === 'Mostrar en la carpeta')",
+    'export terminado', 240_000);
+  const msExport = Date.now() - tExport;
+  const duracionVideo = await ev<number>(client, `
+    (() => {
+      const t = document.querySelector('.reloj')?.textContent ?? '';
+      const m = /\\/\\s*([\\d.]+)s/.exec(t);
+      return m ? Number(m[1]) : 0;
+    })()
+  `);
+
+  console.log('');
+  console.log(`  arranque     ${arranque} ms hasta el primer frame`);
+  console.log(`  quieto       ${quieto.fps.toFixed(1)} fps · ${quieto.atascos} atascos (${quieto.bloqueo} ms)`);
+  console.log(`  reproducci.  ${reproduciendo.fps.toFixed(1)} fps · ${reproduciendo.atascos} atascos (${reproduciendo.bloqueo} ms)`
+    + ` · ${enPlay.fallos} de ${enPlay.repintados} repintados sin cache`);
+  console.log(`   ↑ sin adel. ${repBasico.fps.toFixed(1)} fps`
+    + ` · ${enPlayBasico.fallos} de ${enPlayBasico.repintados} sin cache`
+    + '   (como estaba antes: sin lectura anticipada)');
+  console.log(`  mover        ${control.fps.toFixed(1)} fps   (suelo del banco: eventos por CDP, la app no hace nada)`);
+  console.log(`  arrastre     ${arrastre.fps.toFixed(1)} fps · ${arrastre.atascos} atascos (${arrastre.bloqueo} ms)`);
+  console.log(`   ↑ repintado ${(cuentas.msTotal / Math.max(1, cuentas.repintados)).toFixed(1)} ms de media`
+    + ` · ${cuentas.repintados} repintados, ${cuentas.fallos} sin cache`
+    + ` · hasta ${cuentas.enVuelo} decodificaciones a la vez`);
+
+  console.log(`  export       ${(msExport / 1000).toFixed(1)} s para ${duracionVideo}s de video`
+    + `  (x${(duracionVideo * 1000 / Math.max(1, msExport)).toFixed(2)} tiempo real)`);
+  console.log('');
+
+  // Umbrales HOLGADOS, a la mitad de lo medido: cazan un desplome sin fallar
+  // porque la maquina este ocupada. Un test que falla segun la carga ensena a
+  // ignorar los fallos, y eso ya paso una vez con el recuento de frames en M0.
+  // Umbrales a la MITAD de lo medido hoy (27 y 43 fps), que ademas es mas o
+  // menos lo que daba la app antes de todo esto. Cazan un desplome sin fallar
+  // porque la maquina este ocupada: este mismo contenedor da 43 o 27 fps para
+  // el mismo codigo segun el rato, y un test que falla por eso ensena a ignorar
+  // los fallos.
+  check('la reproduccion no se desploma', reproduciendo.fps > 13,
+    `${reproduciendo.fps.toFixed(1)} fps`);
+  check('arrastrar la aguja responde', arrastre.fps > 20, `${arrastre.fps.toFixed(1)} fps`);
+  // La comparacion, no el numero absoluto: en una maquina sin GPU el valor
+  // suelto no dice nada, pero que no esperar al decode gane a esperarlo tiene
+  // que cumplirse siempre.
+  // La proporcion, no los fps: los fps bailan varios puntos entre ejecuciones
+  // —el suelo del propio banco se mueve— y una comprobacion que falla sola
+  // ensena a ignorar los fallos. Que adelantar acierte mas en la cache no
+  // baila, y ademas se mide con el orden en contra.
+  const falloDe = (c: { fallos: number; repintados: number }) => c.fallos / Math.max(1, c.repintados);
+  check('la lectura anticipada acierta mas en la cache',
+    falloDe(enPlay) <= falloDe(enPlayBasico),
+    `${(falloDe(enPlay) * 100).toFixed(0)}% de fallos frente a ${(falloDe(enPlayBasico) * 100).toFixed(0)}%`);
+  check('las cargas simultaneas estan limitadas', cuentas.enVuelo <= 3,
+    `hasta ${cuentas.enVuelo} a la vez`);
+  check('el editor abre en menos de 15 s', arranque < 15_000, `${arranque} ms`);
+  check('la exportacion termina', acabo, `${(msExport / 1000).toFixed(1)} s`);
+
+  await client.close();
+  child.kill();
+  await sleep(800);
+
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}\n`);
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
+ * Verifica el sistema de cristal.
+ *
+ * Es lo que no se ve mirando una captura: que la regla de "cristal sobre
+ * cristal" se cumpla, que las preferencias del sistema apaguen lo que tienen
+ * que apagar, y cuanto cuesta el desenfoque cuando detras hay un lienzo
+ * repintando.
+ */
+async function verificarCristal(): Promise<void> {
+  console.log(`  cristal    ${grabacion}\n`);
+  const child = spawn(ELECTRON, [
+    APP, grabacion,
+    `--remote-debugging-port=${PORT}`,
+    '--use-fake-device-for-media-stream',
+    '--use-fake-ui-for-media-stream',
+  ], { stdio: ['ignore', 'ignore', 'inherit'] });
+  const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+  await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+  await sleep(2500);
+
+  // --- la regla 1: el cristal es del contenedor ---------------------------
+  const cuenta = JSON.parse(await ev<string>(client, `
+    (() => {
+      const cristales = [...document.querySelectorAll('.cristal')];
+      const conDesenfoque = [...document.querySelectorAll('*')].filter(e =>
+        getComputedStyle(e).backdropFilter !== 'none');
+      // Un cristal dentro de otro cristal es lo que hunde la legibilidad.
+      const anidados = cristales.filter(c => c.parentElement?.closest('.cristal'));
+      // Y cualquier cosa con desenfoque que NO sea del sistema tambien lo es.
+      // Desenfocar solo se justifica encima de contenido: la pildora, la hoja
+      // y los avisos. Un panel que desenfoca un fondo plano es coste sin efecto.
+      const colados = conDesenfoque.filter(e => !e.classList.contains('atajos')
+        && !(e.classList.contains('cristal')
+             && (e.classList.contains('flota') || e.classList.contains('modal'))));
+      return JSON.stringify({
+        cristales: cristales.length,
+        anidados: anidados.length,
+        colados: colados.map(e => e.className).slice(0, 4),
+      });
+    })()
+  `)) as { cristales: number; anidados: number; colados: string[] };
+
+  check('hay cristales y todos pasan por el sistema', cuenta.cristales >= 4,
+    `${cuenta.cristales} superficies`);
+  check('ningun cristal dentro de otro cristal', cuenta.anidados === 0,
+    `${cuenta.anidados} anidados`);
+  check('nadie desenfoca por su cuenta', cuenta.colados.length === 0,
+    cuenta.colados.join(' · ') || 'ninguno');
+
+  // --- las preferencias del sistema ---------------------------------------
+  const desenfoqueDe = () => ev<string>(client,
+    "getComputedStyle(document.querySelector('.cristal')).backdropFilter");
+  const fondoDe = () => ev<string>(client,
+    "getComputedStyle(document.querySelector('.cristal')).backgroundColor");
+
+  const desenfoqueFlotante = await ev<string>(client,
+    "getComputedStyle(document.querySelector('.cristal.flota')).backdropFilter");
+  check('lo que flota sobre el video si desenfoca', desenfoqueFlotante !== 'none',
+    desenfoqueFlotante);
+  check('y un panel de al lado no', (await desenfoqueDe()) === 'none',
+    'desenfocar un fondo plano es coste sin efecto');
+  const fondoNormal = await fondoDe();
+
+  await client.Emulation.setEmulatedMedia({
+    features: [{ name: 'prefers-reduced-transparency', value: 'reduce' }],
+  });
+  await sleep(400);
+  check('con transparencia reducida deja de desenfocar',
+    (await ev<string>(client,
+      "getComputedStyle(document.querySelector('.cristal.flota')).backdropFilter")) === 'none');
+  const fondoSolido = await fondoDe();
+  // Se lee el alfa computado, no la clase: lo que importa es que tape.
+  check('y el fondo se vuelve opaco',
+    !fondoSolido.includes('rgba') || fondoSolido.endsWith(', 1)'),
+    `${fondoNormal} -> ${fondoSolido}`);
+
+  await client.Emulation.setEmulatedMedia({
+    features: [{ name: 'prefers-contrast', value: 'more' }],
+  });
+  await sleep(400);
+  check('con mas contraste, el borde se define',
+    (await ev<string>(client,
+      "getComputedStyle(document.querySelector('.cristal')).borderTopColor"))
+      !== (await ev<string>(client, "getComputedStyle(document.documentElement).getPropertyValue('--linea')")).trim());
+
+  await client.Emulation.setEmulatedMedia({ features: [] });
+  await sleep(400);
+
+  // --- el tinte lo pone la demo -------------------------------------------
+  const tinteAntes = await ev<string>(client,
+    "getComputedStyle(document.documentElement).getPropertyValue('--tinte')");
+  // Una muestra distinta de la puesta: pulsar la que ya esta seleccionada no
+  // cambiaria nada y la comprobacion fallaria sin que nada este roto.
+  await ev(client, `
+    [...document.querySelectorAll('.muestra')].find(m => !m.classList.contains('on'))?.click()
+  `);
+  await sleep(700);
+  const tinteDespues = await ev<string>(client,
+    "getComputedStyle(document.documentElement).getPropertyValue('--tinte')");
+  check('el tinte cambia al cambiar el fondo de la demo',
+    tinteAntes !== tinteDespues && tinteDespues.includes('rgba'),
+    tinteDespues.trim().slice(0, 46));
+
+  // --- lo que cuesta el desenfoque ----------------------------------------
+  // Detras de los paneles hay un lienzo repintando: es el caso que puede doler,
+  // y se mide en vez de suponerse.
+  const fps = async () => {
+    await ev(client, `
+      [...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Reproducir')?.click()
+    `);
+    const medido = await ev<number>(client, `
+      new Promise((r) => {
+        let n = 0;
+        const t0 = performance.now();
+        const tick = () => { n++; if (performance.now() - t0 < 3000) requestAnimationFrame(tick); else r(n / 3); };
+        requestAnimationFrame(tick);
+      })
+    `);
+    await ev(client, `
+      [...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Pausar')?.click()
+    `);
+    return medido;
+  };
+
+  const conCristal = await fps();
+  await ev(client, "document.documentElement.dataset.cristal = 'no'");
+  await sleep(500);
+  const sinCristal = await fps();
+  await ev(client, "delete document.documentElement.dataset.cristal");
+
+  const caida = ((sinCristal - conCristal) / Math.max(1, sinCristal)) * 100;
+  console.log(`  fps        con cristal ${conCristal.toFixed(1)} · sin cristal ${sinCristal.toFixed(1)}`);
+  check('el desenfoque no se come la reproduccion', caida < 15,
+    `${caida.toFixed(1)} % de caida`);
+
+  await capturar(client, 'apps/desktop/captura-cristal.png');
+  await client.close();
+  child.kill();
+  await sleep(800);
+
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}`);
+  console.log('  captura: apps/desktop/captura-cristal.png\n');
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
+ * Verifica la pantalla de antes de grabar.
+ *
+ * Las tres cosas que motivaron el redisenio, comprobadas por el RESULTADO:
+ * que las dos columnas esten una al lado de la otra, que el boton de Grabar se
+ * vea sin desplazar —el fallo que lo empezo todo— y que la preview de una
+ * grabacion reciente se mueva al posar el cursor.
+ */
+async function verificarInicio(): Promise<void> {
+  console.log('  pantalla de inicio\n');
+  const child = spawn(ELECTRON, [
+    APP,
+    `--remote-debugging-port=${PORT}`,
+    '--use-fake-device-for-media-stream',
+    '--use-fake-ui-for-media-stream',
+  ], { stdio: ['ignore', 'ignore', 'inherit'] });
+  const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+  await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+  await sleep(2500);
+
+  // --- dos columnas -------------------------------------------------------
+  const cajas = JSON.parse(await ev<string>(client, `
+    (() => {
+      const t = [...document.querySelectorAll('.inicio > .tarjeta, .inicio > .lado')]
+        .map(e => { const r = e.getBoundingClientRect(); return { x: Math.round(r.x), w: Math.round(r.width) }; });
+      return JSON.stringify(t);
+    })()
+  `)) as { x: number; w: number }[];
+  check('la pantalla tiene dos columnas', cajas.length === 2, `${cajas.length} bloques`);
+  if (cajas.length === 2) {
+    check('y estan una al lado de la otra',
+      cajas[1]!.x >= cajas[0]!.x + cajas[0]!.w - 2,
+      `${cajas[0]!.x}+${cajas[0]!.w} vs ${cajas[1]!.x}`);
+  }
+
+  // --- nada se sale de la ventana -----------------------------------------
+  // Es el fallo que motiva el redisenio: el boton quedaba debajo del pliegue y
+  // habia que desplazar para empezar a grabar.
+  const grabarVisible = await ev<boolean>(client, `
+    (() => {
+      const b = [...document.querySelectorAll('button')].find(x => x.textContent === 'Grabar');
+      if (!b) return false;
+      const r = b.getBoundingClientRect();
+      return r.bottom <= window.innerHeight + 1 && r.top >= 0;
+    })()
+  `);
+  check('el boton de Grabar se ve sin desplazar', grabarVisible);
+
+  check('la pantalla no desborda a lo ancho',
+    await ev<boolean>(client, 'document.documentElement.scrollWidth <= window.innerWidth + 1'));
+
+  // --- y en una ventana estrecha, una sola columna -------------------------
+  // Se comprueba en vez de mirarse: una rejilla que no cede es exactamente el
+  // fallo que ya se colo una vez en el editor, y a ojo no se ve hasta que
+  // alguien encoge la ventana.
+  await client.Emulation.setDeviceMetricsOverride({
+    width: 900, height: 800, deviceScaleFactor: 1, mobile: false,
+  });
+  await sleep(600);
+  const estrecha = JSON.parse(await ev<string>(client, `
+    (() => {
+      const t = [...document.querySelectorAll('.inicio > .tarjeta, .inicio > .lado')]
+        .map(e => Math.round(e.getBoundingClientRect().x));
+      return JSON.stringify(t);
+    })()
+  `)) as number[];
+  check('en una ventana estrecha se apilan en una columna',
+    estrecha.length === 2 && estrecha[0] === estrecha[1], estrecha.join(' vs '));
+  check('y sigue sin desbordar a lo ancho',
+    await ev<boolean>(client, 'document.documentElement.scrollWidth <= window.innerWidth + 1'));
+  await client.Emulation.clearDeviceMetricsOverride();
+  await sleep(400);
+
+  // --- tarjetas de recientes ----------------------------------------------
+  const tarjetas = await ev<number>(client, 'document.querySelectorAll(".tarjeta-reciente").length');
+  check('hay tarjetas de grabaciones recientes', tarjetas > 1, `${tarjetas} tarjetas`);
+
+  check('la portada trae imagen de verdad',
+    await ev<boolean>(client, `
+      (() => {
+        const img = document.querySelector('.tarjeta-reciente img');
+        return !!img && img.naturalWidth > 50;
+      })()
+    `), 'no un rectangulo vacio');
+
+  // --- la preview se anima ------------------------------------------------
+  const antesSrc = await ev<string>(client,
+    '(document.querySelector(".tarjeta-reciente img")?.src ?? "").slice(-40)');
+  const caja = JSON.parse(await ev<string>(client, `
+    (() => { const r = document.querySelector('.tarjeta-reciente').getBoundingClientRect();
+      return JSON.stringify({ x: Math.round(r.x + r.width / 2), y: Math.round(r.y + 30) }); })()
+  `)) as { x: number; y: number };
+  await client.Input.dispatchMouseEvent({ type: 'mouseMoved', x: caja.x, y: caja.y });
+  await sleep(1500);
+  const durante = await ev<string>(client,
+    '(document.querySelector(".tarjeta-reciente img")?.src ?? "").slice(-40)');
+  check('la preview se mueve al posar el cursor', antesSrc !== durante && durante.length > 0);
+
+  // --- lo avanzado, plegado pero presente ---------------------------------
+  check('las opciones avanzadas estan plegadas',
+    await ev<boolean>(client, '!document.querySelector(".avanzado")?.open'));
+  check('y el campo de tapar sigue en el DOM',
+    await ev<boolean>(client, '!!document.querySelector("#tapar")'),
+    'plegado no es quitado');
+
+  await capturar(client, 'apps/desktop/captura-inicio.png');
+  await client.close();
+  child.kill();
+  await sleep(800);
+
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}`);
+  console.log('  captura: apps/desktop/captura-inicio.png\n');
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
+ * Verifica regrabar desde un punto.
+ *
+ * Lo que se comprueba es lo unico que puede fallar sin dar la cara: que la
+ * CABEZA aterrizo en los mismos elementos. Contar frames no probaria nada —una
+ * regrabacion que empezara en blanco tendria frames igual—; que se pulsaran los
+ * mismos botones en el mismo orden dice que la app quedo donde tenia que
+ * quedar.
+ */
+async function verificarRegrabar(): Promise<void> {
+  const salidas = path.join(os.homedir(), 'Videos', 'Vitrina');
+  const antes = new Set(await listar(salidas));
+  const DESDE_MS = 5000;
+
+  const viejo = JSON.parse(
+    await fsp.readFile(path.join(grabacion, 'events.json'), 'utf8')) as
+    { t: number; type: string; label?: string | null }[];
+  const viejoManifest = JSON.parse(
+    await fsp.readFile(path.join(grabacion, 'manifest.json'), 'utf8')) as
+    { startedAt: number; durationMs: number };
+  const cabezaVieja = viejo
+    .filter((e) => e.type === 'down' && e.t - viejoManifest.startedAt < DESDE_MS)
+    .map((e) => e.label ?? '(sin texto)');
+
+  console.log(`  regrabando ${grabacion} desde ${(DESDE_MS / 1000).toFixed(1)}s\n`);
+  const child = spawn(ELECTRON, [
+    APP, grabacion,
+    `--remote-debugging-port=${PORT}`,
+    '--use-fake-device-for-media-stream',
+    '--use-fake-ui-for-media-stream',
+  ], { stdio: ['ignore', 'ignore', 'inherit'] });
+  const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+  await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+  await sleep(2500);
+
+  /*
+   * La aguja al instante del relevo. Es imprescindible: el boton regraba desde
+   * DONDE ESTE LA AGUJA, y sin moverla se regraba desde cero —cabeza vacia— y
+   * la comprobacion siguiente miente sin decir por que.
+   */
+  const duracion = viejoManifest.durationMs;
+  const pista = JSON.parse(await ev<string>(client, `
+    (() => { const r = document.querySelector('.pista').getBoundingClientRect();
+      return JSON.stringify({ x: r.x, y: r.y, w: r.width, h: r.height }); })()
+  `)) as { x: number; y: number; w: number; h: number };
+  const xRelevo = Math.round(pista.x + pista.w * (DESDE_MS / duracion));
+  const yPista = Math.round(pista.y + pista.h / 2);
+  await client.Input.dispatchMouseEvent({ type: 'mousePressed', x: xRelevo, y: yPista, button: 'left', clickCount: 1 });
+  await client.Input.dispatchMouseEvent({ type: 'mouseReleased', x: xRelevo, y: yPista, button: 'left', clickCount: 1 });
+  await sleep(500);
+
+  const rotulo = await ev<string>(client, `
+    ([...document.querySelectorAll('button')].find(b => /^Regrabar desde/.test(b.textContent))?.textContent ?? '')
+  `);
+  check('el boton apunta al instante de la aguja', /Regrabar desde [45]\.\d/.test(rotulo), rotulo);
+
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => /^Regrabar desde/.test(b.textContent))?.click()
+  `);
+
+  check('la app avisa de que esta repitiendo la parte buena',
+    await esperarA(client,
+      'document.body.textContent.includes("repitiendo la parte buena")', 'cabeza en marcha'));
+
+  // El relevo: el aviso desaparece cuando el control vuelve a la persona.
+  check('el control vuelve a la persona',
+    await esperarA(client,
+      '!document.body.textContent.includes("repitiendo la parte buena")'
+      + ' && !!document.querySelector(".pulso")',
+      'relevo', 60_000));
+
+  // Un par de clicks de cola, para que la toma nueva tenga algo propio.
+  await interactuarConLoGrabado();
+  await sleep(1000);
+
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Parar y editar')?.click()
+  `);
+  check('parar lleva al editor',
+    await esperarA(client, '!!document.querySelector("canvas")', 'editor abierto', 60_000));
+
+  const nuevas = (await listar(salidas)).filter((n) => !antes.has(n));
+  const carpeta = nuevas[0] ? path.join(salidas, nuevas[0]) : null;
+  if (!carpeta) {
+    check('se creo la carpeta de la regrabacion', false);
+  } else {
+    const m = JSON.parse(
+      await fsp.readFile(path.join(carpeta, 'manifest.json'), 'utf8')) as
+      { startedAt: number; frames: unknown[] };
+    const evs = JSON.parse(
+      await fsp.readFile(path.join(carpeta, 'events.json'), 'utf8')) as
+      { t: number; type: string; label?: string | null }[];
+
+    check('la toma nueva tiene material', m.frames.length > 20, `${m.frames.length} frames`);
+
+    const cabezaNueva = evs
+      .filter((e) => e.type === 'down' && e.t - m.startedAt < DESDE_MS)
+      .map((e) => e.label ?? '(sin texto)');
+    const iguales = cabezaVieja.length === cabezaNueva.length
+      && cabezaVieja.every((l, i) => l === cabezaNueva[i]);
+    check('la cabeza pulso los mismos elementos', iguales,
+      `${cabezaVieja.join(' | ')} -> ${cabezaNueva.join(' | ')}`);
+
+    const cola = evs.filter((e) => e.type === 'down' && e.t - m.startedAt >= DESDE_MS);
+    check('y la cola trae lo que se hizo despues', cola.length > 0, `${cola.length} clicks`);
+
+    check('la grabacion original sigue intacta',
+      await fsp.stat(path.join(grabacion, 'manifest.json')).then(() => true).catch(() => false));
+  }
+
+  await capturar(client, 'apps/desktop/captura-regrabar.png');
+  await client.close();
+  child.kill();
+  await sleep(800);
+
+  for (const nombre of await listar(salidas)) {
+    if (antes.has(nombre)) continue;
+    await fsp.rm(path.join(salidas, nombre), { recursive: true, force: true }).catch(() => {});
+    console.log(`  limpiado   ${nombre}`);
+  }
+
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}`);
+  console.log('  captura: apps/desktop/captura-regrabar.png\n');
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
+ * Verifica el doblaje de la voz.
+ *
+ * Se comprueba lo que queda en disco —el fichero de voz con contenido y el
+ * proyecto apuntando a el— y, sobre todo, el DESFASE: es lo unico que puede
+ * salir mal sin dar la cara, porque un doblaje corrido dos segundos suena
+ * perfecto en el editor y mal en el video.
+ */
+async function verificarDoblaje(): Promise<void> {
+  console.log(`  doblando   ${grabacion}\n`);
+  await fsp.rm(path.join(grabacion, 'voz.webm'), { force: true }).catch(() => {});
+
+  const child = spawn(ELECTRON, [
+    APP, grabacion,
+    `--remote-debugging-port=${PORT}`,
+    '--use-fake-device-for-media-stream',
+    '--use-fake-ui-for-media-stream',
+  ], { stdio: ['ignore', 'ignore', 'inherit'] });
+  const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+  await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+  await sleep(2500);
+
+  check('el editor ofrece doblar la voz',
+    await ev<boolean>(client, 'document.body.textContent.includes("Doblar la voz")'));
+
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Grabar mi voz')?.click()
+  `);
+  check('empieza a doblar y el video se reproduce',
+    await esperarA(client, 'document.body.textContent.includes("Grabando tu voz")', 'doblando'));
+  await sleep(3000);
+
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Parar y guardar la voz')?.click()
+  `);
+  check('para de doblar',
+    await esperarA(client,
+      '[...document.querySelectorAll("button")].some(b => b.textContent === "Grabar mi voz")',
+      'doblaje parado', 10_000));
+
+  // El guardado del proyecto va con retardo: se espera a que aparezca en disco.
+  let proyecto: { voz?: { file: string; desfaseMs: number } | null; pista?: string } = {};
+  const limite = Date.now() + 15_000;
+  while (Date.now() < limite && !proyecto.voz) {
+    await sleep(700);
+    proyecto = JSON.parse(await fsp.readFile(path.join(grabacion, 'project.json'), 'utf8')) as typeof proyecto;
+  }
+
+  check('el proyecto apunta a la voz', proyecto.voz?.file === 'voz.webm');
+  check('y la elige para el video', proyecto.pista === 'voz', String(proyecto.pista));
+
+  const webm = await fsp.stat(path.join(grabacion, 'voz.webm')).catch(() => null);
+  check('voz.webm tiene contenido', (webm?.size ?? 0) > 1000, `${webm?.size ?? 0} bytes`);
+
+  // El desfase tiene que ser NEGATIVO y pequeno: el micro arranca antes que la
+  // reproduccion, y por poco. Positivo significaria que el video empezo antes y
+  // la voz entraria tarde.
+  const desfase = proyecto.voz?.desfaseMs ?? 1;
+  check('el desfase es negativo y pequeno', desfase <= 0 && desfase > -2000, `${desfase} ms`);
+
+  check('el editor deja elegir que se oye',
+    await ev<boolean>(client, 'document.body.textContent.includes("Qué se oye en el vídeo")'));
+
+  await capturar(client, 'apps/desktop/captura-doblaje.png');
+  await client.close();
+  child.kill();
+  await sleep(800);
+
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}`);
+  console.log('  captura: apps/desktop/captura-doblaje.png\n');
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
+ * Verifica la pausa y las marcas, de punta a punta.
+ *
+ * Lo que se comprueba es el RESULTADO, no que la app diga que pauso: que la
+ * carpeta sale con un corte de la duracion de la pausa y que la marca aparece
+ * como chincheta en la regla del timeline. Preguntarle a la interfaz si esta
+ * pausada solo probaria que sabe pintar un boton.
+ */
+async function verificarPausa(): Promise<void> {
+  const fixture = pathToFileURL(path.resolve('spikes/stress.html')).href;
+  const salidas = path.join(os.homedir(), 'Videos', 'Vitrina');
+  const antes = new Set(await listar(salidas));
+  const PAUSA_MS = 1500;
+
+  console.log(`  grabando con pausa   ${fixture}\n`);
+  const child = spawn(ELECTRON, [
+    APP,
+    `--remote-debugging-port=${PORT}`,
+    '--use-fake-device-for-media-stream',
+    '--use-fake-ui-for-media-stream',
+  ], { stdio: ['ignore', 'ignore', 'inherit'] });
+  const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+  await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+  await sleep(2000);
+
+  await ev(client, `
+    (() => {
+      const i = document.querySelector('#url');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+        .call(i, ${JSON.stringify(fixture)});
+      i.dispatchEvent(new Event('input', { bubbles: true }));
+      [...document.querySelectorAll('button')].find(b => b.textContent === 'Grabar').click();
+    })()
+  `);
+  check('la app entro en modo grabacion',
+    await esperarA(client, '!!document.querySelector(".pulso")', 'estado grabando'));
+
+  await interactuarConLoGrabado();
+  await sleep(600);
+
+  // Una marca en mitad de la grabacion, por el boton: el atajo global es de
+  // teclado del sistema y no se puede inyectar desde aqui.
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Señalar momento')?.click()
+  `);
+  await sleep(400);
+
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Pausar')?.click()
+  `);
+  check('la app dice que esta en pausa',
+    await esperarA(client, 'document.body.textContent.includes("En pausa")', 'aviso de pausa'));
+  await sleep(PAUSA_MS);
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Reanudar')?.click()
+  `);
+  check('y vuelve a grabar',
+    await esperarA(client, '!document.body.textContent.includes("En pausa")', 'sin aviso'));
+  await sleep(1200);
+
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Parar y editar')?.click()
+  `);
+  check('parar lleva al editor',
+    await esperarA(client, '!!document.querySelector("canvas")', 'editor abierto'));
+
+  const nuevas = (await listar(salidas)).filter((n) => !antes.has(n));
+  const carpeta = nuevas[0] ? path.join(salidas, nuevas[0]) : null;
+  if (!carpeta) {
+    check('se creo la carpeta de grabacion', false);
+  } else {
+    const project = JSON.parse(
+      await fsp.readFile(path.join(carpeta, 'project.json'), 'utf8'),
+    ) as { cuts?: { startMs: number; endMs: number }[] };
+    const cortes = project.cuts ?? [];
+    check('la pausa quedo como un corte', cortes.length === 1, `${cortes.length} cortes`);
+
+    if (cortes[0]) {
+      const dura = cortes[0].endMs - cortes[0].startMs;
+      check('el corte mide lo que duro la pausa',
+        dura > PAUSA_MS - 500 && dura < PAUSA_MS + 900, `${dura} ms`);
+    }
+
+    const manifest = JSON.parse(
+      await fsp.readFile(path.join(carpeta, 'manifest.json'), 'utf8'),
+    ) as { startedAt: number; frames: { t: number }[] };
+    if (cortes[0]) {
+      // Lo que de verdad importa: durante la pausa no se capturo nada.
+      const dentro = manifest.frames.filter((f) => {
+        const off = f.t * 1000 - manifest.startedAt;
+        return off > cortes[0]!.startMs + 300 && off < cortes[0]!.endMs - 300;
+      });
+      check('durante la pausa no llegaron frames', dentro.length === 0, `${dentro.length} frames`);
+    }
+
+    const eventos = JSON.parse(
+      await fsp.readFile(path.join(carpeta, 'events.json'), 'utf8'),
+    ) as { type: string }[];
+    check('la marca quedo en el log',
+      eventos.filter((e) => e.type === 'mark').length === 1);
+  }
+
+  check('la chincheta aparece en la regla',
+    await ev<number>(client, 'document.querySelectorAll(".hito").length') === 1);
+
+  await capturar(client, 'apps/desktop/captura-pausa.png');
+  await client.close();
+  child.kill();
+  await sleep(800);
+
+  for (const nombre of await listar(salidas)) {
+    if (antes.has(nombre)) continue;
+    await fsp.rm(path.join(salidas, nombre), { recursive: true, force: true }).catch(() => {});
+    console.log(`  limpiado   ${nombre}`);
+  }
+
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}`);
+  console.log('  captura: apps/desktop/captura-pausa.png\n');
   process.exit(fallos === 0 ? 0 : 1);
 }
 
@@ -1184,7 +2284,9 @@ async function verificarVertical(): Promise<void> {
 async function medirVideo(file: string): Promise<string> {
   const ffmpeg = await findFfmpeg();
   if (!ffmpeg) return 'sin ffprobe';
-  const ffprobe = path.join(path.dirname(ffmpeg), path.basename(ffmpeg).replace('ffmpeg', 'ffprobe'));
+  // Al lado de ffmpeg, y si no, el del PATH: el que la app empaqueta viene solo.
+  const alLado = path.join(path.dirname(ffmpeg), path.basename(ffmpeg).replace('ffmpeg', 'ffprobe'));
+  const ffprobe = fs.existsSync(alLado) ? alLado : 'ffprobe';
   const { stdout } = await ejecutar(ffprobe, [
     '-v', 'error', '-select_streams', 'v:0',
     '-show_entries', 'stream=width,height', '-of', 'csv=p=0:s=,', file,
@@ -1325,8 +2427,41 @@ async function verificarSilencios(): Promise<void> {
     await esperarA(client, '!document.body.textContent.includes("Buscando silencios")',
       'fin de la deteccion', 30_000));
 
-  const bandas = await ev<number>(client, 'document.querySelectorAll(".recorte.corte").length');
+  // El selector es `.carril.ritmo .corte` y no `.recorte.corte`: los cortes se
+  // pintan en el carril de ritmo desde que la linea de tiempo tiene carriles, y
+  // esta comprobacion se quedo buscando la clase de antes —o sea, pasando por
+  // alto justo lo que venia a mirar—.
+  const bandas = await ev<number>(client, 'document.querySelectorAll(".carril.ritmo .corte").length');
   check('el silencio aparece en la linea de tiempo', bandas === 1, `${bandas} bandas`);
+
+  // La onda se pinta en un lienzo, asi que se comprueba en pixeles: cuanta
+  // altura alcanza y en que parte de las columnas hay algo. Un lienzo en blanco
+  // o una linea plana pasarian cualquier comprobacion que solo mirara el DOM,
+  // y en la pantalla se leerian como "esta grabacion no tiene sonido".
+  const onda = JSON.parse(await ev<string>(client, `
+    (() => {
+      const c = document.querySelector('canvas.onda');
+      if (!c) return JSON.stringify({ hay: false });
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let conTinta = 0, alto = 0;
+      for (let x = 0; x < c.width; x++) {
+        let n = 0;
+        for (let y = 0; y < c.height; y++) if (d[(y * c.width + x) * 4 + 3] > 0) n++;
+        if (n > 1) conTinta++;
+        if (n > alto) alto = n;
+      }
+      return JSON.stringify({
+        hay: true, columnas: c.width, conTinta, alto: alto / c.height,
+      });
+    })()
+  `)) as { hay: boolean; columnas?: number; conTinta?: number; alto?: number };
+
+  check('la onda se dibuja en el lienzo', onda.hay === true);
+  check('y llega a verse, no es una linea plana', (onda.alto ?? 0) > 0.5,
+    `el pico mas alto ocupa el ${(((onda.alto ?? 0) * 100)).toFixed(0)}% del carril`);
+  check('con sonido en buena parte de la grabacion',
+    (onda.conTinta ?? 0) > (onda.columnas ?? 1) * 0.3,
+    `${onda.conTinta} de ${onda.columnas} columnas`);
 
   await sleep(900);   // guardado diferido
   const proyecto = JSON.parse(await fsp.readFile(path.join(root, 'project.json'), 'utf8')) as
@@ -1356,8 +2491,23 @@ async function verificarSilencios(): Promise<void> {
 
 const flujo = process.argv.includes('--silencios') ? verificarSilencios
   : process.argv.includes('--vertical') ? verificarVertical
+  : process.argv.includes('--bienvenida') ? verificarBienvenida   // se encarga el flujo
+  : process.argv.includes('--actualizacion') ? verificarActualizacion
+  : process.argv.includes('--rendimiento') ? verificarRendimiento
+  : process.argv.includes('--cristal') ? verificarCristal
+  : process.argv.includes('--inicio') ? verificarInicio
+  : process.argv.includes('--regrabar') ? verificarRegrabar
+  : process.argv.includes('--doblar') ? verificarDoblaje
+  : process.argv.includes('--pausa') ? verificarPausa
   : process.argv.includes('--camara') ? verificarCamara
   : process.argv.includes('--grabar') ? verificarGrabacion : main;
+
+// La bienvenida sale ANTES que ninguna otra pantalla, asi que todos los flujos
+// menos el suyo la dan por vista antes de arrancar. Sin esto, en una maquina
+// limpia el primer flujo se quedaria mirandola y fallaria diciendo "no
+// encuentro el boton Grabar", que no explica nada de lo que pasa.
+if (!process.argv.includes('--bienvenida')) marcarBienvenida(true);
+
 flujo().catch((e: unknown) => {
   console.error('FALLO:', e instanceof Error ? e.message : String(e));
   process.exit(1);

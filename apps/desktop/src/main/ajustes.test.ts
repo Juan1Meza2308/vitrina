@@ -9,7 +9,12 @@ describe('normalizarAjustes', () => {
       tapar: '#saldo, .email', camOn: true, camDeviceId: 'cam-1',
       tema: 'claro' as const, looks: [], lookPorDefecto: null,
     };
-    expect(normalizarAjustes(guardado)).toEqual(guardado);
+    // Y los campos que no estaban —estos ajustes son de una version anterior—
+    // salen con su valor de fabrica en vez de romper el resto. Es el caso que
+    // vive cualquiera que actualice la app.
+    expect(normalizarAjustes(guardado)).toEqual({
+      ...guardado, bienvenidaVista: '', ffmpegPath: '',
+    });
   });
 
   it('un fichero corrupto o vacio da los valores de fabrica', () => {
@@ -44,6 +49,24 @@ describe('normalizarAjustes', () => {
 
   it('el id de microfono vacio es valido: significa "el predeterminado"', () => {
     expect(normalizarAjustes({ micDeviceId: '' }).micDeviceId).toBe('');
+  });
+
+  it('sin marca de bienvenida, la bienvenida se ensena', () => {
+    // Es el caso de la primera vez y tambien el de unos ajustes corruptos: ante
+    // la duda, saludar. Ensenar la bienvenida de mas cuesta un clic; saltarsela
+    // deja a alguien sin saber que Vitrina graba paginas web y no la pantalla.
+    expect(normalizarAjustes({}).bienvenidaVista).toBe('');
+    expect(normalizarAjustes({ bienvenidaVista: 42 }).bienvenidaVista).toBe('');
+  });
+
+  it('la version vista se guarda tal cual, para poder volver a saludar', () => {
+    expect(normalizarAjustes({ bienvenidaVista: '0.1.0' }).bienvenidaVista).toBe('0.1.0');
+  });
+
+  it('la ruta de ffmpeg elegida a mano sobrevive, y una basura no', () => {
+    expect(normalizarAjustes({ ffmpegPath: 'D:/tools/ffmpeg.exe' }).ffmpegPath)
+      .toBe('D:/tools/ffmpeg.exe');
+    expect(normalizarAjustes({ ffmpegPath: { a: 1 } }).ffmpegPath).toBe('');
   });
 
   it('los selectores a tapar se guardan tal cual se escribieron', () => {

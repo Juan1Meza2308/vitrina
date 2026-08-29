@@ -8,3 +8,6 @@ apps/desktop/editor-vertical.png
 apps/desktop/marco*.png
 *.log
 .DS_Store
+
+# Prueba local de deteccion de navegador en rutas de Windows.
+C:/

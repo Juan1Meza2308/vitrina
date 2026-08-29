@@ -10,7 +10,9 @@
  * y convertirlos a base64 para cruzar el puente los duplicaria de tamano y
  * bloquearia el hilo principal en cada movimiento del cursor.
  */
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, screen, session, shell } from 'electron';
+import {
+  app, BrowserWindow, dialog, globalShortcut, ipcMain, net, protocol, screen, session, shell,
+} from 'electron';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -18,18 +20,27 @@ import { pathToFileURL } from 'node:url';
 import CDP from 'chrome-remote-interface';
 import { createCanvas, loadImage } from '@napi-rs/canvas';
 import {
-  Recorder, ventanaPara, guionDe, reproducir, listaDeSelectores,
+  Recorder, ventanaPara, guionDe, guionHasta, reproducir, listaDeSelectores,
 } from '@vitrina/capture-cdp';
 import {
   CAPTURE_PRESETS, CAMERA_PRESETS, cameraConfigForBudget, computeQualityBudget,
-  defaultProject, hostFromUrl, planSegments, parseSilenceReport, silenceFilter,
+  defaultProject, FrameIndex, hostFromUrl, planSegments, parseSilenceReport, silenceFilter,
   paraOrientacion, reescalarProyecto,
 } from '@vitrina/core';
 import type {
   AudioTrack, CamTrack, CameraPresetName, Cut, InputEvent, Manifest, Orientacion, Project,
 } from '@vitrina/core';
-import { exportRecording, EXPORT_PRESETS, ExportAbortedError, findFfmpeg } from '@vitrina/export';
+import {
+  exportRecording, exportarGuia, EXPORT_PRESETS, ExportAbortedError, findFfmpeg,
+  comoInstalarFfmpeg, origenDeFfmpeg,
+} from '@vitrina/export';
+import { findBrowser, comoInstalarNavegador } from '@vitrina/capture-cdp';
 import { normalizarAjustes, aplicarLook, type Ajustes } from './ajustes.ts';
+import { esMasNueva, puedeActualizarSolo } from './version.ts';
+// CommonJS con `require` dinamico dentro: importacion por defecto, y externo en
+// la configuracion de electron-vite. Con importacion nombrada, el bundle
+// compila y falla al arrancar.
+import electronUpdater from 'electron-updater';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -50,11 +61,172 @@ async function leerAjustes(): Promise<Ajustes> {
 
 ipcMain.handle('settings:get', () => leerAjustes());
 
-ipcMain.handle('settings:set', async (_e, parcial: Partial<Ajustes>) => {
+/**
+ * Lo que la bienvenida necesita saber para poder decir la verdad.
+ *
+ * `detalle` lleva la version del navegador cuando lo hay, la ruta de ffmpeg
+ * cuando funciona, y el texto de "como instalarlo" cuando no: un estado en rojo
+ * sin decir que hacer es peor que no comprobar nada.
+ */
+export interface EstadoSistema {
+  version: string;
+  navegador: { ok: boolean; detalle: string };
+  ffmpeg: { ok: boolean; origen: 'incluido' | 'sistema' | 'path'; detalle: string };
+}
+
+/**
+ * Que necesita Vitrina y que hay de eso en esta maquina.
+ *
+ * Lo pide la pantalla de bienvenida, y es una comprobacion de verdad, no una
+ * promesa: el navegador se busca en el disco y a ffmpeg se le PIDE su version.
+ * Comprobar que el fichero existe no basta —una instalacion a medias, un
+ * antivirus que se lleva el binario, un permiso de ejecucion que falta— y el
+ * sitio donde eso tiene que aparecer es la primera pantalla, no el momento de
+ * exportar, cuando ya hay una demo grabada y editada detras.
+ */
+async function estadoDelSistema(): Promise<EstadoSistema> {
+  const nav = findBrowser();
+  const ruta = findFfmpeg();
+  let ffmpegOk = false;
+  try {
+    await ejecutar(ruta, ['-version'], { timeout: 5000 });
+    ffmpegOk = true;
+  } catch {
+    ffmpegOk = false;
+  }
+  return {
+    version: app.getVersion(),
+    navegador: nav
+      ? { ok: true, detalle: nav.label }
+      : { ok: false, detalle: comoInstalarNavegador() },
+    ffmpeg: {
+      ok: ffmpegOk,
+      // De donde salio importa para lo que se lee: "viene con la app" y "lo
+      // tienes tu instalado" llevan a decisiones distintas si algo va mal.
+      origen: origenDeFfmpeg(ruta),
+      detalle: ffmpegOk ? ruta : comoInstalarFfmpeg(),
+    },
+  };
+}
+
+ipcMain.handle('sistema:estado', () => estadoDelSistema());
+
+/* -------------------------------------------------------------------------
+ * Actualizaciones
+ *
+ * La app pregunta por la ultima Release al arrancar y, si hay una mas nueva,
+ * AVISA. No se descarga sola ni se instala por su cuenta: quien esta grabando
+ * una demo no puede encontrarse con que la aplicacion se reinicia.
+ *
+ * El aviso solo aparece en la app instalada. Ejecutandola desde el codigo no
+ * tiene sentido —ahi se actualiza con git— y electron-updater directamente se
+ * niega a mirar.
+ * ---------------------------------------------------------------------- */
+
+const { autoUpdater } = electronUpdater;
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = false;
+
+/** Ultima version vista, para poder responder a quien pregunte mas tarde. */
+let nuevaVersion: string | null = null;
+
+function avisarDeVersion(version: string): void {
+  if (!esMasNueva(version, app.getVersion())) return;
+  nuevaVersion = version;
+  for (const w of BrowserWindow.getAllWindows()) {
+    w.webContents.send('update:disponible', version);
+  }
+}
+
+function mirarSiHayVersionNueva(): void {
+  // Modo de prueba: sin publicar nada se puede ver el aviso tal y como lo vera
+  // el usuario. Es el mismo recurso que `data-cristal` para el desenfoque, y
+  // sirve para que `verificar-app --actualizacion` compruebe la barra de
+  // verdad, en la app de verdad.
+  const fingida = process.env['VITRINA_FINGIR_ACTUALIZACION'];
+  if (fingida) {
+    setTimeout(() => avisarDeVersion(fingida), 800);
+    return;
+  }
+  if (!app.isPackaged) return;
+
+  autoUpdater.on('update-available', (info: { version: string }) => avisarDeVersion(info.version));
+  autoUpdater.on('download-progress', (p: { percent: number }) => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      w.webContents.send('update:progreso', Math.round(p.percent));
+    }
+  });
+  autoUpdater.on('update-downloaded', () => autoUpdater.quitAndInstall());
+  // Un fallo aqui no es asunto del usuario: si GitHub no responde o no hay red,
+  // la app funciona igual. Se traga y se reintentara en el proximo arranque.
+  autoUpdater.on('error', () => {});
+  void autoUpdater.checkForUpdates().catch(() => {});
+}
+
+ipcMain.handle('update:pendiente', () => nuevaVersion);
+
+/**
+ * Instalar la version nueva.
+ *
+ * En Windows se descarga y la app se reinicia sola. En macOS no: Squirrel exige
+ * que la app este firmada y Vitrina no lo esta, asi que se abre la pagina de
+ * descargas en vez de prometer algo que no va a ocurrir.
+ */
+ipcMain.handle('update:instalar', async () => {
+  if (!puedeActualizarSolo() || !app.isPackaged) {
+    await shell.openExternal('https://github.com/Juan1Meza2308/vitrina/releases/latest');
+    return 'pagina';
+  }
+  void autoUpdater.downloadUpdate().catch(() => {});
+  return 'descargando';
+});
+
+/**
+ * Abrir un enlace en el navegador del sistema.
+ *
+ * Con lista blanca de destinos: el renderer no puede pedir que se abra
+ * cualquier cosa. Son los dos sitios a los que la bienvenida manda —descargar
+ * un navegador o ffmpeg— y la documentacion del proyecto.
+ */
+const ENLACES: Record<string, string> = {
+  navegador: 'https://www.google.com/chrome/',
+  ffmpeg: 'https://ffmpeg.org/download.html',
+  guia: 'https://github.com/Juan1Meza2308/vitrina#readme',
+};
+ipcMain.handle('sistema:abrir', async (_e, clave: string) => {
+  const url = ENLACES[clave];
+  if (url) await shell.openExternal(url);
+});
+
+/**
+ * Senalar un ffmpeg a mano cuando el de la app no aparece.
+ *
+ * Se guarda en los ajustes y se pone en `FFMPEG_PATH`, que es lo primero que
+ * mira `findFfmpeg()`: no hace falta ni una linea de resolucion nueva.
+ */
+ipcMain.handle('sistema:elegirFfmpeg', async (): Promise<EstadoSistema> => {
+  const r = await dialog.showOpenDialog({
+    title: 'Elige el ejecutable de ffmpeg',
+    properties: ['openFile'],
+    filters: process.platform === 'win32'
+      ? [{ name: 'Ejecutable', extensions: ['exe'] }]
+      : [{ name: 'Todos', extensions: ['*'] }],
+  });
+  const elegido = r.filePaths[0];
+  if (!r.canceled && elegido) {
+    process.env['FFMPEG_PATH'] = elegido;
+    await guardarAjustes({ ffmpegPath: elegido });
+  }
+  return estadoDelSistema();
+});
+
+async function guardarAjustes(parcial: Partial<Ajustes>): Promise<Ajustes> {
   const fusion = { ...(await leerAjustes()), ...parcial };
   await fsp.writeFile(ficheroAjustes(), JSON.stringify(fusion, null, 2)).catch(() => {});
   return fusion;
-});
+}
+
+ipcMain.handle('settings:set', (_e, parcial: Partial<Ajustes>) => guardarAjustes(parcial));
 
 /**
  * Las ultimas grabaciones, para no tener que buscarlas en un dialogo.
@@ -63,30 +235,100 @@ ipcMain.handle('settings:set', async (_e, parcial: Partial<Ajustes>) => {
  * borra una carpeta, una lista guardada ofreceria abrir algo que ya no existe.
  */
 /**
- * Miniatura de una grabacion, como data URL.
+ * Fotogramas de una grabacion, escalados y en data URL.
  *
- * Se elige un frame al 25 % y no el primero: al arrancar, la pagina grabada
- * suele estar en blanco o a medio cargar, y una lista de rectangulos vacios no
- * distingue una demo de otra —que es justo para lo que sirve la miniatura—.
- *
- * Va reescalada a 160 px y no en crudo: los frames pesan cientos de kilobytes y
- * mandar cinco enteros por IPC en cada arranque seria pagar megas para pintar
- * un sello.
+ * Van como data URL y no por el protocolo `vitrina://`, que solo sirve la
+ * grabacion ABIERTA: aqui hay varias carpetas a la vez. Reescalados a 320 px
+ * porque un frame pesa cientos de kilobytes y esto es para pintar una tarjeta.
  */
-async function miniaturaDe(dir: string, m: Manifest): Promise<string | null> {
-  const f = m.frames[Math.floor(m.frames.length * 0.25)] ?? m.frames[0];
-  if (!f) return null;
+async function fotogramas(
+  dir: string, m: Manifest, instantes: number[], ancho = 320,
+): Promise<string[]> {
+  const index = new FrameIndex(m);
+  const salida: string[] = [];
+  for (const ms of instantes) {
+    const file = index.at(ms);
+    if (!file) continue;
+    try {
+      const img = await loadImage(path.join(dir, 'frames', file));
+      const h = Math.max(1, Math.round(ancho * (img.height / img.width)));
+      const c = createCanvas(ancho, h);
+      c.getContext('2d').drawImage(img, 0, 0, ancho, h);
+      salida.push(c.toDataURL('image/jpeg', 0.62));
+    } catch {
+      // Un frame ilegible no tumba la tarjeta: se queda con los que salgan.
+    }
+  }
+  return salida;
+}
+
+/**
+ * Como se llama una grabacion en la lista.
+ *
+ * El host de la app grabada, que es lo que distingue una demo de otra. Con un
+ * fichero local no hay host —`hostFromUrl` devuelve "localhost" para todo— y se
+ * usa el nombre del fichero: tres demos de tres fixtures distintos se llamarian
+ * igual, que es justo lo que la lista venia a arreglar.
+ */
+function tituloDeGrabacion(url: string): string {
   try {
-    const img = await loadImage(path.join(dir, 'frames', f.file));
-    const w = 160;
-    const h = Math.max(1, Math.round(w * (img.height / img.width)));
-    const c = createCanvas(w, h);
-    c.getContext('2d').drawImage(img, 0, 0, w, h);
-    return c.toDataURL('image/jpeg', 0.7);
+    const u = new URL(url);
+    if (u.protocol === 'file:') return decodeURIComponent(u.pathname.split('/').pop() ?? '') || 'archivo';
+    return u.host || hostFromUrl(url);
   } catch {
-    return null;      // frame ilegible: la fila sigue valiendo sin sello
+    return hostFromUrl(url);
   }
 }
+
+/**
+ * Instante de la portada: el del PRIMER CLICK.
+ *
+ * Al arrancar, la pagina grabada suele estar en blanco o a medio cargar, y una
+ * lista de rectangulos vacios no distingue una demo de otra —que es justo para
+ * lo que sirve la portada—. El primer click es el momento en que ya hay algo
+ * que ver y ademas es lo que la demo venia a ensenar.
+ */
+async function instanteDePortada(dir: string, m: Manifest): Promise<number> {
+  try {
+    const events = JSON.parse(
+      await fsp.readFile(path.join(dir, 'events.json'), 'utf8')) as InputEvent[];
+    const click = events.find((e) => e.type === 'down');
+    if (click) return click.t - m.startedAt;
+  } catch {
+    /* sin log: se cae al reparto de siempre */
+  }
+  return m.durationMs * 0.25;
+}
+
+/**
+ * Tira de fotogramas de una grabacion, para animar su tarjeta.
+ *
+ * Se pide al posar el cursor y se cachea: generarlas todas al arrancar
+ * decodificaria treinta frames grandes de golpe y la app tardaria en abrir.
+ * La cache vive lo que vive la app; la carpeta de la grabacion no se ensucia.
+ */
+const cachePrevia = new Map<string, string[]>();
+
+ipcMain.handle('recordings:preview', async (_e, dir: string): Promise<string[]> => {
+  const carpeta = path.resolve(dir);
+  const cacheada = cachePrevia.get(carpeta);
+  if (cacheada) return cacheada;
+
+  try {
+    const m = JSON.parse(
+      await fsp.readFile(path.join(carpeta, 'manifest.json'), 'utf8')) as Manifest;
+    // Repartidos entre el 8 % y el 88 %: los extremos de una demo son la pagina
+    // cargando y el cursor parado, y no cuentan nada.
+    const cuantos = 6;
+    const instantes = Array.from({ length: cuantos }, (_, i) =>
+      m.durationMs * (0.08 + (0.8 * i) / (cuantos - 1)));
+    const tira = await fotogramas(carpeta, m, instantes);
+    cachePrevia.set(carpeta, tira);
+    return tira;
+  } catch {
+    return [];
+  }
+});
 
 ipcMain.handle('recordings:recent', async (_e, limite = 5) => {
   try {
@@ -97,9 +339,15 @@ ipcMain.handle('recordings:recent', async (_e, limite = 5) => {
         const dir = path.join(RECORDINGS, nombre);
         try {
           const m = JSON.parse(await fsp.readFile(path.join(dir, 'manifest.json'), 'utf8')) as Manifest;
+          const [portada] = await fotogramas(dir, m, [await instanteDePortada(dir, m)]);
           return {
-            dir, nombre, durationMs: m.durationMs, startedAt: m.startedAt,
-            miniatura: await miniaturaDe(dir, m),
+            dir,
+            nombre,
+            // El host identifica la demo mucho mejor que la hora de la carpeta.
+            host: tituloDeGrabacion(m.url),
+            durationMs: m.durationMs,
+            startedAt: m.startedAt,
+            portada: portada ?? null,
           };
         } catch {
           return null;   // carpeta a medias: una grabacion interrumpida
@@ -126,6 +374,51 @@ let recorder: Recorder | null = null;
  */
 let marcoPedido: { w: number; h: number } | null = null;
 let recordingDir = '';
+/**
+ * Atajos que funcionan con la ventana de Vitrina detras.
+ *
+ * Son la diferencia entre parar la grabacion y GRABARSE parando la grabacion:
+ * la demo pasa en otra ventana, asi que volver aqui a pulsar un boton sale en
+ * el video. Se registran solo mientras se graba y se liberan al parar: un atajo
+ * global que sobreviva a la grabacion se dispararia dentro de otra app.
+ */
+const ATAJOS = {
+  parar: 'CommandOrControl+Shift+S',
+  pausa: 'CommandOrControl+Shift+P',
+  marca: 'CommandOrControl+Shift+M',
+} as const;
+
+/** Devuelve los que no se pudieron registrar, para poder DECIRLO. Un atajo mudo
+ *  es peor que no tenerlo: se pulsa y no pasa nada. */
+function registrarAtajos(): string[] {
+  const fallidos: string[] = [];
+  const reg = (combo: string, fn: () => void) => {
+    try {
+      if (!globalShortcut.register(combo, fn)) fallidos.push(combo);
+    } catch {
+      fallidos.push(combo);
+    }
+  };
+  // Parar pasa por el renderer y no por el grabador: el microfono lo lleva el
+  // renderer y hay que cerrarlo ANTES de que se escriba el manifest.
+  reg(ATAJOS.parar, () => win?.webContents.send('record:atajo', 'parar'));
+  reg(ATAJOS.pausa, () => void alternarPausa());
+  reg(ATAJOS.marca, () => recorder?.marcar());
+  return fallidos;
+}
+
+function liberarAtajos(): void {
+  globalShortcut.unregisterAll();
+}
+
+async function alternarPausa(): Promise<boolean> {
+  if (!recorder) return false;
+  if (recorder.pausada) await recorder.reanudar();
+  else await recorder.pausar();
+  win?.webContents.send('record:pausa', recorder.pausada);
+  return recorder.pausada;
+}
+
 /** Carpeta que sirve el protocolo `vitrina://`. */
 let servedDir = '';
 let exportController: AbortController | null = null;
@@ -133,6 +426,15 @@ let exportController: AbortController | null = null;
 let audioStream: fs.WriteStream | null = null;
 let audioTrack: AudioTrack | null = null;
 let camStream: fs.WriteStream | null = null;
+/** Escritura en curso de la voz doblada. */
+let vozStream: fs.WriteStream | null = null;
+/**
+ * Regrabacion en curso, si la hay.
+ *
+ * Hace falta al PARAR: la cabeza conserva los zooms de la grabacion vieja y la
+ * cola se planifica de cero, y para eso hay que recordar de donde venia.
+ */
+let regrabando: { origen: string; desdeMs: number } | null = null;
 let camTrack: CamTrack | null = null;
 
 /**
@@ -239,11 +541,23 @@ app.whenReady().then(() => {
     callback(permission === 'media');
   });
 
+  // Un ffmpeg elegido a mano manda sobre el que trae la app. Se aplica ANTES de
+  // abrir la ventana: si se hiciera al primer export, la bienvenida estaria
+  // informando de un ffmpeg distinto del que se va a usar.
+  void leerAjustes().then((a) => {
+    if (a.ffmpegPath) process.env['FFMPEG_PATH'] = a.ffmpegPath;
+  });
+
   createWindow();
+  mirarSiHayVersionNueva();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+
+// Un atajo global que sobreviva a la app se dispararia dentro de otra: Electron
+// los libera al salir, pero mas vale decirlo aqui que confiar en ello.
+app.on('will-quit', liberarAtajos);
 
 app.on('window-all-closed', () => {
   void recorder?.close().catch(() => {});
@@ -371,7 +685,7 @@ ipcMain.handle('record:start', async (
   marcoPedido = preset.capture;
   await recorder.launch();
   await recorder.start();
-  return { dir: recordingDir, preset };
+  return { dir: recordingDir, preset, atajos: ATAJOS, atajosFallidos: registrarAtajos() };
 });
 
 /**
@@ -472,6 +786,122 @@ ipcMain.handle('record:repeat', async (
     recordingDir = destino;
     return loadRecording(destino);
   } catch (e) {
+    liberarAtajos();
+    await recorder?.close().catch(() => {});
+    recorder = null;
+    throw e;
+  }
+});
+
+/*
+ * La voz doblada: mismo camino que la narracion, otro fichero.
+ *
+ * Se escribe en la carpeta de la grabacion ABIERTA, que llega como parametro:
+ * doblar pasa en el editor, mucho despues de grabar, y `recordingDir` puede
+ * apuntar a otra cosa o a nada.
+ */
+ipcMain.handle('voz:start', async (_e, dir: string) => {
+  const carpeta = path.resolve(dir);
+  await fsp.access(path.join(carpeta, 'manifest.json'));   // que sea una grabacion
+  vozStream = fs.createWriteStream(path.join(carpeta, 'voz.webm'));
+});
+
+ipcMain.on('voz:chunk', (_e, chunk: Uint8Array) => {
+  vozStream?.write(Buffer.from(chunk));
+});
+
+ipcMain.handle('voz:stop', async () => {
+  const stream = vozStream;
+  vozStream = null;
+  if (stream) await new Promise<void>((resolve) => stream.end(resolve));
+});
+
+ipcMain.handle('record:pausa', () => alternarPausa());
+
+// El atajo global no siempre esta disponible —otra app puede tenerlo cogido— y
+// ademas hay quien prefiere un boton. La marca tiene que poder ponerse igual.
+ipcMain.handle('record:marcar', () => { recorder?.marcar(); });
+
+/**
+ * Regraba una demo desde un instante.
+ *
+ * Vitrina ejecuta sola la cabeza —con los mismos tiempos que la original, que
+ * es lo que deja la app en el mismo estado— y devuelve el control. La promesa
+ * se resuelve justo en el relevo, para que el renderer arranque el microfono
+ * ahi: durante la cabeza no estabas hablando.
+ *
+ * La grabacion original no se toca: sale una carpeta nueva.
+ */
+ipcMain.handle('record:retake', async (_e, opts: { dir: string; desdeMs: number }) => {
+  if (recorder) throw new Error('Ya hay una grabacion en curso');
+
+  const origen = path.resolve(opts.dir);
+  const manifest = JSON.parse(
+    await fsp.readFile(path.join(origen, 'manifest.json'), 'utf8')) as Manifest;
+  const events = JSON.parse(
+    await fsp.readFile(path.join(origen, 'events.json'), 'utf8')) as InputEvent[];
+
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const destino = path.join(RECORDINGS, `${stamp}-regrabada.vitrina`);
+  await fsp.mkdir(destino, { recursive: true });
+
+  const guion = guionDe(events, manifest.startedAt, {
+    deviceScaleFactor: manifest.deviceScaleFactor ?? 1,
+  });
+  const cabeza = guionHasta(guion, opts.desdeMs);
+
+  const hueco = screen.getPrimaryDisplay().workAreaSize;
+  const viewport = manifest.viewport;
+  const dsf = manifest.deviceScaleFactor ?? 1;
+  recorder = new Recorder({
+    url: manifest.url,
+    viewport,
+    deviceScaleFactor: dsf,
+    window: ventanaPara(
+      { w: Math.round(viewport.w * dsf), h: Math.round(viewport.h * dsf) },
+      { width: Math.round(hueco.width * 0.92), height: Math.round(hueco.height * 0.92) },
+    ),
+    outDir: destino,
+    // Lo que se tapo se sigue tapando: la toma nueva no puede publicar lo que
+    // la vieja escondia.
+    tapado: manifest.tapado ?? null,
+    onProgress: (p) => win?.webContents.send('record:progress', p),
+  });
+
+  try {
+    await recorder.launch();
+    await recorder.start();
+    const arranque = Date.now();
+
+    const objetivos = (await (await fetch('http://127.0.0.1:9222/json/list')).json()) as
+      { type: string; id: string }[];
+    const pagina = objetivos.find((t) => t.type === 'page');
+    if (!pagina) throw new Error('El navegador de regrabacion no expuso una pagina');
+    const input = (await CDP({
+      port: 9222, target: pagina.id, local: true,
+    })) as unknown as Parameters<typeof reproducir>[0] & { close(): Promise<void> };
+
+    await reproducir(input, cabeza);
+    await input.close();
+
+    /*
+     * Se espera hasta el instante del relevo, aunque la ultima accion cayera
+     * antes.
+     *
+     * Sin esto la cabeza dura MENOS que la original —entre el ultimo click y el
+     * punto elegido no pasa nada, pero ese hueco existe— y los zooms que se
+     * conservan, que van por instante, apuntarian un poco antes de donde toca.
+     * Lo caza `verificar-app --regrabar`, que vio la cola metida en la cabeza.
+     */
+    const restante = opts.desdeMs - (Date.now() - arranque);
+    if (restante > 0) await new Promise((r) => setTimeout(r, restante));
+
+    recordingDir = destino;
+    regrabando = { origen, desdeMs: opts.desdeMs };
+    marcoPedido = manifest.capture ?? viewport;
+    return { dir: destino, acciones: cabeza.length, atajosFallidos: registrarAtajos() };
+  } catch (e) {
+    liberarAtajos();
     await recorder?.close().catch(() => {});
     recorder = null;
     throw e;
@@ -480,6 +910,7 @@ ipcMain.handle('record:repeat', async (
 
 ipcMain.handle('record:stop', async () => {
   if (!recorder) throw new Error('No hay grabacion en curso');
+  liberarAtajos();
   recorder.setAudioTrack(audioTrack);
   recorder.setCamTrack(camTrack);
   audioTrack = null;
@@ -500,6 +931,51 @@ ipcMain.handle('record:stop', async () => {
   // Planificar la camara nada mas parar: el usuario no deberia tener que pedir
   // el zoom automatico, es la razon de ser de la herramienta.
   await planAndSave(recordingDir, 'normal');
+
+  /*
+   * Si esto era una regrabacion, se cose el proyecto.
+   *
+   * Los zooms de la cabeza siguen valiendo —incluidos los que el usuario movio
+   * a mano, que es justo lo que no puede perderse— porque la cabeza se ejecuto
+   * con los mismos tiempos. Los de la cola no: ahi hay material nuevo, y
+   * copiarlos dejaria la camara encuadrando lo que ya no esta.
+   *
+   * Los cortes y las velocidades tampoco se copian: sus instantes eran del
+   * material viejo y en la toma nueva no significan nada.
+   */
+  if (regrabando) {
+    const { origen, desdeMs } = regrabando;
+    regrabando = null;
+    try {
+      const viejo = JSON.parse(
+        await fsp.readFile(path.join(origen, 'project.json'), 'utf8')) as Project;
+      const viejoManifest = JSON.parse(
+        await fsp.readFile(path.join(origen, 'manifest.json'), 'utf8')) as Manifest;
+      const ruta = path.join(recordingDir, 'project.json');
+      const nuevo = JSON.parse(await fsp.readFile(ruta, 'utf8')) as Project;
+
+      const copiado = reescalarProyecto(
+        viejo,
+        viejoManifest.capture ?? viejoManifest.viewport,
+        result.manifest.capture ?? result.manifest.viewport,
+      );
+      await fsp.writeFile(ruta, JSON.stringify({
+        ...copiado,
+        zooms: [
+          ...copiado.zooms.filter((z) => z.endMs <= desdeMs),
+          ...nuevo.zooms.filter((z) => z.startMs >= desdeMs),
+        ],
+        camara: null,
+        voz: null,
+        pista: undefined,
+        cuts: [],
+        speeds: [],
+        export: nuevo.export,
+      }, null, 2));
+    } catch {
+      // Sin proyecto viejo que copiar, el plan automatico ya es correcto.
+    }
+  }
 
   // Y aplicar el look por defecto, si lo hay. Va aqui y no en `defaultProject`
   // porque ese vive en la libreria de captura, que no sabe nada de ajustes de
@@ -577,6 +1053,17 @@ ipcMain.handle('export:run', async (_e, opts: {
   } finally {
     exportController = null;
   }
+});
+
+/**
+ * Escribe la guia de la grabacion abierta.
+ *
+ * Va por el proceso principal como el export: escribe ficheros en la carpeta y
+ * decodifica frames, dos cosas que el renderer no deberia hacer.
+ */
+ipcMain.handle('guia:run', async (_e, dir: string) => {
+  const r = await exportarGuia({ recordingDir: path.resolve(dir) });
+  return { pasos: r.pasos.length, ficheros: r.ficheros };
 });
 
 ipcMain.handle('export:cancel', () => {

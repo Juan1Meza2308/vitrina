@@ -189,10 +189,50 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
     ? path.resolve(opts.outFile)
     : path.join(root, `export-${preset.name}${extensionFor(settings.format)}`);
 
-  // El audio se grabo en otro proceso y arranco antes que el video; el desfase
-  // se resuelve al montarlo, no al grabarlo.
+  /*
+   * Que se oye en el video.
+   *
+   * Sin marcar nada manda la voz doblada si la hay, porque es lo que espera
+   * quien acaba de doblar. Si se pidio la voz y el fichero no esta, se avisa y
+   * se cae a la narracion en vivo: quedarse mudo por un fichero perdido seria
+   * peor que sonar distinto.
+   */
+  const quiere = renderProject.pista ?? (renderProject.voz ? 'voz' : 'micro');
+  const llevaAudio = supportsAudio(settings.format);
   let audio: AudioInput | undefined;
-  if (manifest.audio && supportsAudio(settings.format)) {
+
+  if (!llevaAudio && quiere !== 'ninguna' && (renderProject.voz || manifest.audio)) {
+    warnings.push(`El formato ${settings.format} no lleva audio: no saldra en este export.`);
+  }
+
+  /*
+   * La voz doblada no pasa por el mapa de tiempo.
+   *
+   * Se grabo contra el video YA montado, asi que los cortes y las
+   * aceleraciones ya estan dentro de ella: es un solo tramo de principio a fin.
+   * Trocearla por los `keeps` del material la cortaria dos veces y sonaria a
+   * saltos. Lo unico que se ajusta es donde empieza.
+   */
+  if (llevaAudio && quiere === 'voz' && renderProject.voz) {
+    const voz = renderProject.voz;
+    const ruta = path.join(root, voz.file);
+    if (await exists(ruta)) {
+      const desfaseSec = voz.desfaseMs / 1000;
+      // Desfase negativo: el fichero empezo antes que el video, asi que se
+      // salta dentro de el en vez de anteponer silencio.
+      const dentro = Math.max(0, -desfaseSec);
+      const silencio = Math.max(0, desfaseSec);
+      audio = {
+        file: ruta,
+        keeps: [{ start: dentro, end: dentro + Math.max(0, spanMs / 1000 - silencio), rate: 1 }],
+        delaySec: silencio,
+      };
+    } else {
+      warnings.push(`El proyecto declara una voz (${voz.file}) pero el fichero no esta.`);
+    }
+  }
+
+  if (!audio && llevaAudio && quiere !== 'ninguna' && manifest.audio) {
     const pista = manifest.audio;
     const ruta = path.join(root, pista.file);
     if (await exists(ruta)) {
@@ -211,8 +251,6 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
     } else {
       warnings.push(`El manifest declara audio (${pista.file}) pero el fichero no esta.`);
     }
-  } else if (manifest.audio && !supportsAudio(settings.format)) {
-    warnings.push(`El formato ${settings.format} no lleva audio: la narracion no saldra en este export.`);
   }
 
   const quitados = (project.cuts ?? []).length;
@@ -279,6 +317,61 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
   let camImg: Awaited<ReturnType<typeof loadImage>> | null = null;
   const t0 = Date.now();
 
+  /**
+   * Reparto del tiempo de un fotograma, para no optimizar a ciegas.
+   *
+   * Apagado salvo `VITRINA_MEDIR=1`, como `data-medir` en el editor. Un export
+   * son cuatro cosas por fotograma —decodificar el JPEG de origen, componer,
+   * SACAR los pixeles del lienzo y pasarselos a ffmpeg— y sin repartirlas no hay
+   * forma de saber cual arreglar; a ojo, cualquiera parece la culpable.
+   *
+   * `leer` va aparte de `componer` porque la primera version las juntaba y daba
+   * una respuesta enganosa: parecia que componer se llevaba el 69 % del export
+   * cuando componer cuesta el 3 % y lo caro es sacar los pixeles del lienzo.
+   */
+  const midiendo = !!process.env['VITRINA_MEDIR'];
+  /**
+   * El fotograma que va por el tubo mientras se compone el siguiente.
+   *
+   * El bucle escribia y se quedaba esperando a que ffmpeg tragara, teniendo el
+   * fotograma siguiente por decodificar. Ahora se solapan: se espera al envio
+   * ANTERIOR justo antes de mandar el actual, asi que decodificar, componer y
+   * leer el lienzo ocurren mientras ffmpeg trabaja.
+   *
+   * Es seguro porque `canvas.data()` devuelve una COPIA de los pixeles —
+   * comprobado, no supuesto—: componer encima del lienzo no toca el buffer que
+   * se esta escribiendo.
+   */
+  let enElTubo: Promise<void> | null = null;
+  /**
+   * Decodificaciones ya en marcha, por fichero.
+   *
+   * `loadImage` es asincrono y trabaja en hilos nativos, pero el bucle la
+   * esperaba justo cuando la necesitaba, asi que esos hilos no servian de nada:
+   * medido, 15,6 s de los 53 de un export se iban en esperar JPEGs. Y hay mas:
+   * treinta decodificaciones a la vez salen a 4,8 ms cada una frente a 17,8 ms
+   * una detras de otra —3,7 veces mas rapido—, porque el hilo unico ni siquiera
+   * saturaba el pool.
+   *
+   * Cuatro en vuelo bastan para que el bucle no espere nunca; mas solo gastaria
+   * memoria (cada imagen decodificada son unos 7 MB).
+   */
+  const enVuelo = new Map<string, Promise<Awaited<ReturnType<typeof loadImage>>>>();
+  /**
+   * `VITRINA_SIN_SOLAPE=1` vuelve al bucle de antes —esperar cada envio y
+   * decodificar justo cuando hace falta— para comparar A/B en la misma maquina
+   * y el mismo rato, como `data-cristal` en el editor. Hace falta: este
+   * contenedor da 46 s o 60 s para el mismo export segun lo ocupado que este, y
+   * comparar contra una medida de hace media hora no compara nada.
+   */
+  const solapa = !process.env['VITRINA_SIN_SOLAPE'];
+  const ADELANTO = solapa ? 4 : 0;
+  const reparto = { decode: 0, componer: 0, leer: 0, tubo: 0 };
+  const ahora = () => (midiendo ? performance.now() : 0);
+  const sumar = (campo: keyof typeof reparto, desde: number) => {
+    if (midiendo) reparto[campo] += performance.now() - desde;
+  };
+
   try {
     for (let i = 0; i < totalFrames; i++) {
       if (opts.signal?.aborted) throw new ExportAbortedError();
@@ -288,10 +381,27 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
       const tMs = map.sourceAt((i / settings.fps) * 1000);
       const frameFile = index.at(tMs);
       if (frameFile && (frameFile !== cachedFile || !cachedImg)) {
-        cachedImg = await loadImage(path.join(root, 'frames', frameFile));
+        const t = ahora();
+        const pedida = enVuelo.get(frameFile);
+        enVuelo.delete(frameFile);
+        cachedImg = await (pedida ?? loadImage(path.join(root, 'frames', frameFile)));
         cachedFile = frameFile;
+        sumar('decode', t);
       }
       if (!cachedImg) continue;
+
+      // Lo que viene, pedido ya. Se mira mas de un fotograma por delante porque
+      // con la salida a mas fps que la captura, los siguientes suelen salir del
+      // MISMO fichero: buscar solo el de al lado no adelantaria casi nunca.
+      for (let k = 1; enVuelo.size < ADELANTO && k <= settings.fps * 2; k++) {
+        const f = index.at(map.sourceAt(((i + k) / settings.fps) * 1000));
+        if (!f || f === cachedFile || enVuelo.has(f)) continue;
+        const img = loadImage(path.join(root, 'frames', f));
+        // El error se recoge en la vuelta que la espera; esto es solo para que
+        // no quede como rechazo sin dueno si el export se aborta antes.
+        img.catch(() => {});
+        enVuelo.set(f, img);
+      }
 
       // La camara se muestrea por el MISMO instante de material que el video,
       // asi que los cortes y las aceleraciones le salen gratis: no hay que
@@ -310,6 +420,7 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
         }
       }
 
+      const tComponer = ahora();
       composite({
         ctx,
         source: cachedImg as unknown as ImageLike,
@@ -329,7 +440,25 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
           : null,
       });
 
-      await encoder.write(canvas.data());
+      sumar('componer', tComponer);
+
+      const tLeer = ahora();
+      const datos = canvas.data();
+      sumar('leer', tLeer);
+
+      const tTubo = ahora();
+      if (enElTubo) await enElTubo;
+      sumar('tubo', tTubo);
+      if (solapa) {
+        const envio = encoder.write(datos);
+        // Si el envio falla mas tarde, el `await` de la vuelta siguiente lo
+        // recoge; este `catch` esta solo para que un fallo despues de abortar no
+        // quede como rechazo sin dueno.
+        envio.catch(() => {});
+        enElTubo = envio;
+      } else {
+        await encoder.write(datos);
+      }
 
       if (opts.onProgress && (i % 10 === 0 || i === totalFrames - 1)) {
         const elapsed = Date.now() - t0;
@@ -344,7 +473,20 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
       }
     }
 
+    if (enElTubo) await enElTubo;
     await encoder.finish();
+
+    if (midiendo) {
+      const total = Date.now() - t0;
+      const pct = (ms: number) => `${((ms / total) * 100).toFixed(0)}%`;
+      process.stderr.write(
+        `[vitrina] export ${totalFrames} fotogramas en ${(total / 1000).toFixed(1)} s: `
+        + `decode ${(reparto.decode / 1000).toFixed(1)} s (${pct(reparto.decode)}), `
+        + `componer ${(reparto.componer / 1000).toFixed(1)} s (${pct(reparto.componer)}), `
+        + `leer el lienzo ${(reparto.leer / 1000).toFixed(1)} s (${pct(reparto.leer)}), `
+        + `tubo ${(reparto.tubo / 1000).toFixed(1)} s (${pct(reparto.tubo)})\n`,
+      );
+    }
   } catch (e) {
     encoder.abort();
     // Un fichero a medias es peor que ninguno: parece valido y no lo es.

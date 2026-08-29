@@ -1,0 +1,45 @@
+name: Bug report
+description: Something does not work
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time. The three fields below are the ones that
+        actually save a round trip — everything else is optional.
+
+  - type: textarea
+    id: que-pasa
+    attributes:
+      label: What happened
+      description: And what you expected instead.
+      placeholder: |
+        I hit Export and the app showed "ffmpeg failed" after a few seconds.
+    validations: { required: true }
+
+  - type: textarea
+    id: pasos
+    attributes:
+      label: How to reproduce it
+      description: |
+        The page you were recording matters: a demo of a localhost app and a demo
+        of a public site fail in different ways.
+      placeholder: |
+        1. Recorded http://localhost:3000 at 1440×810
+        2. Cut the silences
+        3. Export → 1080p
+    validations: { required: true }
+
+  - type: input
+    id: sistema
+    attributes:
+      label: System
+      placeholder: Windows 11 · Vitrina 0.1.0 · installer (or "from source")
+    validations: { required: true }
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else
+      description: |
+        Screenshots help a lot. If the app printed an error, paste it whole.
