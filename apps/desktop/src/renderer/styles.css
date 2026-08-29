@@ -1056,3 +1056,76 @@ button.mas {
   color: var(--acc); font-size: inherit; text-decoration: underline;
 }
 button.mas:hover:not(:disabled) { background: none; border: none; }
+
+
+/*
+ * Bienvenida: lo primero que se ve, una sola vez.
+ *
+ * Ocupa la ventana entera y no flota sobre nada porque no hay nada detras
+ * todavia: interrumpir no es el gesto, recibir si. El ancho se limita a 620 px
+ * —unos 70 caracteres— porque son tres parrafos para leer, no una hoja de
+ * datos, y una linea larga se lee peor.
+ */
+.bienvenida-fondo {
+  position: fixed; inset: 0; z-index: 70;
+  display: flex; align-items: center; justify-content: center;
+  padding: 28px; overflow: auto;
+  background: var(--bg);
+}
+.bienvenida {
+  width: min(620px, 100%);
+  padding: 30px 32px 26px;
+  display: flex; flex-direction: column; gap: 22px;
+  animation: bienvenida-entra .4s var(--curva) both;
+}
+@keyframes bienvenida-entra {
+  from { opacity: 0; transform: translateY(10px) scale(.99); }
+  to { opacity: 1; transform: none; }
+}
+.bienvenida header { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; }
+.bienvenida .marca-app { grid-row: span 2; align-self: center; border-radius: 10px; }
+.bienvenida h1 {
+  margin: 0; font-size: 30px; font-weight: 600; letter-spacing: -.02em;
+  align-self: end;
+}
+.bienvenida header p { margin: 0; align-self: start; }
+.bienvenida h2 {
+  margin: 0 0 6px; font-size: 14.5px; font-weight: 600; letter-spacing: -.01em;
+}
+.bienvenida .bloque p { margin: 0; color: var(--dim); line-height: 1.55; }
+
+/* Cada requisito en una linea: marca, nombre, lo que se ha encontrado, y el
+   boton que lo arregla si falta. */
+.requisitos { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.requisito {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 12px; border-radius: var(--radio-m);
+  background: var(--capa-hundida); border: 1px solid var(--linea);
+  font-size: 13px;
+}
+.requisito .marca {
+  width: 20px; height: 20px; flex: none; border-radius: 50%;
+  display: grid; place-items: center; font-size: 12px; font-weight: 700;
+}
+.requisito.bien .marca { background: var(--acc-suave); color: var(--acc); }
+.requisito.falta .marca { background: rgba(220, 90, 80, .18); color: var(--peligro); }
+.requisito.comprobando .marca { background: var(--capa); color: var(--dim); }
+.requisito .nombre { font-weight: 500; }
+.requisito .detalle {
+  color: var(--dim); margin-left: auto; text-align: right;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 55%;
+}
+.requisito button { flex: none; padding: 5px 10px; font-size: 12px; }
+
+/* Un boton que se lee como enlace: para lo secundario que abre algo fuera. */
+button.enlace {
+  background: none; border: none; padding: 0; color: var(--acc);
+  font: inherit; text-decoration: underline; text-underline-offset: 2px;
+}
+button.enlace:hover:not(:disabled) { filter: brightness(1.15); background: none; }
+
+.bienvenida footer {
+  display: flex; align-items: center; gap: 16px;
+  padding-top: 4px;
+}
+.bienvenida footer .primario { padding: 10px 22px; font-size: 14px; }

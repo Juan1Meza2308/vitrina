@@ -79,6 +79,45 @@ function avisarSiRancio(): void {
 
 avisarSiRancio();
 
+/**
+ * Fichero de ajustes de la app instalada en esta maquina.
+ *
+ * Se calcula igual que `app.getPath('userData')`, con el nombre del paquete de
+ * la app —`@vitrina/desktop`— porque es lo que Electron usa para la carpeta.
+ */
+function ficheroDeAjustes(): string {
+  const base = process.platform === 'win32'
+    ? (process.env['APPDATA'] ?? path.join(os.homedir(), 'AppData', 'Roaming'))
+    : process.platform === 'darwin'
+      ? path.join(os.homedir(), 'Library', 'Application Support')
+      : (process.env['XDG_CONFIG_HOME'] ?? path.join(os.homedir(), '.config'));
+  return path.join(base, '@vitrina', 'desktop', 'ajustes.json');
+}
+
+/**
+ * Marca la bienvenida como vista (o como no vista) antes de arrancar.
+ *
+ * Hace falta porque la bienvenida sale ANTES que cualquier otra pantalla: sin
+ * esto, el primer flujo que se ejecutara en una maquina limpia se quedaria
+ * mirandola y todos los demas fallarian con "no encuentro el boton Grabar", que
+ * no dice nada de lo que pasa. Se escribe el fichero directamente porque es un
+ * JSON y esto es la herramienta de verificacion, no la app.
+ */
+function marcarBienvenida(vista: boolean): void {
+  const f = ficheroDeAjustes();
+  let datos: Record<string, unknown> = {};
+  try {
+    datos = JSON.parse(fs.readFileSync(f, 'utf8')) as Record<string, unknown>;
+  } catch {
+    datos = {};
+  }
+  // Cualquier version vale para darla por vista: la app compara con la suya y
+  // lo unico que mira es si coinciden.
+  datos['bienvenidaVista'] = vista ? 'verificacion' : '';
+  fs.mkdirSync(path.dirname(f), { recursive: true });
+  fs.writeFileSync(f, JSON.stringify(datos, null, 2));
+}
+
 interface Cliente {
   Emulation: {
     setDeviceMetricsOverride(p: {
@@ -907,6 +946,90 @@ async function verificarGrabacion(): Promise<void> {
 
   console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}`);
   console.log('  captura: apps/desktop/captura-grabacion.png\n');
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
+ * Verifica la bienvenida: la pantalla que se ve la primera vez.
+ *
+ * Se comprueban las dos mitades del trato, y la segunda es la que se olvida:
+ * que aparezca cuando toca, y que NO aparezca despues. Una bienvenida que
+ * vuelve en cada arranque deja de ser una bienvenida y pasa a ser un obstaculo.
+ */
+async function verificarBienvenida(): Promise<void> {
+  console.log('  bienvenida\n');
+  marcarBienvenida(false);
+
+  const abrir = async () => {
+    const child = spawn(ELECTRON, [
+      APP,
+      `--remote-debugging-port=${PORT}`,
+      '--use-fake-device-for-media-stream',
+      '--use-fake-ui-for-media-stream',
+    ], { stdio: ['ignore', 'ignore', 'inherit'] });
+    const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+    await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+    return { child, client };
+  };
+
+  let { child, client } = await abrir();
+  check('la bienvenida aparece la primera vez',
+    await esperarA(client, '!!document.querySelector(".bienvenida")', 'bienvenida'));
+
+  // Los requisitos se comprueban de verdad: hay que esperar a que el proceso
+  // principal responda, y lo que se mira es el resultado, no que exista la fila.
+  const listos = await esperarA(client,
+    '[...document.querySelectorAll(".requisito")].every(r => !r.classList.contains("comprobando"))',
+    'requisitos comprobados', 20_000);
+  check('los requisitos terminan de comprobarse', listos);
+
+  const req = JSON.parse(await ev<string>(client, `
+    JSON.stringify([...document.querySelectorAll('.requisito')].map(r => ({
+      nombre: r.querySelector('.nombre')?.textContent ?? '',
+      estado: r.className.replace('requisito', '').trim(),
+      detalle: r.querySelector('.detalle')?.textContent ?? '',
+    })))
+  `)) as { nombre: string; estado: string; detalle: string }[];
+  for (const r of req) console.log(`     ${r.nombre}: ${r.estado} · ${r.detalle}`);
+
+  check('encuentra el navegador', req.some((r) => r.nombre.includes('Navegador') && r.estado === 'bien'),
+    req.find((r) => r.nombre.includes('Navegador'))?.detalle);
+  check('encuentra ffmpeg, y dice que viene con la app',
+    req.some((r) => r.nombre.includes('ffmpeg') && r.estado === 'bien'
+      && r.detalle.includes('Incluido')),
+    req.find((r) => r.nombre.includes('ffmpeg'))?.detalle);
+
+  // Lo que se cuenta importa tanto como lo que se comprueba: quien abre esto por
+  // primera vez tiene que salir sabiendo que Vitrina graba paginas web.
+  const texto = await ev<string>(client, 'document.querySelector(".bienvenida").textContent');
+  check('dice que graba paginas web y no la pantalla',
+    /páginas web/i.test(texto) && /No captura el escritorio/i.test(texto));
+  check('dice que las teclas no se guardan', /nunca cuál/i.test(texto));
+
+  await capturar(client, path.join(APP, 'captura-bienvenida.png'));
+
+  await ev(client, `[...document.querySelectorAll('button')].find(b => b.textContent === 'Empezar').click()`);
+  check('al pulsar Empezar se llega a la pantalla de grabar',
+    await esperarA(client,
+      '[...document.querySelectorAll("button")].some(b => b.textContent === "Grabar")',
+      'pantalla de inicio'));
+
+  await client.close();
+  child.kill();
+  await sleep(1200);
+
+  ({ child, client } = await abrir());
+  await sleep(2500);
+  check('y no vuelve a aparecer al reabrir',
+    !(await ev<boolean>(client, '!!document.querySelector(".bienvenida")')));
+  check('la app abre directamente en la pantalla de grabar',
+    await ev<boolean>(client,
+      '[...document.querySelectorAll("button")].some(b => b.textContent === "Grabar")'));
+
+  await client.close();
+  child.kill();
+  await sleep(800);
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}\n`);
   process.exit(fallos === 0 ? 0 : 1);
 }
 
@@ -2292,6 +2415,7 @@ async function verificarSilencios(): Promise<void> {
 
 const flujo = process.argv.includes('--silencios') ? verificarSilencios
   : process.argv.includes('--vertical') ? verificarVertical
+  : process.argv.includes('--bienvenida') ? verificarBienvenida   // se encarga el flujo
   : process.argv.includes('--rendimiento') ? verificarRendimiento
   : process.argv.includes('--cristal') ? verificarCristal
   : process.argv.includes('--inicio') ? verificarInicio
@@ -2300,6 +2424,13 @@ const flujo = process.argv.includes('--silencios') ? verificarSilencios
   : process.argv.includes('--pausa') ? verificarPausa
   : process.argv.includes('--camara') ? verificarCamara
   : process.argv.includes('--grabar') ? verificarGrabacion : main;
+
+// La bienvenida sale ANTES que ninguna otra pantalla, asi que todos los flujos
+// menos el suyo la dan por vista antes de arrancar. Sin esto, en una maquina
+// limpia el primer flujo se quedaria mirandola y fallaria diciendo "no
+// encuentro el boton Grabar", que no explica nada de lo que pasa.
+if (!process.argv.includes('--bienvenida')) marcarBienvenida(true);
+
 flujo().catch((e: unknown) => {
   console.error('FALLO:', e instanceof Error ? e.message : String(e));
   process.exit(1);

@@ -49,6 +49,21 @@ export interface Ajustes {
   looks: Look[];
   /** Nombre del look que se aplica solo a las grabaciones nuevas. */
   lookPorDefecto: string | null;
+  /**
+   * Version de la app cuya bienvenida ya se leyo. Vacio = no se ha visto nunca.
+   *
+   * Se guarda la VERSION y no un booleano para poder volver a saludar cuando
+   * una version traiga algo que haya que contar. Un booleano obligaria a
+   * inventarse otro ajuste el dia que haga falta.
+   */
+  bienvenidaVista: string;
+  /**
+   * Ruta a un ffmpeg elegido a mano. Vacio = el que trae la app.
+   *
+   * Solo hace falta si el empaquetado no aparece —una instalacion a medias, un
+   * antivirus que se lo lleva— y el usuario senala otro desde la bienvenida.
+   */
+  ffmpegPath: string;
 }
 
 export const AJUSTES_POR_DEFECTO: Ajustes = {
@@ -63,6 +78,8 @@ export const AJUSTES_POR_DEFECTO: Ajustes = {
   tema: 'oscuro',
   looks: [],
   lookPorDefecto: null,
+  bienvenidaVista: '',
+  ffmpegPath: '',
 };
 
 /** Campo a campo: uno malo no debe arrastrar a los demas. */
@@ -83,6 +100,8 @@ export function normalizarAjustes(crudo: unknown): Ajustes {
     tema: o.tema === 'claro' ? 'claro' : 'oscuro',
     looks: Array.isArray(o.looks) ? o.looks.filter(esLook) : [],
     lookPorDefecto: typeof o.lookPorDefecto === 'string' ? o.lookPorDefecto : null,
+    bienvenidaVista: typeof o.bienvenidaVista === 'string' ? o.bienvenidaVista : '',
+    ffmpegPath: typeof o.ffmpegPath === 'string' ? o.ffmpegPath : '',
   };
 }
 

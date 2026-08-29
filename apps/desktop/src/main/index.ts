@@ -32,7 +32,9 @@ import type {
 } from '@vitrina/core';
 import {
   exportRecording, exportarGuia, EXPORT_PRESETS, ExportAbortedError, findFfmpeg,
+  comoInstalarFfmpeg, origenDeFfmpeg,
 } from '@vitrina/export';
+import { findBrowser, comoInstalarNavegador } from '@vitrina/capture-cdp';
 import { normalizarAjustes, aplicarLook, type Ajustes } from './ajustes.ts';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -54,11 +56,102 @@ async function leerAjustes(): Promise<Ajustes> {
 
 ipcMain.handle('settings:get', () => leerAjustes());
 
-ipcMain.handle('settings:set', async (_e, parcial: Partial<Ajustes>) => {
+/**
+ * Lo que la bienvenida necesita saber para poder decir la verdad.
+ *
+ * `detalle` lleva la version del navegador cuando lo hay, la ruta de ffmpeg
+ * cuando funciona, y el texto de "como instalarlo" cuando no: un estado en rojo
+ * sin decir que hacer es peor que no comprobar nada.
+ */
+export interface EstadoSistema {
+  version: string;
+  navegador: { ok: boolean; detalle: string };
+  ffmpeg: { ok: boolean; origen: 'incluido' | 'sistema' | 'path'; detalle: string };
+}
+
+/**
+ * Que necesita Vitrina y que hay de eso en esta maquina.
+ *
+ * Lo pide la pantalla de bienvenida, y es una comprobacion de verdad, no una
+ * promesa: el navegador se busca en el disco y a ffmpeg se le PIDE su version.
+ * Comprobar que el fichero existe no basta —una instalacion a medias, un
+ * antivirus que se lleva el binario, un permiso de ejecucion que falta— y el
+ * sitio donde eso tiene que aparecer es la primera pantalla, no el momento de
+ * exportar, cuando ya hay una demo grabada y editada detras.
+ */
+async function estadoDelSistema(): Promise<EstadoSistema> {
+  const nav = findBrowser();
+  const ruta = findFfmpeg();
+  let ffmpegOk = false;
+  try {
+    await ejecutar(ruta, ['-version'], { timeout: 5000 });
+    ffmpegOk = true;
+  } catch {
+    ffmpegOk = false;
+  }
+  return {
+    version: app.getVersion(),
+    navegador: nav
+      ? { ok: true, detalle: nav.label }
+      : { ok: false, detalle: comoInstalarNavegador() },
+    ffmpeg: {
+      ok: ffmpegOk,
+      // De donde salio importa para lo que se lee: "viene con la app" y "lo
+      // tienes tu instalado" llevan a decisiones distintas si algo va mal.
+      origen: origenDeFfmpeg(ruta),
+      detalle: ffmpegOk ? ruta : comoInstalarFfmpeg(),
+    },
+  };
+}
+
+ipcMain.handle('sistema:estado', () => estadoDelSistema());
+
+/**
+ * Abrir un enlace en el navegador del sistema.
+ *
+ * Con lista blanca de destinos: el renderer no puede pedir que se abra
+ * cualquier cosa. Son los dos sitios a los que la bienvenida manda —descargar
+ * un navegador o ffmpeg— y la documentacion del proyecto.
+ */
+const ENLACES: Record<string, string> = {
+  navegador: 'https://www.google.com/chrome/',
+  ffmpeg: 'https://ffmpeg.org/download.html',
+  guia: 'https://github.com/Juan1Meza2308/vitrina#readme',
+};
+ipcMain.handle('sistema:abrir', async (_e, clave: string) => {
+  const url = ENLACES[clave];
+  if (url) await shell.openExternal(url);
+});
+
+/**
+ * Senalar un ffmpeg a mano cuando el de la app no aparece.
+ *
+ * Se guarda en los ajustes y se pone en `FFMPEG_PATH`, que es lo primero que
+ * mira `findFfmpeg()`: no hace falta ni una linea de resolucion nueva.
+ */
+ipcMain.handle('sistema:elegirFfmpeg', async (): Promise<EstadoSistema> => {
+  const r = await dialog.showOpenDialog({
+    title: 'Elige el ejecutable de ffmpeg',
+    properties: ['openFile'],
+    filters: process.platform === 'win32'
+      ? [{ name: 'Ejecutable', extensions: ['exe'] }]
+      : [{ name: 'Todos', extensions: ['*'] }],
+  });
+  const elegido = r.filePaths[0];
+  if (!r.canceled && elegido) {
+    process.env['FFMPEG_PATH'] = elegido;
+    await guardarAjustes({ ffmpegPath: elegido });
+  }
+  return estadoDelSistema();
+});
+
+async function guardarAjustes(parcial: Partial<Ajustes>): Promise<Ajustes> {
   const fusion = { ...(await leerAjustes()), ...parcial };
   await fsp.writeFile(ficheroAjustes(), JSON.stringify(fusion, null, 2)).catch(() => {});
   return fusion;
-});
+}
+
+ipcMain.handle('settings:set', (_e, parcial: Partial<Ajustes>) => guardarAjustes(parcial));
 
 /**
  * Las ultimas grabaciones, para no tener que buscarlas en un dialogo.
@@ -371,6 +464,13 @@ app.whenReady().then(() => {
   // notificaciones, y no tiene por que poder pedirlas.
   session.defaultSession.setPermissionRequestHandler((_wc, permission, callback) => {
     callback(permission === 'media');
+  });
+
+  // Un ffmpeg elegido a mano manda sobre el que trae la app. Se aplica ANTES de
+  // abrir la ventana: si se hiciera al primer export, la bienvenida estaria
+  // informando de un ffmpeg distinto del que se va a usar.
+  void leerAjustes().then((a) => {
+    if (a.ffmpegPath) process.env['FFMPEG_PATH'] = a.ffmpegPath;
   });
 
   createWindow();

@@ -16,6 +16,7 @@ import type {
 import { Preview, makeTrack } from './preview.ts';
 import { Timeline } from './Timeline.tsx';
 import { Recientes } from './Recientes.tsx';
+import { Bienvenida } from './Bienvenida.tsx';
 import { instalarReflejo } from './reflejo.ts';
 import {
   IconoGrabacion, IconoAjustes, IconoRepetir, IconoImagen, IconoReproducir,
@@ -56,6 +57,7 @@ const FONDOS: { nombre: string; bg: Background; css: string }[] = [
 
 export function App() {
   const [fase, setFase] = useState<Fase>('inicio');
+  const [bienvenida, setBienvenida] = useState(false);
   const [presets, setPresets] = useState<CapturePreset[]>([]);
   const [presetName, setPresetName] = useState('equilibrado');
   const [orientacion, setOrientacion] = useState<Orientacion>('horizontal');
@@ -104,6 +106,12 @@ export function App() {
       setCamOn(a.camOn);
       setCamDeviceId(a.camDeviceId);
       setTema(a.tema);
+      // La bienvenida sale solo si no se ha visto NUNCA. Lo que se guarda es la
+      // version que se leyo, no un si/no: el dia que una version traiga algo que
+      // contar, ya esta el dato para poder saludar otra vez sin inventar otro
+      // ajuste. Pero comparar versiones AQUI seria enseñar la misma bienvenida
+      // en cada actualizacion, que es justo lo que nadie quiere.
+      setBienvenida(a.bienvenidaVista === '');
     });
   }, []);
 
@@ -354,6 +362,20 @@ export function App() {
       setFase('editor');
     }
   }, []);
+
+  // La bienvenida va ANTES que cualquier fase: si se abriera la app con una
+  // grabacion desde la linea de comandos, saludar encima del editor seria
+  // interrumpir, no recibir.
+  if (bienvenida) {
+    return (
+      <Bienvenida onEmpezar={() => {
+        setBienvenida(false);
+        void window.vitrina.estadoDelSistema().then((e) => {
+          void window.vitrina.guardarAjustes({ bienvenidaVista: e.version });
+        });
+      }} />
+    );
+  }
 
   if (fase === 'editor' && datos) {
     return (

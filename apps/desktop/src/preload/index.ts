@@ -19,6 +19,8 @@ export interface RecordingData {
 
 export type { Look } from '../main/ajustes.ts';
 import type { Look } from '../main/ajustes.ts';
+export type { EstadoSistema } from '../main/index.ts';
+import type { EstadoSistema } from '../main/index.ts';
 
 export interface Ajustes {
   url: string;
@@ -32,6 +34,10 @@ export interface Ajustes {
   tema: 'oscuro' | 'claro';
   looks: Look[];
   lookPorDefecto: string | null;
+  /** Version cuya bienvenida ya se leyo. Vacio = no se ha visto nunca. */
+  bienvenidaVista: string;
+  /** ffmpeg elegido a mano. Vacio = el que trae la app. */
+  ffmpegPath: string;
 }
 
 export interface GrabacionReciente {
@@ -170,6 +176,14 @@ const api = {
     ipcRenderer.invoke('watermark:choose', dir),
   guardarAjustes: (parcial: Partial<Ajustes>): Promise<Ajustes> =>
     ipcRenderer.invoke('settings:set', parcial),
+
+  /** Navegador y ffmpeg, comprobados de verdad. Lo usa la bienvenida. */
+  estadoDelSistema: (): Promise<EstadoSistema> => ipcRenderer.invoke('sistema:estado'),
+  /** Abre el dialogo para senalar un ffmpeg a mano y devuelve el estado nuevo. */
+  elegirFfmpeg: (): Promise<EstadoSistema> => ipcRenderer.invoke('sistema:elegirFfmpeg'),
+  /** Abre uno de los enlaces conocidos en el navegador del sistema. */
+  abrirEnlace: (clave: 'navegador' | 'ffmpeg' | 'guia'): Promise<void> =>
+    ipcRenderer.invoke('sistema:abrir', clave),
   loadRecording: (dir: string): Promise<RecordingData> => ipcRenderer.invoke('recording:load', dir),
   saveProject: (dir: string, project: Project): Promise<void> =>
     ipcRenderer.invoke('recording:saveProject', dir, project),
