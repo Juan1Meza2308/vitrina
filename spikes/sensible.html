@@ -1,0 +1,49 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Vitrina · fixture de datos sensibles</title>
+<!--
+  Fixture para comprobar el TAPADO por pixeles.
+
+  Dos filas con el MISMO texto, la misma fuente y el mismo ancho: una se tapa y
+  la otra no. Asi la comprobacion no depende de un umbral inventado —"cuanto
+  contraste tiene un texto difuminado"— sino de comparar dos regiones que solo
+  se diferencian en el tapado.
+
+  Las posiciones son absolutas a proposito: el test mide rectangulos concretos
+  del frame, y una maqueta que se moviera con el tamano de la ventana obligaria
+  a leer las cajas del DOM para saber donde mirar.
+
+  El cuadrado que se mueve abajo no es decoracion: el screencast solo emite
+  cuando la pagina cambia, y sobre una pagina quieta no habria frames que medir.
+-->
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { background: #0b0d10; color: #e6edf3; font: 16px/1.5 system-ui, Segoe UI, sans-serif; }
+  .dato {
+    position: absolute; left: 40px; width: 520px; height: 44px;
+    display: flex; align-items: center; padding: 0 12px;
+    background: #14181d; border: 1px solid #232a32; border-radius: 8px;
+    font-size: 20px; font-weight: 600; letter-spacing: -.01em; white-space: nowrap;
+  }
+  #secreto { top: 120px; }
+  #control { top: 220px; }
+  h1 { position: absolute; top: 40px; left: 40px; font-size: 20px; }
+  .etiqueta { position: absolute; left: 580px; color: #8b98a5; font-size: 13px; }
+  #mov { position: absolute; top: 400px; left: 40px; width: 40px; height: 40px;
+         background: #c3f53c; border-radius: 8px; }
+</style>
+<h1>Panel de cliente</h1>
+<div class="dato" id="secreto">cliente@ejemplo.com · saldo 12.480,55</div>
+<div class="etiqueta" style="top:134px">se tapa</div>
+<div class="dato" id="control">cliente@ejemplo.com · saldo 12.480,55</div>
+<div class="etiqueta" style="top:234px">no se tapa</div>
+<div id="mov"></div>
+<script>
+  // Movimiento continuo para que el screencast siga entregando frames.
+  const m = document.getElementById('mov');
+  function loop(ts) {
+    m.style.transform = 'translateX(' + (Math.sin(ts / 500) * 300 + 300).toFixed(1) + 'px)';
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+</script>
