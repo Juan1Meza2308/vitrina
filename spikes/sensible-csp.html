@@ -1,0 +1,35 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Vitrina · fixture de datos sensibles con CSP</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'">
+<!--
+  El mismo fixture con CSP estricta, que es el caso que de verdad importa: una
+  app con datos sensibles suele traerla.
+
+  Medido: con `style-src 'self'` un <style> inyectado por script entra en el DOM
+  y no aplica NADA, sin excepcion ni aviso —el mismo sintoma que el fallo del
+  parser—. Por eso el tapado va por hoja construida (`adoptedStyleSheets`), que
+  la CSP no mira, y este fichero es lo que lo fija.
+
+  Fixture para comprobar el TAPADO por pixeles.
+
+  Dos filas con el MISMO texto, la misma fuente y el mismo ancho: una se tapa y
+  la otra no. Asi la comprobacion no depende de un umbral inventado —"cuanto
+  contraste tiene un texto difuminado"— sino de comparar dos regiones que solo
+  se diferencian en el tapado.
+
+  Las posiciones son absolutas a proposito: el test mide rectangulos concretos
+  del frame, y una maqueta que se moviera con el tamano de la ventana obligaria
+  a leer las cajas del DOM para saber donde mirar.
+
+  `sensible-csp.html` es este mismo fixture con CSP estricta, y comparte hoja y
+  script para que las dos midan lo mismo.
+-->
+<link rel="stylesheet" href="sensible.css">
+<h1>Panel de cliente</h1>
+<div class="dato" id="secreto">cliente@ejemplo.com · saldo 12.480,55</div>
+<div class="etiqueta" id="etiqueta-secreto">se tapa</div>
+<div class="dato" id="control">cliente@ejemplo.com · saldo 12.480,55</div>
+<div class="etiqueta" id="etiqueta-control">no se tapa</div>
+<div id="mov"></div>
+<script src="sensible.js"></script>

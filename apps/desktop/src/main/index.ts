@@ -16,13 +16,18 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import CDP from 'chrome-remote-interface';
-import { Recorder, ventanaPara, guionDe, reproducir } from '@vitrina/capture-cdp';
+import { createCanvas, loadImage } from '@napi-rs/canvas';
+import {
+  Recorder, ventanaPara, guionDe, reproducir, listaDeSelectores,
+} from '@vitrina/capture-cdp';
 import {
   CAPTURE_PRESETS, CAMERA_PRESETS, cameraConfigForBudget, computeQualityBudget,
   defaultProject, hostFromUrl, planSegments, parseSilenceReport, silenceFilter,
   paraOrientacion, reescalarProyecto,
 } from '@vitrina/core';
-import type { AudioTrack, CameraPresetName, Cut, InputEvent, Manifest, Orientacion, Project } from '@vitrina/core';
+import type {
+  AudioTrack, CamTrack, CameraPresetName, Cut, InputEvent, Manifest, Orientacion, Project,
+} from '@vitrina/core';
 import { exportRecording, EXPORT_PRESETS, ExportAbortedError, findFfmpeg } from '@vitrina/export';
 import { normalizarAjustes, aplicarLook, type Ajustes } from './ajustes.ts';
 import { execFile } from 'node:child_process';
@@ -57,6 +62,32 @@ ipcMain.handle('settings:set', async (_e, parcial: Partial<Ajustes>) => {
  * Se leen del disco cada vez en lugar de mantener una lista: si el usuario
  * borra una carpeta, una lista guardada ofreceria abrir algo que ya no existe.
  */
+/**
+ * Miniatura de una grabacion, como data URL.
+ *
+ * Se elige un frame al 25 % y no el primero: al arrancar, la pagina grabada
+ * suele estar en blanco o a medio cargar, y una lista de rectangulos vacios no
+ * distingue una demo de otra —que es justo para lo que sirve la miniatura—.
+ *
+ * Va reescalada a 160 px y no en crudo: los frames pesan cientos de kilobytes y
+ * mandar cinco enteros por IPC en cada arranque seria pagar megas para pintar
+ * un sello.
+ */
+async function miniaturaDe(dir: string, m: Manifest): Promise<string | null> {
+  const f = m.frames[Math.floor(m.frames.length * 0.25)] ?? m.frames[0];
+  if (!f) return null;
+  try {
+    const img = await loadImage(path.join(dir, 'frames', f.file));
+    const w = 160;
+    const h = Math.max(1, Math.round(w * (img.height / img.width)));
+    const c = createCanvas(w, h);
+    c.getContext('2d').drawImage(img, 0, 0, w, h);
+    return c.toDataURL('image/jpeg', 0.7);
+  } catch {
+    return null;      // frame ilegible: la fila sigue valiendo sin sello
+  }
+}
+
 ipcMain.handle('recordings:recent', async (_e, limite = 5) => {
   try {
     const nombres = await fsp.readdir(RECORDINGS);
@@ -66,7 +97,10 @@ ipcMain.handle('recordings:recent', async (_e, limite = 5) => {
         const dir = path.join(RECORDINGS, nombre);
         try {
           const m = JSON.parse(await fsp.readFile(path.join(dir, 'manifest.json'), 'utf8')) as Manifest;
-          return { dir, nombre, durationMs: m.durationMs, startedAt: m.startedAt };
+          return {
+            dir, nombre, durationMs: m.durationMs, startedAt: m.startedAt,
+            miniatura: await miniaturaDe(dir, m),
+          };
         } catch {
           return null;   // carpeta a medias: una grabacion interrumpida
         }
@@ -98,6 +132,8 @@ let exportController: AbortController | null = null;
 /** Escritura en curso de la pista de microfono. */
 let audioStream: fs.WriteStream | null = null;
 let audioTrack: AudioTrack | null = null;
+let camStream: fs.WriteStream | null = null;
+let camTrack: CamTrack | null = null;
 
 /**
  * Dos esquemas propios, y los dos hacen falta.
@@ -274,9 +310,27 @@ ipcMain.handle('audio:stop', async () => {
   return audioTrack;
 });
 
+// La camara, igual que el audio y en la misma carpeta reservada de antemano.
+ipcMain.handle('cam:start', (_e, startedAt: number, mimeType: string, w: number, h: number) => {
+  if (!recordingDir) throw new Error('No hay carpeta de grabacion preparada');
+  camTrack = { file: 'camara.webm', startedAt, mimeType, w, h };
+  camStream = fs.createWriteStream(path.join(recordingDir, 'camara.webm'));
+});
+
+ipcMain.on('cam:chunk', (_e, chunk: Uint8Array) => {
+  camStream?.write(Buffer.from(chunk));
+});
+
+ipcMain.handle('cam:stop', async () => {
+  const stream = camStream;
+  camStream = null;
+  if (stream) await new Promise<void>((resolve) => stream.end(resolve));
+  return camTrack;
+});
+
 ipcMain.handle('record:start', async (
   _e,
-  opts: { url: string; presetName: string; orientacion?: Orientacion },
+  opts: { url: string; presetName: string; orientacion?: Orientacion; tapar?: string },
 ) => {
   if (recorder) throw new Error('Ya hay una grabacion en curso');
 
@@ -289,6 +343,8 @@ ipcMain.handle('record:start', async (
     recordingDir = path.join(RECORDINGS, `${stamp}.vitrina`);
   }
   await fsp.mkdir(recordingDir, { recursive: true });
+
+  const selectores = listaDeSelectores(opts.tapar ?? '');
 
   // La ventana la decide quien conoce la pantalla. El grabador tiene un
   // respaldo razonable, pero en un portatil bajo o con un viewport vertical
@@ -305,6 +361,10 @@ ipcMain.handle('record:start', async (
       height: Math.round(hueco.height * 0.92),
     }),
     outDir: recordingDir,
+    // Lo que no debe salir se difumina AL GRABAR: el frame que se escribe en
+    // disco ya va tapado, asi que el dato en claro no llega a existir. Taparlo
+    // en el editor dejaria la carpeta `.vitrina` con el dato entero dentro.
+    tapado: selectores.length ? { selectores } : null,
     onProgress: (p) => win?.webContents.send('record:progress', p),
   });
 
@@ -362,6 +422,9 @@ ipcMain.handle('record:repeat', async (
       { width: Math.round(hueco.width * 0.92), height: Math.round(hueco.height * 0.92) },
     ),
     outDir: destino,
+    // Se repite tambien lo que se tapo: una repeticion sin esto publicaria en
+    // la segunda toma el dato que se tapo en la primera, y sin avisar.
+    tapado: manifest.tapado ?? null,
     onProgress: (p) => win?.webContents.send('record:progress', p),
   });
 
@@ -394,9 +457,13 @@ ipcMain.handle('record:repeat', async (
       const viejo = JSON.parse(
         await fsp.readFile(path.join(origen, 'project.json'), 'utf8')) as Project;
       const fuenteNueva = resultado.manifest.capture ?? resultado.manifest.viewport;
+      // La repeticion vuelve a ejecutar el guion en un navegador nuevo, pero no
+      // vuelve a grabar a la persona: sin pista, un estilo de burbuja copiado
+      // seria un ajuste que no dibuja nada y que nadie sabria por que esta.
+      const copiado = reescalarProyecto(viejo, fuenteVieja, fuenteNueva);
       await fsp.writeFile(
         path.join(destino, 'project.json'),
-        JSON.stringify(reescalarProyecto(viejo, fuenteVieja, fuenteNueva), null, 2),
+        JSON.stringify({ ...copiado, camara: null }, null, 2),
       );
     } catch {
       await planAndSave(destino, 'normal');
@@ -414,7 +481,9 @@ ipcMain.handle('record:repeat', async (
 ipcMain.handle('record:stop', async () => {
   if (!recorder) throw new Error('No hay grabacion en curso');
   recorder.setAudioTrack(audioTrack);
+  recorder.setCamTrack(camTrack);
   audioTrack = null;
+  camTrack = null;
   const result = await recorder.stop();
   await recorder.close();
   recorder = null;

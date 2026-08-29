@@ -5,7 +5,7 @@
  * renderer carga contenido que compone y dibuja, y no tiene por que poder
  * invocar cualquier canal.
  */
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type {
   CameraPresetName, CapturePreset, Cut, InputEvent, Manifest, Orientacion, Project,
 } from '@vitrina/core';
@@ -26,6 +26,10 @@ export interface Ajustes {
   orientacion: Orientacion;
   micOn: boolean;
   micDeviceId: string;
+  tapar: string;
+  camOn: boolean;
+  camDeviceId: string;
+  tema: 'oscuro' | 'claro';
   looks: Look[];
   lookPorDefecto: string | null;
 }
@@ -35,6 +39,8 @@ export interface GrabacionReciente {
   nombre: string;
   durationMs: number;
   startedAt: number;
+  /** Sello de un frame de la grabacion, como data URL. Null si no se pudo leer. */
+  miniatura: string | null;
 }
 
 export interface RecordProgress {
@@ -49,6 +55,17 @@ export interface ExportProgressMsg {
   fraction: number;
   fps: number;
   etaMs: number;
+}
+
+/** Lo que devuelve un export, ya resumido para poder ensenarlo. */
+export interface ResultadoExport {
+  file: string;
+  settings: { width: number; height: number; fps: number; format: string };
+  frames: number;
+  durationMs: number;
+  bytes: number;
+  elapsedMs: number;
+  warnings: string[];
 }
 
 export interface ExportPresetInfo {
@@ -81,12 +98,22 @@ const api = {
   audioChunk: (chunk: Uint8Array): void => ipcRenderer.send('audio:chunk', chunk),
   audioStop: (): Promise<unknown> => ipcRenderer.invoke('audio:stop'),
 
+  // La camara sigue el mismo camino que el microfono: trozos segun llegan, y
+  // por `send` y no `invoke` porque nadie espera respuesta y una promesa por
+  // trozo solo anadiria latencia a lo que compite con el screencast.
+  camStart: (startedAt: number, mimeType: string, w: number, h: number): Promise<void> =>
+    ipcRenderer.invoke('cam:start', startedAt, mimeType, w, h),
+  camChunk: (chunk: Uint8Array): void => ipcRenderer.send('cam:chunk', chunk),
+  camStop: (): Promise<unknown> => ipcRenderer.invoke('cam:stop'),
+
   startRecording: (
     url: string,
     presetName: string,
     orientacion: Orientacion,
+    /** Selectores CSS a difuminar, tal y como se escribieron en el campo. */
+    tapar?: string,
   ): Promise<{ dir: string; preset: CapturePreset }> =>
-    ipcRenderer.invoke('record:start', { url, presetName, orientacion }),
+    ipcRenderer.invoke('record:start', { url, presetName, orientacion, tapar }),
   stopRecording: (): Promise<RecordingData> => ipcRenderer.invoke('record:stop'),
   repetirGrabacion: (dir: string, presetName?: string, texto?: string): Promise<RecordingData> =>
     ipcRenderer.invoke('record:repeat', { dir, presetName, texto }),
@@ -95,6 +122,14 @@ const api = {
   openRecording: (): Promise<RecordingData | null> => ipcRenderer.invoke('recording:open'),
   recientes: (limite = 5): Promise<GrabacionReciente[]> =>
     ipcRenderer.invoke('recordings:recent', limite),
+  /**
+   * Ruta en disco de un fichero soltado sobre la ventana.
+   *
+   * Desde Electron 32 `File.path` ya no existe: hay que pedirla por `webUtils`,
+   * que es una API del preload y no del renderer. Sin esto, soltar una carpeta
+   * solo da un nombre suelto y no se puede abrir nada.
+   */
+  rutaDeFichero: (f: File): string => webUtils.getPathForFile(f),
   ajustes: (): Promise<Ajustes> => ipcRenderer.invoke('settings:get'),
   elegirMarca: (dir: string): Promise<string | null> =>
     ipcRenderer.invoke('watermark:choose', dir),
@@ -107,8 +142,10 @@ const api = {
   planCamera: (dir: string, preset: CameraPresetName): Promise<Project> =>
     ipcRenderer.invoke('camera:plan', dir, preset),
 
-  runExport: (opts: { dir: string; preset: string; cameraPreset: CameraPresetName; soft: boolean }) =>
-    ipcRenderer.invoke('export:run', opts),
+  runExport: (opts: { dir: string; preset: string; cameraPreset: CameraPresetName; soft: boolean }):
+    // Cancelar no es un error: el proceso principal devuelve una marca en vez
+    // de lanzar, y quien llama decide como contarlo.
+    Promise<ResultadoExport | { cancelled: true }> => ipcRenderer.invoke('export:run', opts),
   cancelExport: (): Promise<void> => ipcRenderer.invoke('export:cancel'),
   onExportProgress: (cb: (p: ExportProgressMsg) => void) => subscribe('export:progress', cb),
 

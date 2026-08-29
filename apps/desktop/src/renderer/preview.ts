@@ -30,6 +30,14 @@ export class Preview {
    *  repintar es constante. */
   private fondo: { ruta: string; img: ImageBitmap } | null = null;
   private marca: { ruta: string; img: ImageBitmap } | null = null;
+  /**
+   * Elemento de video de la camara web.
+   *
+   * No se cachea ningun frame: el elemento YA es una fuente valida para
+   * `drawImage`, y pedirle una copia por cada repintado seria trabajo tirado.
+   * Quien lo coloca en el tiempo es el editor, igual que hace con el audio.
+   */
+  private cam: HTMLVideoElement | null = null;
 
   constructor(
     private manifest: Manifest,
@@ -44,6 +52,23 @@ export class Preview {
   /** Se reconstruye al cambiar el zoom o el marco; los frames siguen valiendo. */
   setTrack(track: CameraTrack): void {
     this.track = track;
+  }
+
+  setCam(el: HTMLVideoElement | null): void {
+    this.cam = el;
+  }
+
+  /**
+   * El frame de camara de ahora mismo, si hay uno decodificado.
+   *
+   * `readyState < 2` significa que el elemento todavia no tiene imagen; pasarlo
+   * igualmente pintaria un rectangulo vacio en la esquina, que se lee como un
+   * fallo del compositor y no como un video que aun no ha cargado.
+   */
+  private camFrame(): { img: ImageLike; w: number; h: number } | null {
+    const el = this.cam;
+    if (!el || el.readyState < 2 || !el.videoWidth || !el.videoHeight) return null;
+    return { img: el as unknown as ImageLike, w: el.videoWidth, h: el.videoHeight };
   }
 
   get durationMs(): number {
@@ -76,6 +101,7 @@ export class Preview {
       overlay: this.overlay.sample(tMs),
       backgroundImage: await this.fondoDe(project) as unknown as ImageLike | null,
       watermarkImage: await this.marcaDe(project) as unknown as ImageLike | null,
+      cam: this.camFrame(),
     });
   }
 

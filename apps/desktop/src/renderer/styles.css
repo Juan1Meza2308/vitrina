@@ -7,20 +7,130 @@
   --dim: #8b98a5;
   --acc: #c3f53c;
   --peligro: #ff6b5e;
+  /** Texto sobre el acento. Cambia con el tema: el acento claro es oscuro. */
+  --acc-fg: #10160a;
+  /** Fondo del boton activo: el acento en crudo tapaba el texto. */
+  --acc-suave: rgba(195, 245, 60, .08);
+
+  /* Escala de radios. Ningun tamano se elige a ojo: sale de aqui. */
+  --radio-s: 8px;
   --radio: 10px;
+  --radio-l: 16px;
+
+  /*
+   * Materiales translucidos.
+   *
+   * Un panel deja pasar el fondo desenfocado en vez de taparlo: la jerarquia se
+   * lee sin dibujar una caja opaca mas. El filo claro de arriba es la luz
+   * cogiendo el canto del material, y es lo que separa "cristal" de "gris".
+   */
+  --material: rgba(20, 24, 29, .72);
+  --material-alto: rgba(27, 32, 39, .82);
+  --desenfoque: blur(24px) saturate(180%);
+  --filo: inset 0 1px 0 rgba(255, 255, 255, .06);
+
+  /*
+   * Sombras por peso. Una superficie mas grande se lee mas gruesa: el mismo
+   * desenfoque para un chip y para un dialogo aplana los dos.
+   */
+  --sombra-1: 0 1px 2px rgba(0, 0, 0, .28);
+  --sombra-2: 0 10px 30px rgba(0, 0, 0, .34);
+  --sombra-3: 0 28px 70px rgba(0, 0, 0, .55);
+
+  /*
+   * Curva de respuesta.
+   *
+   * Es el equivalente en CSS a un muelle criticamente amortiguado: llega rapido
+   * y no rebota. El rebote se reserva para lo que el usuario ha lanzado con un
+   * gesto, y en esta app no hay ninguno.
+   */
+  --curva: cubic-bezier(.32, .72, 0, 1);
+
+  /*
+   * Degradado de los deslizadores.
+   *
+   * Un carril de color dice de un vistazo que ese control es continuo, no un
+   * interruptor. Empieza en el acento de la marca y viaja a un frio: usar los
+   * colores de otra app quedaria bonito y ajeno.
+   */
+  --degradado: linear-gradient(90deg, #c3f53c 0%, #7ad1c4 52%, #8aa8ff 100%);
+}
+
+/*
+ * Tema claro.
+ *
+ * Solo se redefinen los tokens: el resto de la hoja no sabe que existe un tema.
+ * El acento tambien cambia —el lima sobre blanco no se lee— y con el, el color
+ * del texto que va encima.
+ *
+ * No toca el video: el compositor pinta sus propios colores, asi que cambiar el
+ * aspecto de la ventana no cambia lo que se exporta.
+ */
+:root[data-tema="claro"] {
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --panel-alto: #eaeef3;
+  --linea: #d7dee6;
+  --fg: #131a22;
+  --dim: #5a6775;
+  --acc: #4e7d0e;
+  --peligro: #c33b2e;
+  --acc-fg: #ffffff;
+  --acc-suave: rgba(78, 125, 14, .10);
+  --material: rgba(255, 255, 255, .74);
+  --material-alto: rgba(255, 255, 255, .88);
+  /* En claro el filo va casi blanco: sobre un material claro, un filo oscuro
+     se leeria como una linea sucia y no como luz. */
+  --filo: inset 0 1px 0 rgba(255, 255, 255, .9);
+  --sombra-1: 0 1px 2px rgba(16, 24, 40, .06);
+  --sombra-2: 0 10px 30px rgba(16, 24, 40, .10);
+  --sombra-3: 0 28px 70px rgba(16, 24, 40, .18);
+  --degradado: linear-gradient(90deg, #4e7d0e 0%, #2f9e8f 52%, #4f6fd6 100%);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
 
+/*
+ * Tipografia.
+ *
+ * La fuente del sistema y no una de marca: ya trae tallado optico, tablas de
+ * tracking y ajustes de legibilidad hechos por quien fabrica la pantalla.
+ *
+ * El tracking es especifico del tamano y nunca uno solo para todo: el texto
+ * grande se separa de mas y hay que apretarlo, el pequeno se junta y hay que
+ * abrirlo. Por eso los titulos van con tracking negativo, el cuerpo a cero y
+ * las etiquetas en versalitas con tracking positivo.
+ */
 body {
   background: var(--bg);
   color: var(--fg);
-  font: 14px/1.5 system-ui, "Segoe UI", Roboto, sans-serif;
+  font: 14px/1.55 system-ui, "Segoe UI", Roboto, sans-serif;
+  letter-spacing: 0;
+  font-optical-sizing: auto;
   -webkit-font-smoothing: antialiased;
   overflow: hidden;
   user-select: none;
+
+  /*
+   * Un lavado quieto, no un fondo animado.
+   *
+   * Da profundidad —y le da algo que desenfocar a los materiales, que sobre un
+   * color plano no tendrian nada detras—, pero no se mueve: un fondo que oscila
+   * a pantalla completa marea y no aporta nada.
+   */
+  background-image:
+    radial-gradient(120% 80% at 12% -10%, rgba(195, 245, 60, .045), transparent 60%),
+    radial-gradient(100% 70% at 100% 0%, rgba(90, 140, 255, .05), transparent 55%);
+  background-attachment: fixed;
 }
 
+/*
+ * La respuesta va en el PULSAR, no en el soltar.
+ *
+ * Esperar al click para dar senal se siente muerto: la sensacion de mando
+ * directo se cae en cuanto aparece latencia. `:active` es exactamente el
+ * pointer-down, y 100 ms de escala basta para que el boton acuse el dedo.
+ */
 button {
   font: inherit;
   color: var(--fg);
@@ -29,42 +139,99 @@ button {
   border-radius: var(--radio);
   padding: 9px 14px;
   cursor: pointer;
-  transition: border-color .15s, background .15s, color .15s;
+  transition:
+    border-color .15s var(--curva),
+    background .15s var(--curva),
+    color .15s var(--curva),
+    box-shadow .15s var(--curva),
+    transform .1s ease-out;
 }
-button:hover:not(:disabled) { border-color: #38424e; }
+button:hover:not(:disabled) { border-color: #38424e; background: rgba(255, 255, 255, .035); }
+button:active:not(:disabled) { transform: scale(.97); }
 button:disabled { opacity: .4; cursor: default; }
-button.primario { background: var(--acc); border-color: var(--acc); color: #10160a; font-weight: 600; }
+button.primario {
+  background: var(--acc); border-color: var(--acc); color: var(--acc-fg);
+  font-weight: 600; box-shadow: var(--sombra-1);
+}
 button.primario:hover:not(:disabled) { filter: brightness(1.08); }
 button.peligro { border-color: #4a2b28; color: var(--peligro); }
-button.on { border-color: var(--acc); color: var(--acc); background: rgba(195, 245, 60, .08); }
+button.on { border-color: var(--acc); color: var(--acc); background: var(--acc-suave); }
 
 input[type="text"] {
   font: inherit;
   color: var(--fg);
-  background: var(--bg);
+  background: var(--panel);
   border: 1px solid var(--linea);
   border-radius: var(--radio);
   padding: 10px 12px;
   width: 100%;
   user-select: text;
+  box-shadow: var(--filo);
+  transition: border-color .15s var(--curva), box-shadow .15s var(--curva);
 }
-input[type="text"]:focus { outline: none; border-color: var(--acc); }
+/* El halo del foco acompana al borde en vez de sustituirlo: el salto de un
+   borde de color solo se lee como un parpadeo. */
+input[type="text"]:focus {
+  outline: none; border-color: var(--acc);
+  box-shadow: var(--filo), 0 0 0 3px var(--acc-suave);
+}
 
-input[type="range"] { width: 100%; accent-color: var(--acc); }
+/*
+ * Deslizadores.
+ *
+ * Carril de degradado y pulgar redondo, con la sombra que lo despega del
+ * carril: se ve que es una pieza que se coge. El pulgar crece un poco al
+ * agarrarlo —respuesta en el pulsar, no en el soltar—.
+ */
+input[type="range"] {
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--degradado);
+  box-shadow: var(--filo);
+  cursor: pointer;
+}
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 16px; height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, .18);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, .35);
+  transition: transform .1s ease-out;
+}
+input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.12); }
+
+/* Solo `:focus-visible`: un anillo tras cada click de raton seria ruido. */
+:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
 
 .app { display: flex; flex-direction: column; height: 100vh; }
 
 /* ---------- pantalla de inicio ---------- */
 
+/*
+ * La pantalla de inicio se centra cuando cabe y SE DEJA DESPLAZAR cuando no.
+ *
+ * `margin: auto` dentro de un flex la centra, pero si el contenido crece mas
+ * que la ventana el desbordamiento se va hacia arriba y no hay forma de llegar
+ * a el: con `overflow: hidden` en el body, los primeros campos quedaban fuera
+ * de la ventana y sin barra. Paso al anadir camara y tapado, que hicieron la
+ * pantalla mas alta que un portatil de 768 px.
+ */
 .inicio {
   margin: auto;
+  padding: 24px 0;
   width: 560px;
   display: flex;
   flex-direction: column;
   gap: 22px;
 }
+.app { overflow-y: auto; }
 .marca { display: flex; align-items: baseline; gap: 10px; }
-.marca h1 { font-size: 26px; letter-spacing: -.03em; font-weight: 650; }
+/* Interlineado apretado y tracking negativo: los dos van con el tamano. */
+.marca h1 { font-size: 27px; line-height: 1.05; letter-spacing: -.022em; font-weight: 650; }
 .marca span { color: var(--dim); font-size: 13px; }
 
 .campo { display: flex; flex-direction: column; gap: 7px; }
@@ -74,16 +241,18 @@ input[type="range"] { width: 100%; accent-color: var(--acc); }
 .preset {
   display: flex; flex-direction: column; gap: 3px; align-items: flex-start;
   padding: 11px 12px; text-align: left; line-height: 1.35;
+  background: var(--material); box-shadow: var(--filo);
 }
 .preset b { font-size: 13px; font-weight: 600; }
 .preset small { display: block; color: var(--dim); font-size: 10.5px; line-height: 1.35; }
-.preset.on small { color: rgba(195, 245, 60, .75); }
+.preset.on small { color: var(--acc); opacity: .85; }
 
 .nota-calidad {
   display: flex; align-items: center; gap: 8px;
   color: var(--dim); font-size: 12.5px;
   padding: 10px 12px; border: 1px solid var(--linea); border-radius: var(--radio);
-  background: var(--panel);
+  background: var(--material); backdrop-filter: var(--desenfoque);
+  box-shadow: var(--filo);
 }
 .nota-calidad b { color: var(--acc); font-weight: 600; }
 .nota-calidad.aviso b { color: var(--peligro); }
@@ -113,31 +282,55 @@ input[type="range"] { width: 100%; accent-color: var(--acc); }
   display: grid; grid-template-rows: minmax(0, 1fr) auto;
   height: 100vh; overflow: hidden;
 }
+/*
+ * Los paneles FLOTAN: tarjetas con aire alrededor, no columnas pegadas a los
+ * bordes de la ventana. Separadas del fondo se leen como capas —una encima de
+ * otra— y no como zonas de una misma lamina.
+ */
 .fila-alta {
-  display: grid; grid-template-columns: 216px 1fr 316px;
+  display: grid; grid-template-columns: 236px 1fr 330px;
+  gap: 12px; padding: 12px;
   min-height: 0; overflow: hidden;
 }
+/*
+ * Los paneles son MATERIAL, no cajas opacas.
+ *
+ * Translucidos con desenfoque detras y un filo claro arriba: la jerarquia se
+ * lee por peso de material —el lateral pesa mas que un boton— sin anadir mas
+ * lineas. Y en vez de un borde duro donde el contenido se mete debajo del
+ * panel, los bordes del scroll se desvanecen: es la misma idea que el borde de
+ * scroll de iOS, y ensucia mucho menos que una linea de 1 px.
+ */
 .biblioteca {
-  border-right: 1px solid var(--linea); background: var(--panel);
+  border: 1px solid var(--linea); border-radius: var(--radio-l);
+  background: var(--material); backdrop-filter: var(--desenfoque);
+  box-shadow: var(--filo), var(--sombra-2);
   padding: 16px 14px; overflow-y: auto; min-height: 0;
   display: flex; flex-direction: column; gap: 20px;
+  mask-image: linear-gradient(to bottom,
+    transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
 }
 .escenario {
   display: flex; flex-direction: column; min-width: 0; min-height: 0;
-  padding: 18px; gap: 14px;
+  gap: 14px;
 }
 
 /* --- linea de tiempo -------------------------------------------------- */
 
 .linea {
-  border-top: 1px solid var(--linea); background: var(--panel);
-  display: flex; flex-direction: column;
+  margin: 0 12px 12px;
+  border: 1px solid var(--linea); border-radius: var(--radio-l);
+  background: var(--material); backdrop-filter: var(--desenfoque);
+  box-shadow: var(--filo), var(--sombra-2);
+  display: flex; flex-direction: column; overflow: hidden;
 }
 .barra {
   display: flex; align-items: center; gap: 8px;
   padding: 8px 12px; border-bottom: 1px solid var(--linea);
 }
 .barra button { padding: 6px 12px; font-size: 12.5px; }
+.con-icono { display: inline-flex; align-items: center; gap: 6px; }
+.con-icono svg { opacity: .85; flex: none; }
 .barra .hueco { flex: 1; }
 .barra .separador { width: 1px; height: 20px; background: var(--linea); margin: 0 4px; }
 .escala {
@@ -158,18 +351,29 @@ input[type="range"] { width: 100%; accent-color: var(--acc); }
    por eso su `getBoundingClientRect()` ya viene desplazado y la conversion de x
    a tiempo sigue siendo una division. */
 .tl-scroll { flex: 1; min-width: 0; overflow-x: auto; overflow-y: hidden; }
-.tl-scroll::-webkit-scrollbar { height: 8px; }
-.tl-scroll::-webkit-scrollbar-thumb { background: var(--linea); border-radius: 4px; }
+/* Barras de scroll finas y discretas: la del sistema, ancha y opaca, rompe el
+   material del panel justo en el borde. */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--linea); border-radius: 999px;
+  border: 3px solid transparent; background-clip: content-box;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--dim); background-clip: content-box; }
 
 .carril { position: relative; height: 40px; }
 .carril.regla { height: 20px; }
 .carril .riel {
   position: absolute; left: 0; right: 0; top: 4px; bottom: 4px;
-  background: var(--panel-alto); border-radius: 6px;
+  background: var(--panel-alto); border-radius: 8px; box-shadow: var(--filo);
 }
-.marca {
+/* Marca de la regla del timeline. Se llama `tl-marca` y no `marca` porque ese
+   nombre ya era el del titulo de la pantalla de inicio: al compartirlo, esta
+   regla —que va despues— posicionaba el titulo en absoluto y lo dejaba encima
+   del primer campo. */
+.tl-marca {
   position: absolute; top: 2px; transform: translateX(-1px);
-  padding-left: 4px; border-left: 1px solid var(--linea);
+  padding-left: 5px; border-left: 1px solid var(--linea);
   color: var(--dim); font-size: 10px; font-variant-numeric: tabular-nums;
   white-space: nowrap; pointer-events: none;
 }
@@ -187,7 +391,8 @@ input[type="range"] { width: 100%; accent-color: var(--acc); }
 }
 .tramo .etiqueta {
   position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
-  font-size: 10.5px; color: rgba(11, 13, 16, .8); pointer-events: none;
+  font-size: 10.5px; font-weight: 500; color: rgba(11, 13, 16, .82);
+  pointer-events: none;
   white-space: nowrap; overflow: hidden; max-width: calc(100% - 16px);
 }
 
@@ -196,13 +401,34 @@ input[type="range"] { width: 100%; accent-color: var(--acc); }
   display: flex; align-items: center; justify-content: center;
   background:
     repeating-conic-gradient(#191d23 0% 25%, #14181d 0% 50%) 50% / 18px 18px;
-  border: 1px solid var(--linea); border-radius: 14px; overflow: hidden;
+  border: 1px solid var(--linea); border-radius: var(--radio-l); overflow: hidden;
+  box-shadow: var(--sombra-2);
 }
 .lienzo-caja canvas { max-width: 100%; max-height: 100%; display: block; }
 .lienzo-caja canvas.encuadrable { cursor: grab; }
 .lienzo-caja canvas.encuadrable:active { cursor: grabbing; }
 
-.transporte { display: flex; align-items: center; gap: 14px; }
+/*
+ * El transporte flota sobre el lienzo, como en un reproductor.
+ *
+ * Antes vivia en una fila aparte debajo: los controles quedaban lejos de lo
+ * que se esta mirando. Encima del video estan donde esta la vista, y el
+ * material translucido evita que tapen el contenido.
+ */
+.lienzo-caja { position: relative; }
+.transporte {
+  position: absolute; left: 50%; bottom: 14px; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 6px;
+  padding: 7px 14px 7px 7px;
+  background: var(--material-alto); backdrop-filter: var(--desenfoque);
+  border: 1px solid var(--linea); border-radius: 999px;
+  box-shadow: var(--filo), var(--sombra-2);
+}
+button.redondo {
+  width: 34px; height: 34px; padding: 0; border-radius: 50%;
+  display: grid; place-items: center; flex: none;
+}
+.transporte .reloj { min-width: 0; padding: 0 4px; }
 .reloj { color: var(--dim); font-size: 12.5px; font-variant-numeric: tabular-nums; min-width: 92px; }
 
 .pista { position: relative; cursor: pointer; touch-action: none; }
@@ -222,14 +448,20 @@ input[type="range"] { width: 100%; accent-color: var(--acc); }
     -45deg, rgba(11, 13, 16, .85) 0 5px, rgba(139, 152, 165, .35) 5px 10px);
 }
 
+/* El tramo de zoom se pinta como una pieza de montaje: relleno solido con
+   degradado y texto oscuro encima, en vez de un rectangulo translucido que se
+   confunde con el carril. */
 .tramo {
-  position: absolute; top: 12px; height: 20px;
-  background: rgba(195, 245, 60, .22); border: 1px solid var(--acc);
-  border-radius: 5px; cursor: grab;
-  transition: background .12s, box-shadow .12s;
+  position: absolute; top: 11px; height: 22px;
+  background: linear-gradient(180deg, #d6f96a, #a6e04e);
+  border: 1px solid rgba(0, 0, 0, .25);
+  border-radius: 7px; cursor: grab;
+  box-shadow: var(--sombra-1);
+  transition: filter .12s var(--curva), box-shadow .12s var(--curva);
 }
-.tramo:hover { background: rgba(195, 245, 60, .34); }
-.tramo.sel { background: rgba(195, 245, 60, .42); box-shadow: 0 0 0 2px rgba(195, 245, 60, .35); }
+.tramo:hover { filter: brightness(1.06); }
+.tramo:active { cursor: grabbing; }
+.tramo.sel { box-shadow: 0 0 0 2px var(--acc), var(--sombra-1); }
 /* Un tramo tocado a mano se distingue del automatico: es lo que se perderia al
    volver al zoom automatico. */
 .tramo.manual { border-style: dashed; }
@@ -241,7 +473,7 @@ input[type="range"] { width: 100%; accent-color: var(--acc); }
   cursor: ew-resize; border-radius: 4px;
 }
 .asa.asa-der { left: auto; right: -4px; }
-.tramo.sel .asa { background: rgba(195, 245, 60, .55); }
+.tramo.sel .asa { background: rgba(0, 0, 0, .25); }
 
 .asa-trim {
   position: absolute; top: 4px; bottom: 4px; width: 9px; margin-left: -4px;
@@ -251,14 +483,40 @@ input[type="range"] { width: 100%; accent-color: var(--acc); }
 .asa-trim:hover { opacity: 1; background: var(--fg); }
 .asa-trim.der { margin-left: -5px; }
 
+/* La aguja lleva cabeza: una linea de 2 px sola se pierde sobre los carriles,
+   y la cabeza dice donde agarrarla aunque el gesto sea sobre toda la pista. */
 .aguja {
   position: absolute; top: 0; bottom: 0; width: 2px;
   background: var(--fg); border-radius: 1px; pointer-events: none;
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, .35);
+}
+.aguja::before {
+  content: ""; position: absolute; top: -1px; left: 50%;
+  width: 11px; height: 11px; transform: translateX(-50%);
+  background: var(--fg); border-radius: 3px;
+  box-shadow: var(--sombra-1);
 }
 
 /* ---------- panel lateral ---------- */
 
-.panel { border-left: 1px solid var(--linea); background: var(--panel); overflow-y: auto; padding: 18px; display: flex; flex-direction: column; gap: 20px; }
+.panel {
+  border: 1px solid var(--linea); border-radius: var(--radio-l);
+  background: var(--material); backdrop-filter: var(--desenfoque);
+  box-shadow: var(--filo), var(--sombra-2);
+  overflow-y: auto; padding: 16px;
+  display: flex; flex-direction: column; gap: 20px;
+  mask-image: linear-gradient(to bottom,
+    transparent 0, #000 16px, #000 calc(100% - 16px), transparent 100%);
+}
+/* Cabecera del panel: dice de que va todo lo que hay debajo. El icono no
+   sustituye al texto, lo acompana. */
+.titulo-panel {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; font-weight: 650; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--fg);
+}
+.titulo-panel svg { color: var(--acc); flex: none; }
+
 .grupo { display: flex; flex-direction: column; gap: 9px; }
 .grupo > h3 { font-size: 11px; text-transform: uppercase; letter-spacing: .09em; color: var(--dim); font-weight: 600; }
 .fila { display: flex; gap: 6px; }
@@ -300,15 +558,22 @@ input[type="range"] { width: 100%; accent-color: var(--acc); }
 .deslizador label b { color: var(--fg); font-weight: 500; font-variant-numeric: tabular-nums; }
 
 .muestras { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
-.muestra { height: 38px; border-radius: 8px; border: 1px solid var(--linea); cursor: pointer; padding: 0; }
+.muestra {
+  height: 38px; border-radius: var(--radio-s); border: 1px solid var(--linea);
+  cursor: pointer; padding: 0; box-shadow: var(--filo);
+}
 .muestra.on { border-color: var(--acc); box-shadow: 0 0 0 1px var(--acc); }
 
-.barra { height: 6px; background: var(--panel-alto); border-radius: 3px; overflow: hidden; }
+/* Barra de progreso del export. Se llamaba `barra`, igual que la botonera del
+   timeline, y al ir despues le imponia `height: 6px` y `overflow: hidden`: la
+   botonera salia aplastada y con los botones cortados. Segunda colision de
+   nombres del fichero, despues de la de `.marca`. */
+.barra-progreso { height: 6px; background: var(--panel-alto); border-radius: 3px; overflow: hidden; }
 /* Se escala en vez de cambiar el ancho: animar `width` fuerza un calculo de
    layout en cada actualizacion, y durante una exportacion llegan varias por
    segundo mientras la maquina ya esta compilando frames. Al ser un color
    solido, escalar se ve exactamente igual. */
-.barra > div {
+.barra-progreso > div {
   width: 100%; height: 100%; background: var(--acc);
   transform-origin: left; transition: transform .2s;
 }
@@ -333,8 +598,160 @@ select {
   border: 1px solid var(--linea); border-radius: var(--radio);
   padding: 9px 10px; width: 100%;
 }
-select:focus { outline: none; border-color: var(--acc); }
+select {
+  box-shadow: var(--filo);
+  transition: border-color .15s var(--curva), box-shadow .15s var(--curva);
+}
+select:focus {
+  outline: none; border-color: var(--acc);
+  box-shadow: var(--filo), 0 0 0 3px var(--acc-suave);
+}
 
 .sutil { color: var(--dim); font-size: 12px; line-height: 1.45; }
 .error { font-size: 12.5px; color: var(--peligro); }
 .pie { margin-top: auto; display: flex; flex-direction: column; gap: 9px; }
+
+/* Previsualizacion de la camara: redonda, como la burbuja que acabara en el
+   video. Ver el recorte antes de grabar evita descubrir al terminar que se
+   sale medio hombro. */
+.camara-previa {
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: #0d1116;
+  border: 1px solid var(--linea);
+  align-self: flex-start;
+}
+
+/* Las cuatro esquinas de la burbuja, en una fila que cabe en el inspector. */
+.fila.esquinas button { flex: 1; min-width: 0; padding: 8px 0; font-size: 16px; }
+
+/* Sello de la grabacion reciente: dice cual es cual antes que la fecha. */
+.reciente img,
+.reciente .sello-vacio {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  background: #0d1116;
+  border: 1px solid var(--linea);
+}
+
+/* Soltar una carpeta encima: el borde entero se enciende, para que el gesto
+   tenga respuesta antes de soltar. */
+.app.soltando::after {
+  content: "Suelta la carpeta .vitrina para abrirla";
+  position: fixed;
+  inset: 10px;
+  border: 2px dashed var(--acc);
+  border-radius: 14px;
+  color: var(--acc);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 18px;
+  background: rgba(195, 245, 60, .05);
+  pointer-events: none;
+  z-index: 50;
+  animation: velo-entra .16s var(--curva);
+}
+
+/* Hoja de atajos: los atajos ya existian, pero no se veian en ninguna parte. */
+/*
+ * La hoja de atajos entra y sale POR EL MISMO CAMINO.
+ *
+ * Y se materializa en vez de aparecer: el desenfoque, la escala y la opacidad
+ * se animan juntos, asi el cristal se lee como una superficie que llega y no
+ * como una imagen que se enciende. El velo oscurece el fondo porque la hoja
+ * bloquea: cuando un panel no bloquea, se separa con material y no con velo.
+ */
+.atajos {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(0, 0, 0, .5);
+  backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center;
+  animation: velo-entra .22s var(--curva);
+}
+.atajos.saliendo { animation: velo-entra .18s var(--curva) reverse forwards; }
+.atajos .hoja {
+  background: var(--material-alto); backdrop-filter: var(--desenfoque);
+  border: 1px solid var(--linea); border-radius: var(--radio-l);
+  box-shadow: var(--filo), var(--sombra-3);
+  padding: 22px 24px; min-width: 340px;
+  display: flex; flex-direction: column; gap: 14px;
+  animation: hoja-entra .32s var(--curva);
+}
+.atajos.saliendo .hoja { animation: hoja-entra .18s var(--curva) reverse forwards; }
+@keyframes velo-entra { from { opacity: 0; } to { opacity: 1; } }
+@keyframes hoja-entra {
+  from { opacity: 0; transform: scale(.94) translateY(10px); }
+  to { opacity: 1; transform: none; }
+}
+.atajos h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .07em; color: var(--dim); }
+.atajos dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; align-items: baseline; }
+.atajos dt {
+  font-variant-numeric: tabular-nums; color: var(--acc);
+  border: 1px solid var(--linea); border-radius: 6px; padding: 2px 8px;
+  font-size: 12px; justify-self: start;
+}
+.atajos dd { color: var(--dim); font-size: 13px; }
+
+/* El interruptor de tema vive en la marca, discreto y a la derecha. */
+.marca .tema { margin-left: auto; padding: 5px 12px; font-size: 12px; }
+
+/* Aviso flotante: informa sin mover un solo campo de sitio. */
+.aviso-flotante {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+  z-index: 70; max-width: 520px;
+  display: flex; flex-direction: column; gap: 4px;
+  background: var(--material-alto); backdrop-filter: var(--desenfoque);
+  color: var(--fg);
+  border: 1px solid var(--peligro); border-radius: var(--radio-l);
+  padding: 12px 16px; cursor: pointer;
+  box-shadow: var(--filo), var(--sombra-2);
+  animation: aviso-entra .32s var(--curva);
+}
+/* Aparece desde donde va a quedarse, no desde fuera de la pantalla: el aviso no
+   viene de ningun sitio, se materializa. */
+@keyframes aviso-entra {
+  from { opacity: 0; transform: translateX(-50%) translateY(10px) scale(.98); }
+  to { opacity: 1; transform: translateX(-50%); }
+}
+.aviso-flotante span { color: var(--dim); font-size: 11px; }
+
+/*
+ * Movimiento reducido.
+ *
+ * No es quitar la respuesta: es darla sin desplazar nada. Se conservan los
+ * cambios de color y de opacidad, que siguen informando, y se van las escalas,
+ * los deslizamientos y el latido.
+ */
+@media (prefers-reduced-motion: reduce) {
+  button:active:not(:disabled) { transform: none; background: var(--acc-suave); }
+  .atajos, .atajos .hoja, .aviso-flotante, .app.soltando::after { animation: none; }
+  .pulso { animation: none; opacity: .85; }
+  .barra-progreso > div { transition: none; }
+}
+
+/*
+ * Transparencia reducida: el material se vuelve solido en vez de perder
+ * legibilidad. Se quita el desenfoque, que sin translucidez no pinta nada.
+ */
+@media (prefers-reduced-transparency: reduce) {
+  .biblioteca, .panel, .linea, .atajos .hoja, .aviso-flotante {
+    background: var(--panel); backdrop-filter: none;
+  }
+  .atajos { backdrop-filter: none; }
+  /* Sin translucidez, el desvanecido de los bordes tampoco tiene sentido: la
+     linea vuelve a ser el separador. */
+  .biblioteca, .panel { mask-image: none; }
+}
+
+/* Mas contraste: bordes definidos en vez de insinuados. */
+@media (prefers-contrast: more) {
+  button, input[type="text"], select, .nota-calidad, .muestra { border-color: var(--fg); }
+  .sutil, .nota-formato, .campo > label, .grupo > h3 { color: var(--fg); }
+}

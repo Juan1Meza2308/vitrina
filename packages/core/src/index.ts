@@ -1,6 +1,7 @@
 export type {
   Rect, InputEvent, InputEventType, Frame, CaptureSize, Manifest,
-  Background, FrameStyle, ZoomSegment, Project, ExportSettings, Watermark,
+  Background, FrameStyle, ZoomSegment, Project, ExportSettings, Watermark, Tapado,
+  Esquina, CamTrack, CamaraStyle,
 } from './types.ts';
 export {
   computeQualityBudget, describeBudget, clampZoom, pickPreset, CAPTURE_PRESETS, MEDIDO_EN,

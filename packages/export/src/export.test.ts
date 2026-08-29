@@ -162,6 +162,18 @@ async function makeRecording(
   return root;
 }
 
+/**
+ * Camara sintetica: un video plano de un color que no aparece en ningun otro
+ * sitio del fixture, para poder reconocerlo en el pixel del resultado.
+ */
+async function makeCamara(dir: string, segundos: number): Promise<void> {
+  await run(findFfmpeg(), [
+    '-y', '-loglevel', 'error',
+    '-f', 'lavfi', '-i', `color=c=0x00ffcc:s=640x480:d=${segundos}:r=30`,
+    '-c:v', 'libvpx', '-b:v', '500k', path.join(dir, 'camara.webm'),
+  ]);
+}
+
 /** ffprobe vive junto a ffmpeg. Solo se sustituye el nombre del binario: un
  *  replace sobre la ruta entera convertiria C:/ffmpeg/bin/ffmpeg.exe en
  *  C:/ffprobe/bin/ffmpeg.exe, que no existe. */
@@ -320,6 +332,96 @@ describe('exportRecording', () => {
       expect(r.warnings.join(' ')).not.toContain('no lleva audio');
     } finally {
       await fsp.rm(conAudio, { recursive: true, force: true }).catch(() => {});
+    }
+  }, 90_000);
+
+  it('la camara web sale en el video, en su esquina', async () => {
+    // La prueba de que preview y export comparten compositor: el mismo
+    // `drawCamara` que dibuja la burbuja en el editor la mete aqui, pasando
+    // por un pre-pase de ffmpeg que convierte el webm en imagenes.
+    const conCam = await makeRecording({
+      camara: {
+        esquina: 'se', tamano: 0.3, forma: 'circulo',
+        espejo: false, borde: 0, sombra: 0,
+      },
+    });
+    try {
+      await makeCamara(conCam, 2);
+      const m = JSON.parse(
+        await fsp.readFile(path.join(conCam, 'manifest.json'), 'utf8')) as Manifest;
+      // La camara arranca antes que el video, como el microfono: es el caso
+      // normal, no una rareza.
+      m.camara = {
+        file: 'camara.webm', startedAt: T0 - 500,
+        mimeType: 'video/webm;codecs=vp8', w: 640, h: 480,
+      };
+      await fsp.writeFile(path.join(conCam, 'manifest.json'), JSON.stringify(m));
+
+      const out = path.join(conCam, 'con-camara.mp4');
+      const r = await exportRecording({ recordingDir: conCam, preset: PRESET_MINI, outFile: out });
+      expect(r.warnings.join(' ')).not.toContain('camara');
+
+      // El centro de la burbuja: esquina inferior derecha, diametro 0.3 del
+      // alto, con el margen de siempre.
+      const d = Math.round(180 * 0.3);
+      const margen = Math.round(320 * 0.025);
+      const [rr, gg, bb] = await pixelDe(out, 320 - margen - d / 2, 180 - margen - d / 2);
+      expect(gg).toBeGreaterThan(150);          // el turquesa de la camara
+      expect(bb).toBeGreaterThan(120);
+      expect(rr).toBeLessThan(120);
+    } finally {
+      await fsp.rm(conCam, { recursive: true, force: true }).catch(() => {});
+    }
+  }, 90_000);
+
+  it('sin estilo de camara no se dibuja, aunque la grabacion la traiga', async () => {
+    // Quitar la burbuja no deberia obligar a volver a grabar.
+    const conCam = await makeRecording();
+    try {
+      await makeCamara(conCam, 2);
+      const m = JSON.parse(
+        await fsp.readFile(path.join(conCam, 'manifest.json'), 'utf8')) as Manifest;
+      m.camara = {
+        file: 'camara.webm', startedAt: T0,
+        mimeType: 'video/webm;codecs=vp8', w: 640, h: 480,
+      };
+      await fsp.writeFile(path.join(conCam, 'manifest.json'), JSON.stringify(m));
+
+      const out = path.join(conCam, 'sin-burbuja.mp4');
+      await exportRecording({ recordingDir: conCam, preset: PRESET_MINI, outFile: out });
+
+      const d = Math.round(180 * 0.3);
+      const margen = Math.round(320 * 0.025);
+      const [, gg] = await pixelDe(out, 320 - margen - d / 2, 180 - margen - d / 2);
+      expect(gg).toBeLessThan(150);
+    } finally {
+      await fsp.rm(conCam, { recursive: true, force: true }).catch(() => {});
+    }
+  }, 90_000);
+
+  it('avisa si el manifest declara camara que no esta en disco', async () => {
+    const roto = await makeRecording({
+      camara: {
+        esquina: 'se', tamano: 0.3, forma: 'circulo',
+        espejo: false, borde: 0, sombra: 0,
+      },
+    });
+    try {
+      const m = JSON.parse(
+        await fsp.readFile(path.join(roto, 'manifest.json'), 'utf8')) as Manifest;
+      m.camara = {
+        file: 'camara.webm', startedAt: T0,
+        mimeType: 'video/webm;codecs=vp8', w: 640, h: 480,
+      };
+      await fsp.writeFile(path.join(roto, 'manifest.json'), JSON.stringify(m));
+
+      const r = await exportRecording({
+        recordingDir: roto, preset: PRESET_MINI, outFile: path.join(roto, 'sin-fichero.mp4'),
+      });
+      // Perderla en silencio seria el fallo callado de siempre.
+      expect(r.warnings.join(' ')).toContain('camara');
+    } finally {
+      await fsp.rm(roto, { recursive: true, force: true }).catch(() => {});
     }
   }, 90_000);
 

@@ -159,7 +159,7 @@ export function Timeline(props: TimelineProps) {
     <div className="tl">
       <div className="tl-rotulos">
         <span className="tl-rot regla" />
-        <span className="tl-rot">Video</span>
+        <span className="tl-rot">Vídeo</span>
         <span className="tl-rot">Ritmo</span>
         <span className="tl-rot">Audio</span>
       </div>
@@ -176,7 +176,7 @@ export function Timeline(props: TimelineProps) {
         >
           <div className="carril regla">
             {marcas.map((m) => (
-              <span key={m.ms} className="marca" style={{ left: `${m.f * 100}%` }}>
+              <span key={m.ms} className="tl-marca" style={{ left: `${m.f * 100}%` }}>
                 {m.etiqueta}
               </span>
             ))}
@@ -226,7 +226,7 @@ export function Timeline(props: TimelineProps) {
                 ))}
               </div>
             )}
-            {!onda && <span className="sin-audio">sin narracion</span>}
+            {!onda && <span className="sin-audio">sin narración</span>}
           </div>
 
           {/* Zonas recortadas: se atenuan en vez de ocultarse, para que se vea

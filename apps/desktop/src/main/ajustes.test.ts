@@ -6,7 +6,8 @@ describe('normalizarAjustes', () => {
     const guardado = {
       url: 'http://localhost:4321', presetName: 'nitido',
       orientacion: 'vertical' as const, micOn: false, micDeviceId: 'abc',
-      looks: [], lookPorDefecto: null,
+      tapar: '#saldo, .email', camOn: true, camDeviceId: 'cam-1',
+      tema: 'claro' as const, looks: [], lookPorDefecto: null,
     };
     expect(normalizarAjustes(guardado)).toEqual(guardado);
   });
@@ -26,6 +27,13 @@ describe('normalizarAjustes', () => {
     expect(r.micOn).toBe(AJUSTES_POR_DEFECTO.micOn);
   });
 
+  it('un tema desconocido cae en oscuro', () => {
+    // Es el aspecto de siempre: una app que arranca en claro porque el JSON
+    // trae basura asusta mas que cualquier otro campo mal leido.
+    expect(normalizarAjustes({ tema: 'neon' }).tema).toBe('oscuro');
+    expect(normalizarAjustes({ tema: 'claro' }).tema).toBe('claro');
+  });
+
   it('una orientacion desconocida cae en horizontal', () => {
     expect(normalizarAjustes({ orientacion: 'diagonal' }).orientacion).toBe('horizontal');
   });
@@ -36,5 +44,12 @@ describe('normalizarAjustes', () => {
 
   it('el id de microfono vacio es valido: significa "el predeterminado"', () => {
     expect(normalizarAjustes({ micDeviceId: '' }).micDeviceId).toBe('');
+  });
+
+  it('los selectores a tapar se guardan tal cual se escribieron', () => {
+    // Sin normalizar aqui: el campo es texto libre y lo que se teclea tiene que
+    // volver igual al reabrir la app. Validarlos es cosa del grabador.
+    expect(normalizarAjustes({ tapar: ' #saldo,\n.email ' }).tapar).toBe(' #saldo,\n.email ');
+    expect(normalizarAjustes({ tapar: 7 }).tapar).toBe('');
   });
 });

@@ -75,6 +75,20 @@ export interface CaptureSize {
   h: number;
 }
 
+/**
+ * Lo que se tapo al grabar.
+ *
+ * Va en el manifest y no en el proyecto porque no es una decision de montaje
+ * que se pueda deshacer: describe lo que YA no esta en los frames. Ademas es lo
+ * que permite que repetir la grabacion vuelva a tapar lo mismo.
+ */
+export interface Tapado {
+  /** Selectores CSS de lo que no debia salir. */
+  selectores: string[];
+  /** Radio del desenfoque en px CSS que se aplico. */
+  desenfoque?: number;
+}
+
 export interface Manifest {
   version: 1;
   /** Identificador del navegador usado, para diagnostico. */
@@ -104,6 +118,19 @@ export interface Manifest {
    * resuelve `audioAlignment`.
    */
   audio?: AudioTrack | null;
+  /**
+   * Que se difumino al grabar, si se difumino algo.
+   *
+   * Es informativo para el editor y necesario para repetir: una repeticion que
+   * no tapara lo mismo publicaria en la segunda toma lo que se tapo en la
+   * primera.
+   */
+  tapado?: Tapado | null;
+  /**
+   * Camara web, si se grabo. Como la de audio, lleva su propio `startedAt`
+   * porque la captura otro proceso y arranca antes que el video.
+   */
+  camara?: CamTrack | null;
 }
 
 /** Fondo sobre el que se compone la ventana grabada. */
@@ -164,6 +191,52 @@ export interface ZoomSegment {
 }
 
 /**
+ * Pista de camara web.
+ *
+ * Va en el MANIFEST y no en el proyecto, igual que la narracion: describe lo que
+ * se grabo, no una decision de montaje. Y lleva su propio `startedAt` por el
+ * mismo motivo que la de audio —se captura en el renderer de Electron, no en el
+ * grabador, y arranca antes que el screencast—, asi que el desfase lo resuelve
+ * `audioTimeFor`, que sirve para las dos pistas.
+ */
+export interface CamTrack {
+  /** Nombre del fichero dentro de la carpeta `.vitrina`. */
+  file: string;
+  /** Epoch en ms del arranque real de la captura. */
+  startedAt: number;
+  mimeType: string;
+  /** Tamano nativo de la captura. Hace falta para recortar sin deformar. */
+  w: number;
+  h: number;
+}
+
+/**
+ * Aspecto de la burbuja de camara.
+ *
+ * Va en el PROYECTO porque es montaje: se cambia, se deshace y se guarda con la
+ * edicion. La pista es del manifest; esto es como se ensena.
+ */
+export interface CamaraStyle {
+  esquina: Esquina;
+  /** Diametro de la burbuja como fraccion del ALTO del lienzo. */
+  tamano: number;
+  forma: 'circulo' | 'redondeada';
+  /**
+   * Quien se graba se ve en espejo y le resulta natural; quien mira el video
+   * espera el texto de la camiseta al derecho. Por eso es una opcion y no una
+   * constante, y por defecto va sin espejo.
+   */
+  espejo: boolean;
+  /** Grosor del aro, en px de salida. 0 lo quita. */
+  borde: number;
+  /** Radio de la sombra. 0 la quita. */
+  sombra: number;
+}
+
+/** Esquina del lienzo. La comparten la marca de agua y la camara web. */
+export type Esquina = 'ne' | 'no' | 'se' | 'so';
+
+/**
  * Marca de agua: una imagen anclada al LIENZO.
  *
  * Anclada al lienzo y no al contenido a proposito. Una marca que se moviera con
@@ -174,7 +247,7 @@ export interface ZoomSegment {
  */
 export interface Watermark {
   path: string;
-  esquina: 'ne' | 'no' | 'se' | 'so';
+  esquina: Esquina;
   /** 0-1. */
   opacity: number;
   /** Fraccion del ancho del lienzo que ocupa la marca. */
@@ -202,6 +275,12 @@ export interface Project {
    * a tiempo real sin haber degradado nada.
    */
   speeds?: Speed[];
+  /**
+   * Aspecto de la burbuja de camara. Ausente o nulo: no se dibuja, aunque la
+   * grabacion traiga pista —quitar la burbuja del video no deberia obligar a
+   * volver a grabar—.
+   */
+  camara?: CamaraStyle | null;
   export: ExportSettings;
 }
 

@@ -11,7 +11,7 @@
  * filtre credenciales. Aqui los `"char"` se dibujan como un punto generico y
  * NUNCA se reconstruye texto. Si alguien "arregla" eso, rompe la garantia.
  */
-import type { InputEvent } from '@vitrina/core';
+import type { Esquina, InputEvent } from '@vitrina/core';
 import type { Ctx } from './types.ts';
 
 /** Cuanto se queda en pantalla un rotulo antes de desvanecerse. */
@@ -154,6 +154,25 @@ export function drawLabel(
  * Recibe el lienzo entero, no el contenido: si siguiera al encuadre se moveria
  * con el zoom y dejaria de leerse como una firma.
  */
+/**
+ * Coloca una caja en una esquina del lienzo, con el margen de siempre.
+ *
+ * Lo comparten la marca de agua y la burbuja de camara: las dos van ancladas al
+ * lienzo y no al contenido, y si cada una calculara su margen acabarian
+ * separadas del borde por distancias distintas sin que nadie lo decidiera.
+ */
+export function anclarEnEsquina(
+  esquina: Esquina,
+  caja: { w: number; h: number },
+  lienzo: { w: number; h: number },
+): { x: number; y: number } {
+  const margen = lienzo.w * 0.025;
+  return {
+    x: esquina === 'no' || esquina === 'so' ? margen : lienzo.w - caja.w - margen,
+    y: esquina === 'no' || esquina === 'ne' ? margen : lienzo.h - caja.h - margen,
+  };
+}
+
 export function drawWatermark(
   ctx: Ctx,
   img: { width: number; height: number },
@@ -165,9 +184,7 @@ export function drawWatermark(
 
   const w = lienzo.w * Math.min(0.5, marca.scale);
   const h = w * (img.height / img.width);
-  const margen = lienzo.w * 0.025;
-  const x = marca.esquina === 'no' || marca.esquina === 'so' ? margen : lienzo.w - w - margen;
-  const y = marca.esquina === 'no' || marca.esquina === 'ne' ? margen : lienzo.h - h - margen;
+  const { x, y } = anclarEnEsquina(marca.esquina, { w, h }, lienzo);
 
   ctx.save();
   ctx.globalAlpha = Math.min(1, marca.opacity);

@@ -21,7 +21,10 @@ de escritorio no puede tener:
   reloj, así que no hay que alinear nada.
 
 Y una garantía de privacidad: el log de teclado registra `"char"`, nunca la
-tecla pulsada. Una demo con login no puede filtrar credenciales.
+tecla pulsada. Una demo con login no puede filtrar credenciales. Y lo que salga
+en pantalla y no deba salir —un saldo, un correo— se tapa **al grabar**, así que
+no llega a existir en los frames: ver [Tapar lo que no debe
+salir](#tapar-lo-que-no-debe-salir).
 
 ## Estado
 
@@ -47,6 +50,9 @@ todavía no.
 | Editor tipo CapCut · deshacer · memoria | hecho |
 | Looks guardados y marca de agua | hecho |
 | Repetir la grabación | hecho |
+| Tapar datos sensibles | hecho |
+| Cámara web en burbuja | hecho |
+| Tema claro y hoja de atajos | hecho |
 | macOS y Windows | hecho (sin probar en Mac) |
 | Grabación vertical (9:16) | hecho |
 
@@ -99,6 +105,10 @@ la línea de comandos:
 npm run app:build && npx electron apps/desktop grabaciones/mi-demo.vitrina
 ```
 
+Las grabaciones recientes salen con un **sello** —un frame del 25 %, no el
+primero, que suele estar en blanco—, y una carpeta `.vitrina` se puede **soltar
+sobre la ventana** para abrirla.
+
 ### Calibrar (opcional, una vez)
 
 ```bash
@@ -141,6 +151,8 @@ Opciones:
 --out=<ruta>        carpeta de salida
 --secs=<n>          parar solo tras n segundos
 --quality=<n>       calidad JPEG 1-100 (por defecto 92)
+--tapar=<sel>       selectores CSS a difuminar al grabar: "#saldo, .email"
+--desenfoque=<n>    radio del desenfoque en px (por defecto 12)
 ```
 
 Deja una carpeta `.vitrina` autocontenida con los frames, el log de eventos, el
@@ -353,6 +365,55 @@ Todo el tiempo de la salida pasa por un mapa: recortar los extremos y quitar
 silencios son la misma operación vista de dos formas. La reproducción del editor
 usa ese mismo mapa, así que salta los silencios igual que el vídeo final.
 
+## Tu cara en la demo
+
+La cámara se enciende en la pantalla de inicio, al lado del micrófono, y sale en
+una **burbuja** sobre el vídeo. La previsualización de antes de grabar es
+redonda y del tamaño real de la burbuja: lo que se ve ahí es lo que va a salir,
+recorte incluido, y así no se descubre al terminar que se sale medio hombro.
+
+Se graba en **su propio fichero**, aparte del vídeo, y eso es lo que permite
+tratarla como montaje y no como material quemado:
+
+- La burbuja se mueve de esquina, cambia de tamaño y de forma, se voltea o se
+  quita entera **sin volver a grabar**.
+- Va **anclada al lienzo**, no al contenido: una burbuja que se moviera con el
+  zoom sería parte de la demo, y no lo es —es quien la cuenta—. Es el mismo
+  argumento que la marca de agua, y va debajo de ella para que la firma gane si
+  comparten esquina.
+- La imagen se **recorta**, nunca se deforma. La cámara entrega 4:3 y la burbuja
+  es cuadrada; escalar para que quepa haría una cara más estrecha de lo que es,
+  que es justo el defecto que nadie perdona en su propia imagen.
+- Sin espejo por defecto: quien se graba se ve en espejo y le resulta natural,
+  pero quien mira el vídeo espera el texto de la camiseta al derecho.
+
+> **Un solo compositor, también aquí.** La burbuja la dibuja `composite()` en
+> Canvas 2D, la misma función que pinta el preview y el export. Componerla con
+> un filtro `overlay` de ffmpeg habría sido más corto y habría roto lo único que
+> este proyecto no negocia: que lo que se ve al editar sea lo que sale. El precio
+> es un pre-pase que extrae el `webm` a imágenes antes de exportar, ya escaladas
+> al tamaño de la burbuja.
+
+Los cortes y las aceleraciones le salen **gratis**: la cámara se muestrea por el
+mismo instante de material que el vídeo, así que un tramo a 4× lleva la cara a
+4× sin tocar nada. Y la narración y la cámara comparten la corrección de desfase,
+porque las dos se capturan en otro proceso y arrancan antes que el vídeo.
+
+Dos cosas que conviene saber:
+
+- **La repetición no arrastra la cámara.** Se repite la demo, no a quien la
+  cuenta: sin volver a grabar no hay pista.
+- **Grabar la cámara no le cuesta fps al vídeo** —medido en
+  [`spikes/HALLAZGOS.md`](spikes/HALLAZGOS.md), M11: 479 frames sola contra 480
+  con la cámara capturando—. Para comprobarlo en tu equipo:
+  `node spikes/m11-camara-fps.mjs`.
+
+Se verifica con el dispositivo falso de Chromium, igual que el micrófono, así
+que una máquina sin cámara puede comprobar la ruta entera:
+`node tools/verificar-app.ts --camara` graba con cámara, comprueba el fichero y
+el desfase, y **mide por píxeles** la región del lienzo donde va la burbuja con
+ella y sin ella. Lo que queda sin probar es el encuadre de una cara de verdad.
+
 ## El editor
 
 La ventana sigue la forma de un editor de vídeo de escritorio: biblioteca a la
@@ -397,10 +458,96 @@ por error es el accidente típico y era irreversible.
 Las flechas mueven la aguja un frame, con `Shift` un segundo, e `Inicio`/`Fin`
 van a los extremos. Arrastrando no se llega al frame exacto.
 
+El aspecto sigue los principios de interfaz de Apple —material translúcido con
+desenfoque y filo de luz en vez de cajas opacas, respuesta **al pulsar** y no al
+soltar, tipografía con tracking e interlineado propios de cada tamaño, y las tres
+señales de accesibilidad: `prefers-reduced-motion`, `prefers-reduced-transparency`
+y `prefers-contrast`—. Toca la ventana y nada más: el compositor pinta sus
+propios colores, así que el vídeo exportado no se entera.
+
+**`?` abre la hoja de atajos.** Estaban todos y no se veían en ninguna parte:
+quien no leyera esto no sabía que existían.
+
+La ventana tiene **tema claro** además del oscuro, con el interruptor en la
+esquina de la pantalla de inicio. Cambia el aspecto de la app y nada más: el
+compositor pinta sus propios colores, así que el vídeo exportado no se entera.
+
 La app **recuerda** la última dirección, preset, orientación y micrófono en un
 `ajustes.json` en `userData`, y ofrece las últimas grabaciones en la pantalla de
 inicio. Se guardan al grabar, no al teclear: escribir media URL y cerrar no
 debería dejarla puesta para la próxima vez.
+
+## Tapar lo que no debe salir
+
+Una demo de una app real enseña datos reales: el saldo de un cliente, un correo,
+una clave de API en la pantalla de ajustes. En la pantalla de inicio hay un campo
+para los **selectores CSS** de lo que no debe salir:
+
+```
+#saldo, .email, [data-privado]
+```
+
+Y por línea de comandos:
+
+```bash
+node bin/vitrina-record.ts http://localhost:3000 --tapar="#saldo, .email"
+```
+
+**Se tapa al grabar, no al exportar.** Es la diferencia que importa: el JPEG que
+se escribe en disco ya va difuminado, así que el dato en claro no llega a
+existir. Difuminarlo en el editor sería una garantía falsa —seguiría dentro de
+cada frame de la carpeta `.vitrina`, y quien la reciba lo tiene entero—.
+
+Tres decisiones que no son evidentes:
+
+- **Se difumina, no se oculta.** `display:none` mueve la maqueta y la demo deja
+  de ser la demo: los botones cambian de sitio y la cámara encuadra otra cosa.
+  El desenfoque deja el hueco donde estaba. Conviene apuntar al dato y no a
+  media página: un `filter` crea contenedor para los `position: fixed` que haya
+  dentro, y una cabecera fija sí se movería.
+- **Es CSS, no un script que recorra el DOM.** Una hoja de estilos cubre también
+  lo que aparezca después —una fila que llega por fetch, un modal que se abre a
+  mitad de demo— sin volver a mirar. Un script tendría que reaccionar a cada
+  mutación, y llegaría tarde justo cuando importa.
+- **El log tampoco guarda el texto.** Cada click registra la etiqueta del
+  elemento pulsado, así que tapar los píxeles y dejar el correo escrito en
+  `events.json` sería tapar solo lo que se ve. La caja sí se guarda: se tapa el
+  contenido, no la geometría, y un click sobre un dato tapado sigue generando su
+  zoom.
+
+> **Dos detalles que costó encontrar**, y los dos fallan igual de callados: el
+> script corre, no lanza, y el dato sale entero.
+>
+> **El parser.** El estilo se inyecta antes de que el parser construya el
+> documento —tiene que estar puesto antes de la primera pintura—, y a esa altura
+> el documento está vacío: el parser lo reemplaza después y se lleva por delante
+> lo que hubiera. Por eso la hoja se **repone**: un `MutationObserver` la
+> devuelve en cuanto aparece el documento, en la misma microtarea, sin un frame
+> con el dato al aire.
+>
+> **La CSP.** Medido: con `style-src 'self'`, un `<style>` inyectado por script
+> entra en el DOM y no aplica nada —`getComputedStyle` devuelve `filter: none`—
+> sin excepción ni aviso. Y la app que tiene datos sensibles es justo la que trae
+> CSP estricta. Así que el tapado va por **hoja construida** (`new CSSStyleSheet`
+> + `adoptedStyleSheets`), que no pasa por esa comprobación; el `<style>` se
+> queda de respaldo para un motor que no las tenga.
+
+Dos límites, dichos claros:
+
+- **Un iframe de otro origen no se tapa.** Vitrina se engancha a la página, y un
+  iframe cross-origin corre en otro proceso al que no llega el script.
+- **Un desenfoque es tapar, no cifrar.** Con el radio por defecto un texto de
+  interfaz queda ilegible en el vídeo; lo que no quieras enseñar de ninguna
+  manera es mejor no tenerlo en pantalla.
+
+Lo fija un test que graba [`spikes/sensible.html`](spikes/sensible.html) —dos
+filas idénticas, una tapada y otra no— y **mide el contraste del frame guardado**
+comparándolas. Y lo graba **dos veces**, con y sin
+[CSP estricta](spikes/sensible-csp.html), porque ese es el caso que de verdad
+importa. Es la única comprobación que habría cazado los dos fallos de arriba: el
+script se generaba, se ejecutaba, el estilo estaba puesto, y el dato salía igual.
+Comprobado quitando la hoja construida: la variante con CSP pasa de 0,3 a 25 de
+contraste, el mismo valor que la fila sin tapar.
 
 ## Repetir la grabación
 
@@ -425,8 +572,10 @@ cortes— se copia a la grabación nueva. La original no se toca.
 > Medido al implementarlo: un tramo que encuadraba el 6 % del ancho pasaba a
 > apuntar al 4 %.
 
-Dos cosas que conviene saber:
+Tres cosas que conviene saber:
 
+- **Vuelve a tapar lo mismo.** Los selectores quedan en el manifest, así que una
+  segunda toma no publica el dato que se tapó en la primera.
 - **Lo que se escribió no se puede reproducir.** El log guarda que se pulsó una
   tecla, nunca cuál — es la misma garantía que impide que una demo con un login
   filtre credenciales. Para los formularios se puede dar un texto de relleno.

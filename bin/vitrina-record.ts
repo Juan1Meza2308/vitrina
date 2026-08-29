@@ -9,7 +9,7 @@
  * manifest y un project.json con los ajustes de composicion por defecto.
  */
 import path from 'node:path';
-import { Recorder } from '@vitrina/capture-cdp';
+import { Recorder, listaDeSelectores, desenfoqueValido } from '@vitrina/capture-cdp';
 import {
   CAPTURE_PRESETS, computeQualityBudget, describeBudget, defaultProject, hostFromUrl,
 } from '@vitrina/core';
@@ -31,6 +31,10 @@ vitrina record - graba una demo de una app web
   --out=<ruta>        carpeta de salida (por defecto: ./grabaciones/<fecha>.vitrina)
   --secs=<n>          parar solo tras n segundos (por defecto: parar con Enter)
   --quality=<n>       calidad JPEG 1-100 (por defecto: 92; no afecta al rendimiento)
+  --tapar=<sel>       selectores CSS a difuminar AL GRABAR, separados por comas.
+                      El frame guardado ya va tapado: el dato en claro no llega
+                      a existir. Ej: --tapar="#saldo, .email"
+  --desenfoque=<n>    radio del desenfoque en px (por defecto: 12)
 `);
   process.exit(1);
 }
@@ -43,6 +47,10 @@ if (!preset) {
 }
 
 const secs = Number(flag('secs', '0'));
+const selectores = listaDeSelectores(flag('tapar', ''));
+const tapado = selectores.length
+  ? { selectores, desenfoque: desenfoqueValido(Number(flag('desenfoque', '')) || undefined) }
+  : null;
 const quality = Number(flag('quality', '92'));
 const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
 const outDir = path.resolve(flag('out', path.join('grabaciones', `${stamp}.vitrina`)));
@@ -57,6 +65,9 @@ async function main(): Promise<void> {
   console.log(`  salida     ${project.export.width}x${project.export.height} @ ${project.export.fps}fps`);
   console.log(`  calidad    ${describeBudget(budget)}`);
   console.log(`  carpeta    ${outDir}`);
+  if (tapado) {
+    console.log(`  tapado     ${tapado.selectores.join(', ')}  (desenfoque ${tapado.desenfoque}px)`);
+  }
   console.log('');
 
   const rec = new Recorder({
@@ -64,6 +75,7 @@ async function main(): Promise<void> {
     viewport: preset!.capture,
     quality,
     outDir,
+    tapado,
     onProgress: ({ frames, elapsedMs }) => {
       if (frames % 15 !== 0) return;
       const fps = frames / Math.max(0.001, elapsedMs / 1000);

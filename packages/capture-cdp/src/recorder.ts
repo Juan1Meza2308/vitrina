@@ -25,13 +25,16 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import type { AudioTrack, CaptureSize, Frame, InputEvent, Manifest } from '@vitrina/core/types';
+import type {
+  AudioTrack, CamTrack, CaptureSize, Frame, InputEvent, Manifest, Tapado,
+} from '@vitrina/core/types';
 import {
   defaultProject, hostFromUrl, planSegments, computeQualityBudget,
   cameraConfigForBudget, CAMERA_PRESETS,
 } from '@vitrina/core';
 import { findBrowser, launchFlags, comoInstalarNavegador, type BrowserInfo } from './browser.ts';
 import { INJECT_SOURCE, BINDING_NAME } from './inject.ts';
+import { fuenteDeTapado, selectoresValidos, desenfoqueValido } from './tapar.ts';
 import { jpegSize } from './jpeg.ts';
 import type { CdpClient } from './cdp.ts';
 
@@ -77,6 +80,13 @@ export interface RecorderOptions {
   port?: number;
   /** Tamano de la ventana fisica. Se ajusta para caber en la pantalla. */
   window?: { width: number; height: number };
+  /**
+   * Que difuminar en la pagina para que no salga en el video.
+   *
+   * Se aplica AL GRABAR, no al exportar: el frame que se escribe en disco ya
+   * va tapado, asi que el dato en claro no llega a existir en ningun sitio.
+   */
+  tapado?: Tapado | null;
   onProgress?: (p: { frames: number; events: number; elapsedMs: number }) => void;
 }
 
@@ -116,6 +126,7 @@ export class Recorder {
   private sizeMismatches = 0;
   private recording = false;
   private audio: AudioTrack | null = null;
+  private camara: CamTrack | null = null;
 
   constructor(options: RecorderOptions) {
     this.opts = { quality: 92, port: 9222, ...options };
@@ -167,6 +178,12 @@ export class Recorder {
         /* payload corrupto: un evento perdido no justifica tirar la grabacion */
       }
     });
+    // El tapado, antes que la captura de eventos y antes de navegar: los dos
+    // scripts corren al crear cada documento, y el orden entre ellos da igual
+    // —el de entrada lee la global cuando llega un click, no al instalarse—,
+    // pero llegar antes que la primera pintura de la pagina no da igual.
+    const tapadoSource = fuenteDeTapado(this.opts.tapado);
+    if (tapadoSource) await Page.addScriptToEvaluateOnNewDocument({ source: tapadoSource });
     await Page.addScriptToEvaluateOnNewDocument({ source: INJECT_SOURCE });
     // El binding no sobrevive a una navegacion. Sin esto, la demo deja de
     // registrar eventos en cuanto se cambia de pagina.
@@ -210,6 +227,16 @@ export class Recorder {
    */
   setAudioTrack(track: AudioTrack | null): void {
     this.audio = track;
+  }
+
+  /**
+   * Registra la pista de camara web en el manifest.
+   *
+   * Mismo reparto que el audio: la captura el renderer de Electron, que es
+   * quien tiene acceso a `getUserMedia`, y el manifest lo escribe el grabador.
+   */
+  setCamTrack(track: CamTrack | null): void {
+    this.camara = track;
   }
 
   /** Empieza a recibir frames. Todo lo anterior no se graba. */
@@ -287,6 +314,8 @@ export class Recorder {
       durationMs,
       frames: this.frames,
       audio: this.audio,
+      camara: this.camara,
+      tapado: this.tapadoAplicado(),
     };
 
     await fsp.writeFile(
@@ -309,6 +338,15 @@ export class Recorder {
       // `capture` decide la forma de la salida y el tipo de marco: una grabacion
       // vertical tiene que abrirse ya en 9:16 y con marco de movil.
       const project = defaultProject({ host: hostFromUrl(this.opts.url), capture: viewport });
+      // Si se grabo camara, la burbuja viene puesta. Grabarse la cara y abrir el
+      // editor sin verla se leeria como que no funciono; quitarla es un click y
+      // no obliga a volver a grabar.
+      if (this.camara) {
+        project.camara = {
+          esquina: 'se', tamano: 0.22, forma: 'circulo',
+          espejo: false, borde: 3, sombra: 24,
+        };
+      }
       const budget = computeQualityBudget(viewport, project.export, project.frame);
       project.zooms = planSegments({
         events: this.events,
@@ -335,6 +373,19 @@ export class Recorder {
     if (this.profileDir) {
       await fsp.rm(this.profileDir, { recursive: true, force: true }).catch(() => {});
     }
+  }
+
+  /**
+   * Lo que se tapo DE VERDAD, no lo que se pidio.
+   *
+   * Se guardan los selectores ya validados y el radio ya acotado, porque el
+   * manifest describe la grabacion que hay en disco: apuntar un selector que se
+   * descarto haria creer que un dato esta tapado cuando se ve entero.
+   */
+  private tapadoAplicado(): Tapado | null {
+    const selectores = selectoresValidos(this.opts.tapado?.selectores ?? []);
+    if (selectores.length === 0) return null;
+    return { selectores, desenfoque: desenfoqueValido(this.opts.tapado?.desenfoque) };
   }
 
   /**

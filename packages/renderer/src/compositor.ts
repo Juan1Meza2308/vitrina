@@ -15,6 +15,7 @@ import { paintBackground } from './background.ts';
 import { drawFrame, drawNotch } from './chrome.ts';
 import { drawCursor } from './cursor.ts';
 import { drawLabel, drawKeys, drawWatermark } from './overlays.ts';
+import { drawCamara } from './camara.ts';
 import type { Ctx, CursorSample, ImageLike } from './types.ts';
 import type { OverlaySample } from './overlays.ts';
 
@@ -34,6 +35,14 @@ export interface CompositeOptions {
   overlay?: OverlaySample | null;
   /** Imagen de la marca de agua, ya cargada. */
   watermarkImage?: ImageLike | null;
+  /**
+   * Frame de la camara web en este instante, con el tamano de su fuente.
+   *
+   * Llega ya resuelto —un `<video>` en el navegador, una imagen decodificada en
+   * Node— por la misma razon que el fondo y la marca: aqui dentro no se
+   * decodifica nada, o el compositor dejaria de servir en los dos sitios.
+   */
+  cam?: { img: ImageLike; w: number; h: number } | null;
 }
 
 export function composite(o: CompositeOptions): void {
@@ -115,7 +124,14 @@ export function composite(o: CompositeOptions): void {
     }
   }
 
-  // 5. Marca de agua, sobre el lienzo y fuera del recorte de la ventana: es una
+  // 5. Camara web, anclada al lienzo como la marca: es quien cuenta la demo, no
+  //    parte de ella. Va DEBAJO de la marca de agua a proposito, para que la
+  //    firma siga leyendose si las dos caen en la misma esquina.
+  if (project.camara && o.cam) {
+    drawCamara(ctx, o.cam.img, { w: o.cam.w, h: o.cam.h }, project.camara, { w: W, h: H });
+  }
+
+  // 6. Marca de agua, sobre el lienzo y fuera del recorte de la ventana: es una
   //    firma, no parte de la demo, asi que no se mueve con el zoom.
   if (project.watermark && o.watermarkImage) {
     const img = o.watermarkImage as unknown as { width: number; height: number };
@@ -126,7 +142,7 @@ export function composite(o: CompositeOptions): void {
     );
   }
 
-  // 6. Cursor, siempre lo ultimo y siempre al mismo tamano en pantalla.
+  // 7. Cursor, siempre lo ultimo y siempre al mismo tamano en pantalla.
   if (o.cursor && project.frame.cursor !== 'none') {
     const at = sourceToOutput(o.cursor, view, content);
     // Fuera del encuadre no se dibuja: si no, se pegaria al borde de la ventana.
