@@ -317,6 +317,53 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
   let camImg: Awaited<ReturnType<typeof loadImage>> | null = null;
   const t0 = Date.now();
 
+  /**
+   * Reparto del tiempo de un fotograma, para no optimizar a ciegas.
+   *
+   * Apagado salvo `VITRINA_MEDIR=1`, como `data-medir` en el editor. Un export
+   * son cuatro cosas por fotograma —decodificar el JPEG de origen, componer,
+   * SACAR los pixeles del lienzo y pasarselos a ffmpeg— y sin repartirlas no hay
+   * forma de saber cual arreglar; a ojo, cualquiera parece la culpable.
+   *
+   * `leer` va aparte de `componer` porque la primera version las juntaba y daba
+   * una respuesta enganosa: parecia que componer se llevaba el 69 % del export
+   * cuando componer cuesta el 3 % y lo caro es sacar los pixeles del lienzo.
+   */
+  const midiendo = !!process.env['VITRINA_MEDIR'];
+  /**
+   * El fotograma que va por el tubo mientras se compone el siguiente.
+   *
+   * El bucle escribia y se quedaba esperando a que ffmpeg tragara, teniendo el
+   * fotograma siguiente por decodificar. Ahora se solapan: se espera al envio
+   * ANTERIOR justo antes de mandar el actual, asi que decodificar, componer y
+   * leer el lienzo ocurren mientras ffmpeg trabaja.
+   *
+   * Es seguro porque `canvas.data()` devuelve una COPIA de los pixeles —
+   * comprobado, no supuesto—: componer encima del lienzo no toca el buffer que
+   * se esta escribiendo.
+   */
+  let enElTubo: Promise<void> | null = null;
+  /**
+   * Decodificaciones ya en marcha, por fichero.
+   *
+   * `loadImage` es asincrono y trabaja en hilos nativos, pero el bucle la
+   * esperaba justo cuando la necesitaba, asi que esos hilos no servian de nada:
+   * medido, 15,6 s de los 53 de un export se iban en esperar JPEGs. Y hay mas:
+   * treinta decodificaciones a la vez salen a 4,8 ms cada una frente a 17,8 ms
+   * una detras de otra —3,7 veces mas rapido—, porque el hilo unico ni siquiera
+   * saturaba el pool.
+   *
+   * Cuatro en vuelo bastan para que el bucle no espere nunca; mas solo gastaria
+   * memoria (cada imagen decodificada son unos 7 MB).
+   */
+  const enVuelo = new Map<string, Promise<Awaited<ReturnType<typeof loadImage>>>>();
+  const ADELANTO = 4;
+  const reparto = { decode: 0, componer: 0, leer: 0, tubo: 0 };
+  const ahora = () => (midiendo ? performance.now() : 0);
+  const sumar = (campo: keyof typeof reparto, desde: number) => {
+    if (midiendo) reparto[campo] += performance.now() - desde;
+  };
+
   try {
     for (let i = 0; i < totalFrames; i++) {
       if (opts.signal?.aborted) throw new ExportAbortedError();
@@ -326,10 +373,27 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
       const tMs = map.sourceAt((i / settings.fps) * 1000);
       const frameFile = index.at(tMs);
       if (frameFile && (frameFile !== cachedFile || !cachedImg)) {
-        cachedImg = await loadImage(path.join(root, 'frames', frameFile));
+        const t = ahora();
+        const pedida = enVuelo.get(frameFile);
+        enVuelo.delete(frameFile);
+        cachedImg = await (pedida ?? loadImage(path.join(root, 'frames', frameFile)));
         cachedFile = frameFile;
+        sumar('decode', t);
       }
       if (!cachedImg) continue;
+
+      // Lo que viene, pedido ya. Se mira mas de un fotograma por delante porque
+      // con la salida a mas fps que la captura, los siguientes suelen salir del
+      // MISMO fichero: buscar solo el de al lado no adelantaria casi nunca.
+      for (let k = 1; enVuelo.size < ADELANTO && k <= settings.fps * 2; k++) {
+        const f = index.at(map.sourceAt(((i + k) / settings.fps) * 1000));
+        if (!f || f === cachedFile || enVuelo.has(f)) continue;
+        const img = loadImage(path.join(root, 'frames', f));
+        // El error se recoge en la vuelta que la espera; esto es solo para que
+        // no quede como rechazo sin dueno si el export se aborta antes.
+        img.catch(() => {});
+        enVuelo.set(f, img);
+      }
 
       // La camara se muestrea por el MISMO instante de material que el video,
       // asi que los cortes y las aceleraciones le salen gratis: no hay que
@@ -348,6 +412,7 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
         }
       }
 
+      const tComponer = ahora();
       composite({
         ctx,
         source: cachedImg as unknown as ImageLike,
@@ -367,7 +432,21 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
           : null,
       });
 
-      await encoder.write(canvas.data());
+      sumar('componer', tComponer);
+
+      const tLeer = ahora();
+      const datos = canvas.data();
+      sumar('leer', tLeer);
+
+      const tTubo = ahora();
+      if (enElTubo) await enElTubo;
+      sumar('tubo', tTubo);
+      const envio = encoder.write(datos);
+      // Si el envio falla mas tarde, el `await` de la vuelta siguiente lo
+      // recoge; este `catch` esta solo para que un fallo despues de abortar no
+      // quede como rechazo sin dueno.
+      envio.catch(() => {});
+      enElTubo = envio;
 
       if (opts.onProgress && (i % 10 === 0 || i === totalFrames - 1)) {
         const elapsed = Date.now() - t0;
@@ -382,7 +461,20 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
       }
     }
 
+    if (enElTubo) await enElTubo;
     await encoder.finish();
+
+    if (midiendo) {
+      const total = Date.now() - t0;
+      const pct = (ms: number) => `${((ms / total) * 100).toFixed(0)}%`;
+      process.stderr.write(
+        `[vitrina] export ${totalFrames} fotogramas en ${(total / 1000).toFixed(1)} s: `
+        + `decode ${(reparto.decode / 1000).toFixed(1)} s (${pct(reparto.decode)}), `
+        + `componer ${(reparto.componer / 1000).toFixed(1)} s (${pct(reparto.componer)}), `
+        + `leer el lienzo ${(reparto.leer / 1000).toFixed(1)} s (${pct(reparto.leer)}), `
+        + `tubo ${(reparto.tubo / 1000).toFixed(1)} s (${pct(reparto.tubo)})\n`,
+      );
+    }
   } catch (e) {
     encoder.abort();
     // Un fichero a medias es peor que ninguno: parece valido y no lo es.
