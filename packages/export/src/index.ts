@@ -7,3 +7,5 @@ export type { ExportPreset, ExportPresetName } from './presets.ts';
 export { FrameIndex } from '@vitrina/core';
 export { cadenaAtempo, findFfmpeg, comoInstalarFfmpeg, startEncoder } from './ffmpeg.ts';
 export type { Encoder } from './ffmpeg.ts';
+export { exportarGuia, encuadreDePaso } from './guia.ts';
+export type { OpcionesGuia as OpcionesExportarGuia, ResultadoGuia } from './guia.ts';

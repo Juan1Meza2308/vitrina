@@ -30,7 +30,9 @@ import {
 import type {
   AudioTrack, CamTrack, CameraPresetName, Cut, InputEvent, Manifest, Orientacion, Project,
 } from '@vitrina/core';
-import { exportRecording, EXPORT_PRESETS, ExportAbortedError, findFfmpeg } from '@vitrina/export';
+import {
+  exportRecording, exportarGuia, EXPORT_PRESETS, ExportAbortedError, findFfmpeg,
+} from '@vitrina/export';
 import { normalizarAjustes, aplicarLook, type Ajustes } from './ajustes.ts';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
@@ -636,6 +638,17 @@ ipcMain.handle('export:run', async (_e, opts: {
   } finally {
     exportController = null;
   }
+});
+
+/**
+ * Escribe la guia de la grabacion abierta.
+ *
+ * Va por el proceso principal como el export: escribe ficheros en la carpeta y
+ * decodifica frames, dos cosas que el renderer no deberia hacer.
+ */
+ipcMain.handle('guia:run', async (_e, dir: string) => {
+  const r = await exportarGuia({ recordingDir: path.resolve(dir) });
+  return { pasos: r.pasos.length, ficheros: r.ficheros };
 });
 
 ipcMain.handle('export:cancel', () => {

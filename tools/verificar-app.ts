@@ -462,6 +462,22 @@ async function main(): Promise<void> {
   check('el fichero exportado existe',
     await fsp.stat(destino).then((s) => s.size > 10_000).catch(() => false));
 
+  // --- la guia escrita ------------------------------------------------------
+  // Sale del mismo log que el video, asi que se comprueba en la misma sesion:
+  // que se escriba el fichero y que tenga pasos de verdad, no una plantilla.
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Exportar guía escrita')?.click()
+  `);
+  const guiaLista = await esperarA(client,
+    'document.body.textContent.includes("Guía escrita ·")', 'guia escrita', 90_000);
+  check('la guia se escribe desde el editor', guiaLista);
+
+  const guiaMd = await fsp.readFile(path.join(grabacion, 'guia.md'), 'utf8').catch(() => '');
+  check('guia.md tiene pasos', /^## 1\. /m.test(guiaMd), `${guiaMd.length} caracteres`);
+  check('capitulos.txt empieza en 0:00',
+    (await fsp.readFile(path.join(grabacion, 'capitulos.txt'), 'utf8')
+      .catch(() => '')).startsWith('0:00 '));
+
   // Este bloque va el ULTIMO a proposito: deja el editor abierto en OTRA
   // grabacion. Puesto antes, el resto de comprobaciones miraban un lienzo
   // distinto y la exportacion escribia en la carpeta que este bloque acababa de

@@ -141,6 +141,15 @@ describe('capitulosDe', () => {
     const pasos = pasosDe({ events: [click(9000, 'Tarde')], startedAt: T0, map: mapa() });
     expect(capitulosDe(pasos)[0]).toEqual({ tMs: 0, titulo: 'Inicio' });
   });
+
+  it('si el primer paso ya esta casi en cero, se mueve al cero', () => {
+    // Antes salian dos entradas seguidas en 0:00 —"Inicio" y el primer
+    // click—, que es un indice roto y no un indice con portada.
+    const pasos = pasosDe({ events: [click(455, 'One page')], startedAt: T0, map: mapa() });
+    const caps = capitulosDe(pasos);
+    expect(caps).toHaveLength(1);
+    expect(caps[0]).toEqual({ tMs: 0, titulo: 'Pulsa «One page»' });
+  });
 });
 
 describe('srtDe', () => {

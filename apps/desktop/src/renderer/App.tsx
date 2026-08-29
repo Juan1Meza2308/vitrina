@@ -1696,6 +1696,21 @@ function Exportar(
   const [elegido, setElegido] = useState('720p');
   const [progreso, setProgreso] = useState<ExportProgressMsg | null>(null);
   const [resultado, setResultado] = useState<ResultadoExport | null>(null);
+  const [guia, setGuia] = useState<'no' | 'yendo' | { pasos: number }>('no');
+
+  const escribirGuia = async () => {
+    setGuia('yendo');
+    try {
+      // Se guarda antes: la guia lee project.json del disco, y el guardado
+      // normal va con retardo. Es el mismo cuidado que ya tiene el export.
+      await guardar();
+      const r = await window.vitrina.exportarGuia(dir);
+      setGuia({ pasos: r.pasos });
+    } catch (e) {
+      setGuia('no');
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -1757,6 +1772,20 @@ function Exportar(
         </>
       ) : (
         <button className="primario" onClick={() => void lanzar()}>Exportar</button>
+      )}
+
+      {/* La guia escrita sale del mismo log que el video: mismos pasos, mismas
+          marcas de tiempo. Va aqui porque es otra forma de exportar la demo. */}
+      <button className="con-icono" disabled={!!activo || guia === 'yendo'}
+              title="Escribe guia.md con los pasos y sus capturas, capitulos.txt y guia.srt"
+              onClick={() => void escribirGuia()}>
+        {guia === 'yendo' ? 'Escribiendo la guía...' : 'Exportar guía escrita'}
+      </button>
+      {typeof guia === 'object' && (
+        <p className="sutil">
+          Guía escrita · {guia.pasos} {guia.pasos === 1 ? 'paso' : 'pasos'} ·{' '}
+          guia.md, capitulos.txt y guia.srt en la carpeta
+        </p>
       )}
 
       {resultado && (

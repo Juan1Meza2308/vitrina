@@ -53,6 +53,8 @@ todavía no.
 | Tapar datos sensibles | hecho |
 | Cámara web en burbuja | hecho |
 | Tema claro y hoja de atajos | hecho |
+| Pausa, atajos globales y marcas | hecho |
+| La demo se documenta sola | hecho |
 | macOS y Windows | hecho (sin probar en Mac) |
 | Grabación vertical (9:16) | hecho |
 
@@ -172,6 +174,12 @@ Y exportar:
 
 ```bash
 node bin/vitrina-export.ts grabaciones/mi-demo.vitrina --preset=720p
+```
+
+Y la guía escrita de la misma demo:
+
+```bash
+node bin/vitrina-guia.ts grabaciones/mi-demo.vitrina
 ```
 
 | Preset | Salida | Para qué |
@@ -413,6 +421,69 @@ que una máquina sin cámara puede comprobar la ruta entera:
 `node tools/verificar-app.ts --camara` graba con cámara, comprueba el fichero y
 el desfase, y **mide por píxeles** la región del lienzo donde va la burbuja con
 ella y sin ella. Lo que queda sin probar es el encuadre de una cara de verdad.
+
+## La demo se documenta sola
+
+De una demo sale un vídeo y, normalmente, nada más: quien quiera la versión
+escrita la escribe a mano viendo el vídeo. Vitrina no graba píxeles, así que del
+**mismo log** salen tres cosas más:
+
+```bash
+node bin/vitrina-guia.ts grabaciones/mi-demo.vitrina
+```
+
+- **`guia.md`** — los pasos en Markdown, cada uno con su marca de tiempo y una
+  captura recortada al elemento del que habla.
+- **`capitulos.txt`** — los capítulos con marca de tiempo, listos para pegar en
+  la descripción de YouTube.
+- **`guia.srt`** — subtítulos de **acción**: no es una transcripción de la voz,
+  es lo que se está haciendo en cada momento, que es justo lo que un vídeo mudo
+  no cuenta.
+
+También hay un botón **Exportar guía escrita** en el panel de exportación.
+
+Tres decisiones que no son evidentes:
+
+- **Los instantes van en tiempo de salida.** Un paso que apuntara al material
+  mandaría al lector a un segundo que el vídeo no tiene en cuanto hubiera un
+  corte o un tramo acelerado. Y lo que se cortó **no es un paso**: `outputAt`
+  devuelve nulo, en vez de saturar al borde y dar un número plausible y falso.
+- **Una ráfaga de teclas es un paso, no veinte.** Dice *dónde* se escribió
+  —«Escribe en «Email»»— y nunca *qué*: el log guarda que se pulsó una tecla,
+  jamás cuál, y la guía no iba a ser la grieta de esa garantía. Lo mismo con lo
+  tapado, que llega con la etiqueta a nulo y sale como «Pulsa aquí».
+- **La captura es el frame crudo, recortado al elemento**, no el frame compuesto
+  del vídeo. El fondo y el marco son el envoltorio del vídeo; en un tutorial
+  escrito sólo roban espacio al botón del que habla el paso. Y nunca se amplía:
+  una captura estirada se ve peor que una más pequeña.
+
+## Pausar, parar y marcar sin volver a Vitrina
+
+La demo pasa en **otra ventana**, así que volver a la de Vitrina para pulsar un
+botón sale en el vídeo. Tres atajos que funcionan con la ventana detrás:
+
+| | |
+|---|---|
+| `Ctrl+Mayús+S` | parar y editar |
+| `Ctrl+Mayús+P` | pausar y reanudar |
+| `Ctrl+Mayús+M` | señalar este momento |
+
+Se registran **sólo mientras se graba** y se liberan al parar: un atajo global
+que sobreviva a la grabación se dispararía dentro de otra app. Si el sistema no
+concede alguno —porque otro programa lo usa— se dice en pantalla, porque un
+atajo mudo es peor que no tenerlo. Y hay botones para todo, que el atajo puede
+estar cogido.
+
+> **La pausa para el vídeo, no el micrófono.** No es un descuido: el reloj del
+> audio tiene que seguir coincidiendo con el de pared, que es de lo que vive la
+> corrección de desfase. Parar el micro obligaría a reescribir el mapeo de la
+> narración entera para ahorrar unos segundos de ruido de sala que el corte se
+> lleva igual. El trozo pausado se guarda como un **corte**, así que no sale en
+> el vídeo y se puede recuperar quitándolo.
+
+Los momentos señalados salen como **chinchetas** en la regla de la línea de
+tiempo —se pinchan y la aguja va ahí— y son los que mandan al generar los
+capítulos: quien graba sabe mejor que nadie dónde empieza cada parte.
 
 ## El editor
 

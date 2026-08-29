@@ -159,6 +159,9 @@ const api = {
     // de lanzar, y quien llama decide como contarlo.
     Promise<ResultadoExport | { cancelled: true }> => ipcRenderer.invoke('export:run', opts),
   cancelExport: (): Promise<void> => ipcRenderer.invoke('export:cancel'),
+  /** Escribe la guia escrita de la grabacion: pasos, capturas y capitulos. */
+  exportarGuia: (dir: string): Promise<{ pasos: number; ficheros: string[] }> =>
+    ipcRenderer.invoke('guia:run', dir),
   onExportProgress: (cb: (p: ExportProgressMsg) => void) => subscribe('export:progress', cb),
 
   /** Detecta silencios en la narracion. Devuelve tramos, no los aplica. */

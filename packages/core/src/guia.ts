@@ -191,7 +191,12 @@ export function capitulosDe(pasos: Paso[], separacionMs = 20_000): Capitulo[] {
     out.push({ tMs: p.tSalidaMs, titulo: p.titulo });
   }
 
-  if (out[0]?.tMs !== 0) out.unshift({ tMs: 0, titulo: 'Inicio' });
+  // El primero tiene que caer EXACTAMENTE en 0:00. Si el primer capitulo ya
+  // esta casi ahi se mueve al cero en vez de anteponerle un "Inicio": dos
+  // entradas seguidas en 0:00 son un indice roto, no un indice con portada.
+  if (out.length === 0) out.push({ tMs: 0, titulo: 'Inicio' });
+  else if (out[0]!.tMs <= 1500) out[0]!.tMs = 0;
+  else out.unshift({ tMs: 0, titulo: 'Inicio' });
   return out;
 }
 
