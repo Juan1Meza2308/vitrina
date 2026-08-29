@@ -840,6 +840,14 @@ function Editor(
             {datos.manifest.capture?.h ?? datos.manifest.viewport.h}
             {' · '}{(duracion / 1000).toFixed(1)}s
           </p>
+          {/* Lo tapado se dice aqui y no se puede quitar: no es un ajuste de
+              montaje, es lo que YA no esta en los frames. Ofrecer un
+              interruptor para "destaparlo" seria mentir. */}
+          {datos.manifest.tapado && (
+            <p className="sutil">
+              Tapado al grabar: {datos.manifest.tapado.selectores.join(', ')}
+            </p>
+          )}
         </div>
 
         <div className="grupo">
@@ -889,6 +897,7 @@ function Editor(
           <p className="sutil">
             Lo que se escribio no se puede reproducir: el log guarda que se pulso
             una tecla, nunca cual.
+            {datos.manifest.tapado && ' La repeticion vuelve a tapar lo mismo.'}
           </p>
           {errorRepeticion && <p className="error">{errorRepeticion}</p>}
         </div>
