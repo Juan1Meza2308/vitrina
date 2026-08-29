@@ -875,6 +875,143 @@ async function verificarGrabacion(): Promise<void> {
 }
 
 /**
+ * Mide el rendimiento del editor, en la app de verdad.
+ *
+ * Se mide ANTES de tocar nada y despues del arreglo, en la misma sesion y sobre
+ * la misma grabacion: los numeros absolutos de una maquina sin GPU no valen
+ * para presumir, pero el antes/despues relativo si dice si el cambio sirvio.
+ *
+ * Lo que se mide son las tres cosas que se sienten: si la reproduccion va
+ * fluida, si arrastrar responde, y cuanto tarda en salir el video.
+ */
+async function verificarRendimiento(): Promise<void> {
+  console.log(`  rendimiento  ${grabacion}\n`);
+  const t0 = Date.now();
+  const child = spawn(ELECTRON, [
+    APP, grabacion,
+    `--remote-debugging-port=${PORT}`,
+    '--use-fake-device-for-media-stream',
+    '--use-fake-ui-for-media-stream',
+  ], { stdio: ['ignore', 'ignore', 'inherit'] });
+  const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+  await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+
+  const pintado = await esperarA(client, `(${FIRMA}) !== '0'`, 'primer frame', 30_000);
+  const arranque = Date.now() - t0;
+  check('el editor abre y pinta', pintado, `${arranque} ms`);
+
+  /** Cuenta ticks de rAF y tareas largas mientras corre lo que sea. */
+  const medir = async (ms: number): Promise<{ fps: number; atascos: number; bloqueo: number }> =>
+    JSON.parse(await ev<string>(client, `
+      new Promise((r) => {
+        let n = 0, atascos = 0, bloqueo = 0;
+        let obs = null;
+        try {
+          obs = new PerformanceObserver((l) => {
+            for (const e of l.getEntries()) { atascos++; bloqueo += e.duration; }
+          });
+          obs.observe({ entryTypes: ['longtask'] });
+        } catch (e) { /* sin soporte: se informa solo de fps */ }
+        const t = performance.now();
+        const tick = () => {
+          n++;
+          if (performance.now() - t < ${ms}) requestAnimationFrame(tick);
+          else {
+            if (obs) obs.disconnect();
+            r(JSON.stringify({
+              fps: n / (${ms} / 1000),
+              atascos,
+              bloqueo: Math.round(bloqueo),
+            }));
+          }
+        };
+        requestAnimationFrame(tick);
+      })
+    `)) as { fps: number; atascos: number; bloqueo: number };
+
+  // --- quieto: la linea base de la maquina --------------------------------
+  const quieto = await medir(3000);
+
+  // --- reproduciendo -------------------------------------------------------
+  const play = `[...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Reproducir')?.click()`;
+  const pause = `[...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Pausar')?.click()`;
+  await ev(client, play);
+  const reproduciendo = await medir(5000);
+  await ev(client, pause);
+  await sleep(500);
+
+  // --- arrastrando la aguja ------------------------------------------------
+  // El arrastre va desde Node mientras la pagina cuenta sus propios frames: las
+  // dos cosas corren a la vez, que es justo la situacion que se quiere medir.
+  const pista = JSON.parse(await ev<string>(client, `
+    (() => { const r = document.querySelector('.pista').getBoundingClientRect();
+      return JSON.stringify({ x: r.x, y: r.y, w: r.width, h: r.height }); })()
+  `)) as { x: number; y: number; w: number; h: number };
+  const yPista = Math.round(pista.y + pista.h / 2);
+
+  const arrastrarAguja = async () => {
+    await client.Input.dispatchMouseEvent({
+      type: 'mousePressed', x: Math.round(pista.x + 20), y: yPista, button: 'left', clickCount: 1,
+    });
+    for (let i = 1; i <= 30; i++) {
+      await client.Input.dispatchMouseEvent({
+        type: 'mouseMoved', x: Math.round(pista.x + 20 + (pista.w - 40) * (i / 30)), y: yPista,
+        button: 'left',
+      });
+      await sleep(16);
+    }
+    await client.Input.dispatchMouseEvent({
+      type: 'mouseReleased', x: Math.round(pista.x + pista.w - 20), y: yPista, button: 'left', clickCount: 1,
+    });
+  };
+  const medida = medir(1200);
+  await arrastrarAguja();
+  const arrastre = await medida;
+
+  // --- exportando ----------------------------------------------------------
+  const tExport = Date.now();
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Exportar').click()
+  `);
+  const acabo = await esperarA(client,
+    "[...document.querySelectorAll('button')].some(b => b.textContent === 'Mostrar en la carpeta')",
+    'export terminado', 240_000);
+  const msExport = Date.now() - tExport;
+  const duracionVideo = await ev<number>(client, `
+    (() => {
+      const t = document.querySelector('.reloj')?.textContent ?? '';
+      const m = /\\/\\s*([\\d.]+)s/.exec(t);
+      return m ? Number(m[1]) : 0;
+    })()
+  `);
+
+  console.log('');
+  console.log(`  arranque     ${arranque} ms hasta el primer frame`);
+  console.log(`  quieto       ${quieto.fps.toFixed(1)} fps · ${quieto.atascos} atascos (${quieto.bloqueo} ms)`);
+  console.log(`  reproducci.  ${reproduciendo.fps.toFixed(1)} fps · ${reproduciendo.atascos} atascos (${reproduciendo.bloqueo} ms)`);
+  console.log(`  arrastre     ${arrastre.fps.toFixed(1)} fps · ${arrastre.atascos} atascos (${arrastre.bloqueo} ms)`);
+  console.log(`  export       ${(msExport / 1000).toFixed(1)} s para ${duracionVideo}s de video`
+    + `  (x${(duracionVideo * 1000 / Math.max(1, msExport)).toFixed(2)} tiempo real)`);
+  console.log('');
+
+  // Umbrales HOLGADOS, a la mitad de lo medido: cazan un desplome sin fallar
+  // porque la maquina este ocupada. Un test que falla segun la carga ensena a
+  // ignorar los fallos, y eso ya paso una vez con el recuento de frames en M0.
+  check('la reproduccion no se desploma', reproduciendo.fps > 8,
+    `${reproduciendo.fps.toFixed(1)} fps`);
+  check('arrastrar la aguja responde', arrastre.fps > 8, `${arrastre.fps.toFixed(1)} fps`);
+  check('el editor abre en menos de 15 s', arranque < 15_000, `${arranque} ms`);
+  check('la exportacion termina', acabo, `${(msExport / 1000).toFixed(1)} s`);
+
+  await client.close();
+  child.kill();
+  await sleep(800);
+
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}\n`);
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
  * Verifica el sistema de cristal.
  *
  * Es lo que no se ve mirando una captura: que la regla de "cristal sobre
@@ -2010,6 +2147,7 @@ async function verificarSilencios(): Promise<void> {
 
 const flujo = process.argv.includes('--silencios') ? verificarSilencios
   : process.argv.includes('--vertical') ? verificarVertical
+  : process.argv.includes('--rendimiento') ? verificarRendimiento
   : process.argv.includes('--cristal') ? verificarCristal
   : process.argv.includes('--inicio') ? verificarInicio
   : process.argv.includes('--regrabar') ? verificarRegrabar
