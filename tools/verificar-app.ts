@@ -49,6 +49,7 @@ interface Cliente {
       width: number; height: number; deviceScaleFactor: number; mobile: boolean;
     }): Promise<void>;
     clearDeviceMetricsOverride(): Promise<void>;
+    setEmulatedMedia(p: { features?: { name: string; value: string }[] }): Promise<void>;
   };
   Page: {
     enable(): Promise<void>;
@@ -115,15 +116,53 @@ const FIRMA = `
  * fallaba con el dibujo funcionando perfectamente. Cuesta una sola llamada a
  * `getImageData`, menos que las 589 de la dispersa.
  */
+/**
+ * Firma DENSA: el lienzo entero resumido en medias por bloques.
+ *
+ * Empezo siendo un hash byte a byte y era DEMASIADO exacta: los degradados se
+ * dibujan con tramado, y Chromium lo reparte distinto en cada repintado. Dos
+ * lienzos identicos a la vista daban hashes distintos por diferencias de ±1 en
+ * un canal —medido: 147.000 bytes cambiados, ninguno visible— y la comprobacion
+ * de los looks fallaba sin que nada estuviera roto.
+ *
+ * Con medias por bloques el ruido de tramado se promedia y desaparece, mientras
+ * que cualquier cambio de verdad —otro fondo, un rotulo, otro encuadre— mueve la
+ * media de su bloque en decenas.
+ */
 const FIRMA_DENSA = `
   (() => {
     const c = document.querySelector('canvas');
     const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
-    let h = 0;
-    for (let i = 0; i < d.length; i += 4) h = (h * 31 + d[i]) % 2147483647;
-    return String(h);
+    const COLS = 16, FILAS = 9;
+    const bw = Math.floor(c.width / COLS), bh = Math.floor(c.height / FILAS);
+    const out = [];
+    for (let f = 0; f < FILAS; f++) {
+      for (let col = 0; col < COLS; col++) {
+        let r = 0, g = 0, b = 0, n = 0;
+        for (let y = f * bh; y < (f + 1) * bh; y += 3) {
+          for (let x = col * bw; x < (col + 1) * bw; x += 3) {
+            const i = (y * c.width + x) * 4;
+            r += d[i]; g += d[i + 1]; b += d[i + 2]; n++;
+          }
+        }
+        out.push(Math.round(r / n), Math.round(g / n), Math.round(b / n));
+      }
+    }
+    return out.join(',');
   })()
 `;
+
+/**
+ * Dos firmas densas se parecen si ningun bloque se mueve mas de `tol`.
+ *
+ * El tramado mueve una media menos de una unidad; un cambio real, decenas.
+ */
+function parecidas(a: string, b: string, tol = 2): boolean {
+  const x = a.split(',').map(Number);
+  const y = b.split(',').map(Number);
+  if (x.length !== y.length || x.length === 0) return false;
+  return x.every((v, i) => Math.abs(v - (y[i] ?? 0)) <= tol);
+}
 
 /**
  * Firma de la REGION de la burbuja de camara, en la esquina de siempre.
@@ -331,14 +370,14 @@ async function main(): Promise<void> {
   await ev(client, `document.querySelectorAll(".muestra")[${otraMuestra}].click()`);
   await sleep(800);
   const conOtroFondo = await ev<string>(client, FIRMA_DENSA);
-  check('cambiar el fondo cambia el lienzo', conOtroFondo !== antesLook);
+  check('cambiar el fondo cambia el lienzo', !parecidas(conOtroFondo, antesLook));
 
   await ev(client,
     "[...document.querySelectorAll('.look button')].find(b => b.textContent === 'verificacion').click()");
   await sleep(900);
   const trasAplicar = await ev<string>(client, FIRMA_DENSA);
-  check('aplicar el look devuelve el aspecto guardado', trasAplicar === antesLook,
-    `${conOtroFondo} -> ${trasAplicar}`);
+  check('aplicar el look devuelve el aspecto guardado', parecidas(trasAplicar, antesLook),
+    'mismo aspecto que antes de guardarlo');
 
   // Los looks se guardan en los ajustes REALES del usuario, asi que hay que
   // quitarlo: verificar no puede dejarle basura en su propia configuracion, del
@@ -414,7 +453,7 @@ async function main(): Promise<void> {
       "[...document.querySelectorAll('button')].find(x => x.textContent === 'Rótulos').click()");
     await sleep(900);
     const sinRotulos = await ev<string>(client, FIRMA_DENSA);
-    check('los rotulos llegan al lienzo', conRotulos !== sinRotulos,
+    check('los rotulos llegan al lienzo', !parecidas(conRotulos, sinRotulos),
       `"${conTexto.label}" en ${Math.round(enRotulo)}ms`);
     await ev(client,
       "[...document.querySelectorAll('button')].find(x => x.textContent === 'Rótulos').click()");
@@ -832,6 +871,151 @@ async function verificarGrabacion(): Promise<void> {
 
   console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}`);
   console.log('  captura: apps/desktop/captura-grabacion.png\n');
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
+ * Verifica el sistema de cristal.
+ *
+ * Es lo que no se ve mirando una captura: que la regla de "cristal sobre
+ * cristal" se cumpla, que las preferencias del sistema apaguen lo que tienen
+ * que apagar, y cuanto cuesta el desenfoque cuando detras hay un lienzo
+ * repintando.
+ */
+async function verificarCristal(): Promise<void> {
+  console.log(`  cristal    ${grabacion}\n`);
+  const child = spawn(ELECTRON, [
+    APP, grabacion,
+    `--remote-debugging-port=${PORT}`,
+    '--use-fake-device-for-media-stream',
+    '--use-fake-ui-for-media-stream',
+  ], { stdio: ['ignore', 'ignore', 'inherit'] });
+  const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+  await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+  await sleep(2500);
+
+  // --- la regla 1: el cristal es del contenedor ---------------------------
+  const cuenta = JSON.parse(await ev<string>(client, `
+    (() => {
+      const cristales = [...document.querySelectorAll('.cristal')];
+      const conDesenfoque = [...document.querySelectorAll('*')].filter(e =>
+        getComputedStyle(e).backdropFilter !== 'none');
+      // Un cristal dentro de otro cristal es lo que hunde la legibilidad.
+      const anidados = cristales.filter(c => c.parentElement?.closest('.cristal'));
+      // Y cualquier cosa con desenfoque que NO sea del sistema tambien lo es.
+      // Desenfocar solo se justifica encima de contenido: la pildora, la hoja
+      // y los avisos. Un panel que desenfoca un fondo plano es coste sin efecto.
+      const colados = conDesenfoque.filter(e => !e.classList.contains('atajos')
+        && !(e.classList.contains('cristal')
+             && (e.classList.contains('flota') || e.classList.contains('modal'))));
+      return JSON.stringify({
+        cristales: cristales.length,
+        anidados: anidados.length,
+        colados: colados.map(e => e.className).slice(0, 4),
+      });
+    })()
+  `)) as { cristales: number; anidados: number; colados: string[] };
+
+  check('hay cristales y todos pasan por el sistema', cuenta.cristales >= 4,
+    `${cuenta.cristales} superficies`);
+  check('ningun cristal dentro de otro cristal', cuenta.anidados === 0,
+    `${cuenta.anidados} anidados`);
+  check('nadie desenfoca por su cuenta', cuenta.colados.length === 0,
+    cuenta.colados.join(' · ') || 'ninguno');
+
+  // --- las preferencias del sistema ---------------------------------------
+  const desenfoqueDe = () => ev<string>(client,
+    "getComputedStyle(document.querySelector('.cristal')).backdropFilter");
+  const fondoDe = () => ev<string>(client,
+    "getComputedStyle(document.querySelector('.cristal')).backgroundColor");
+
+  const desenfoqueFlotante = await ev<string>(client,
+    "getComputedStyle(document.querySelector('.cristal.flota')).backdropFilter");
+  check('lo que flota sobre el video si desenfoca', desenfoqueFlotante !== 'none',
+    desenfoqueFlotante);
+  check('y un panel de al lado no', (await desenfoqueDe()) === 'none',
+    'desenfocar un fondo plano es coste sin efecto');
+  const fondoNormal = await fondoDe();
+
+  await client.Emulation.setEmulatedMedia({
+    features: [{ name: 'prefers-reduced-transparency', value: 'reduce' }],
+  });
+  await sleep(400);
+  check('con transparencia reducida deja de desenfocar',
+    (await ev<string>(client,
+      "getComputedStyle(document.querySelector('.cristal.flota')).backdropFilter")) === 'none');
+  const fondoSolido = await fondoDe();
+  // Se lee el alfa computado, no la clase: lo que importa es que tape.
+  check('y el fondo se vuelve opaco',
+    !fondoSolido.includes('rgba') || fondoSolido.endsWith(', 1)'),
+    `${fondoNormal} -> ${fondoSolido}`);
+
+  await client.Emulation.setEmulatedMedia({
+    features: [{ name: 'prefers-contrast', value: 'more' }],
+  });
+  await sleep(400);
+  check('con mas contraste, el borde se define',
+    (await ev<string>(client,
+      "getComputedStyle(document.querySelector('.cristal')).borderTopColor"))
+      !== (await ev<string>(client, "getComputedStyle(document.documentElement).getPropertyValue('--linea')")).trim());
+
+  await client.Emulation.setEmulatedMedia({ features: [] });
+  await sleep(400);
+
+  // --- el tinte lo pone la demo -------------------------------------------
+  const tinteAntes = await ev<string>(client,
+    "getComputedStyle(document.documentElement).getPropertyValue('--tinte')");
+  // Una muestra distinta de la puesta: pulsar la que ya esta seleccionada no
+  // cambiaria nada y la comprobacion fallaria sin que nada este roto.
+  await ev(client, `
+    [...document.querySelectorAll('.muestra')].find(m => !m.classList.contains('on'))?.click()
+  `);
+  await sleep(700);
+  const tinteDespues = await ev<string>(client,
+    "getComputedStyle(document.documentElement).getPropertyValue('--tinte')");
+  check('el tinte cambia al cambiar el fondo de la demo',
+    tinteAntes !== tinteDespues && tinteDespues.includes('rgba'),
+    tinteDespues.trim().slice(0, 46));
+
+  // --- lo que cuesta el desenfoque ----------------------------------------
+  // Detras de los paneles hay un lienzo repintando: es el caso que puede doler,
+  // y se mide en vez de suponerse.
+  const fps = async () => {
+    await ev(client, `
+      [...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Reproducir')?.click()
+    `);
+    const medido = await ev<number>(client, `
+      new Promise((r) => {
+        let n = 0;
+        const t0 = performance.now();
+        const tick = () => { n++; if (performance.now() - t0 < 3000) requestAnimationFrame(tick); else r(n / 3); };
+        requestAnimationFrame(tick);
+      })
+    `);
+    await ev(client, `
+      [...document.querySelectorAll('button')].find(b => b.getAttribute('aria-label') === 'Pausar')?.click()
+    `);
+    return medido;
+  };
+
+  const conCristal = await fps();
+  await ev(client, "document.documentElement.dataset.cristal = 'no'");
+  await sleep(500);
+  const sinCristal = await fps();
+  await ev(client, "delete document.documentElement.dataset.cristal");
+
+  const caida = ((sinCristal - conCristal) / Math.max(1, sinCristal)) * 100;
+  console.log(`  fps        con cristal ${conCristal.toFixed(1)} · sin cristal ${sinCristal.toFixed(1)}`);
+  check('el desenfoque no se come la reproduccion', caida < 15,
+    `${caida.toFixed(1)} % de caida`);
+
+  await capturar(client, 'apps/desktop/captura-cristal.png');
+  await client.close();
+  child.kill();
+  await sleep(800);
+
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}`);
+  console.log('  captura: apps/desktop/captura-cristal.png\n');
   process.exit(fallos === 0 ? 0 : 1);
 }
 
@@ -1826,6 +2010,7 @@ async function verificarSilencios(): Promise<void> {
 
 const flujo = process.argv.includes('--silencios') ? verificarSilencios
   : process.argv.includes('--vertical') ? verificarVertical
+  : process.argv.includes('--cristal') ? verificarCristal
   : process.argv.includes('--inicio') ? verificarInicio
   : process.argv.includes('--regrabar') ? verificarRegrabar
   : process.argv.includes('--doblar') ? verificarDoblaje

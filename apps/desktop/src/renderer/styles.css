@@ -189,6 +189,21 @@
   inherits: false;
 }
 
+/*
+ * EL DESENFOQUE SOLO SE PONE DONDE SE LO GANA: encima de algo.
+ *
+ * Los paneles y las tarjetas van AL LADO del lienzo, no sobre el, asi que
+ * detras de ellos solo hay un fondo plano: desenfocarlo no cambia un pixel de
+ * lo que se ve y cuesta recomponer toda esa superficie en cada repintado.
+ *
+ * Medido con `verificar-app --cristal`: con desenfoque en los paneles, la
+ * reproduccion del editor caia de 27 a 13 fps. Quitandolo de este nivel, el
+ * cristal sigue siendo cristal —vidrio translucido, brillo, tinte, filo y
+ * sombra— y la caida desaparece.
+ *
+ * Lo que SI flota sobre contenido —la pildora del transporte, la hoja de
+ * atajos, los avisos— si desenfoca: ahi detras hay video.
+ */
 .cristal {
   --luz: 0;
   position: relative;
@@ -198,7 +213,6 @@
                     rgba(255, 255, 255, calc(.09 * var(--luz))), transparent 62%),
     var(--brillo),
     var(--tinte);
-  backdrop-filter: var(--desenfoque-1);
   border: 1px solid var(--linea);
   border-radius: var(--radio-l);
   box-shadow: var(--filo-alto), var(--filo-bajo), var(--sombra-2);
@@ -903,9 +917,18 @@ select:focus {
  * legibilidad. Se quita el desenfoque, que sin translucidez no pinta nada.
  */
 @media (prefers-reduced-transparency: reduce) {
-  /* Sin translucidez, el brillo y el reflejo no pintan nada: se apagan enteros
-     en vez de quedarse como dos degradados sobre un fondo opaco. */
-  .cristal {
+  /*
+   * Sin translucidez, el brillo y el reflejo no pintan nada: se apagan enteros
+   * en vez de quedarse como dos degradados sobre un fondo opaco.
+   *
+   * Los tres selectores van escritos aunque parezcan redundantes: `.cristal`
+   * solo no gana a `.cristal.flota`, que tiene una clase mas, y el panel
+   * flotante seguia desenfocando con la preferencia puesta. Lo caza
+   * `verificar-app --cristal`.
+   */
+  .cristal,
+  .cristal.flota,
+  .cristal.modal {
     background-color: var(--capa);
     background-image: none;
     backdrop-filter: none;

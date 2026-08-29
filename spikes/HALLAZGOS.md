@@ -253,3 +253,36 @@ falla es el banco de pruebas.
 
 Conviene repetirlo en un portátil modesto antes de dar el dato por bueno en
 todas partes: aquí sobran núcleos.
+
+## M12 · El desenfoque solo se gana su sitio encima de algo
+
+El material de cristal se aplicó a todas las superficies —paneles laterales,
+línea de tiempo, tarjetas, píldora del transporte, hoja de atajos— y la
+reproducción del editor se hundió.
+
+`node tools/verificar-app.ts --cristal`, midiendo fps de `requestAnimationFrame`
+durante 3 s de reproducción, con el interruptor `data-cristal` para comparar en
+la misma sesión:
+
+| | fps | caída |
+|---|---|---|
+| Desenfoque en todo | 12.7 | **53.7 %** |
+| Solo en lo que flota sobre el vídeo | 26.7 | 5.9 % |
+
+**Y no se pierde nada visualmente.** Los paneles van *al lado* del lienzo, no
+encima: detrás de ellos solo hay un fondo plano, así que desenfocarlo no cambia
+un píxel y obliga a recomponer toda esa superficie en cada repintado. El cristal
+sigue siendo cristal —vidrio translúcido, brillo, tinte, filo y sombra—; lo único
+que se va es un filtro que no tenía nada que filtrar.
+
+El desenfoque se queda donde sí hay algo detrás: la píldora del transporte, la
+hoja de atajos y los avisos, que flotan sobre el vídeo.
+
+**La lección:** un efecto que no se puede ver es coste puro, y en un editor de
+vídeo el coste se paga justo cuando el usuario está mirando. La regla que queda
+escrita en `styles.css` es «el desenfoque solo se pone donde se lo gana: encima
+de algo».
+
+Los números absolutos son de este contenedor, sin GPU: en una máquina con
+aceleración la composición del filtro es mucho más barata. Lo que no cambia con
+el hardware es que desenfocar un color plano no dibuja nada.
