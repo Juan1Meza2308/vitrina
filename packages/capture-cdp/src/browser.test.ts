@@ -59,6 +59,30 @@ describe('candidates · Windows', () => {
   });
 });
 
+describe('candidates en Linux', () => {
+  it('busca navegadores de Linux, no rutas de Windows', () => {
+    // Esto empezo siendo un fallo de verdad: en Linux la funcion devolvia la
+    // lista de Windows, asi que respondia "no hay navegador" con Chrome
+    // instalado al lado. Se vio cuando la integracion continua —que corre en
+    // Linux— no pudo ejecutar los tests que graban.
+    const l = candidates('linux');
+    expect(l.some((p) => p.includes('google-chrome'))).toBe(true);
+    expect(l.some((p) => p.includes('chromium'))).toBe(true);
+    expect(l.every((p) => !p.includes('C:/'))).toBe(true);
+  });
+
+  it('VITRINA_BROWSER manda sobre todo lo demas', () => {
+    const l = candidates('linux', '/home/x', { VITRINA_BROWSER: '/opt/mi/chrome' });
+    expect(l[0]).toBe('/opt/mi/chrome');
+    expect(l.length).toBeGreaterThan(1);
+  });
+
+  it('y sin la variable, la lista no cambia', () => {
+    expect(candidates('linux', '/home/x', {})).toEqual(candidates('linux', '/home/x', {}));
+    expect(candidates('linux', '/home/x', {})[0]).toBe('/usr/bin/google-chrome');
+  });
+});
+
 describe('comoInstalarNavegador', () => {
   it('en macOS nombra Chrome y descarta Safari explicitamente', () => {
     const m = comoInstalarNavegador('darwin');
@@ -68,5 +92,8 @@ describe('comoInstalarNavegador', () => {
 
   it('en Windows nombra Edge', () => {
     expect(comoInstalarNavegador('win32')).toContain('Edge');
+    // En Linux se dice como salir del paso, que es lo unico util cuando el
+    // navegador esta instalado en un sitio que la lista no cubre.
+    expect(comoInstalarNavegador('linux')).toContain('VITRINA_BROWSER');
   });
 });

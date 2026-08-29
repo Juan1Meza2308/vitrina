@@ -28,16 +28,48 @@ export type Plataforma = NodeJS.Platform;
  * para poder comprobar desde una maquina la lista de la otra: el port a macOS
  * se escribio en Windows y sin esto no habria forma de testearlo.
  */
+/**
+ * Linux.
+ *
+ * Vitrina no publica instalador de Linux, pero el proyecto SE DESARROLLA en
+ * Linux —y su integracion continua tambien—, asi que la lista tiene que existir:
+ * sin ella, `findBrowser()` buscaba rutas de Windows en una maquina Linux y
+ * respondia "no hay navegador" con uno instalado al lado. Los tests de
+ * integracion, que graban de verdad, no podian correr en CI por eso.
+ */
+function candidatosLinux(): string[] {
+  return [
+    '/usr/bin/google-chrome',
+    '/usr/bin/google-chrome-stable',
+    '/usr/bin/microsoft-edge',
+    '/usr/bin/chromium',
+    '/usr/bin/chromium-browser',
+    '/usr/bin/brave-browser',
+    // Instalado como snap, que es como llega Chromium en Ubuntu moderno.
+    '/snap/bin/chromium',
+    '/opt/google/chrome/chrome',
+  ];
+}
+
 export function candidates(
   plataforma: Plataforma = process.platform,
   home = os.homedir(),
+  entorno: NodeJS.ProcessEnv = process.env,
 ): string[] {
+  // Una eleccion explicita manda sobre todo lo demas, igual que `FFMPEG_PATH`
+  // con el codificador: un navegador instalado en un sitio raro —o el que se
+  // quiere usar de entre varios— no deberia obligar a tocar el codigo.
+  const elegido = entorno['VITRINA_BROWSER'];
+
   // El home tambien es parametro. `os.homedir()` devuelve el del anfitrion, y
   // al pedir la lista de macOS desde Windows colaba una ruta con letra de
   // unidad entre rutas POSIX. En un Mac el resultado era correcto igualmente,
   // pero la funcion mentia sobre lo que devuelve, y eso invalida la unica
   // forma de comprobar el port sin un Mac delante.
-  return plataforma === 'darwin' ? candidatosMac(home) : candidatosWindows();
+  const propias = plataforma === 'darwin' ? candidatosMac(home)
+    : plataforma === 'win32' ? candidatosWindows()
+    : candidatosLinux();
+  return elegido ? [elegido, ...propias] : propias;
 }
 
 function candidatosMac(home: string): string[] {
@@ -141,7 +173,10 @@ export function comoInstalarNavegador(plataforma: Plataforma = process.platform)
   return plataforma === 'darwin'
     ? 'Vitrina necesita un navegador Chromium. Instala Google Chrome desde google.com/chrome '
       + '(Safari no sirve: no expone screencast por DevTools Protocol).'
-    : 'Vitrina necesita Edge o Chrome, y no se encontro ninguno ejecutable.';
+    : plataforma === 'win32'
+      ? 'Vitrina necesita Edge o Chrome, y no se encontro ninguno ejecutable.'
+      : 'Vitrina necesita Chrome o Chromium, y no se encontro ninguno ejecutable. '
+        + 'Si lo tienes en una ruta poco habitual, apunta VITRINA_BROWSER a el.';
 }
 
 /**

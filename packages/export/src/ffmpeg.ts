@@ -61,7 +61,10 @@ function rutasFfmpeg(plataforma: NodeJS.Platform): string[] {
       '/usr/bin/ffmpeg',
     ];
   }
-  return ['C:/ffmpeg/bin/ffmpeg.exe', 'C:/Program Files/ffmpeg/bin/ffmpeg.exe'];
+  if (plataforma === 'win32') {
+    return ['C:/ffmpeg/bin/ffmpeg.exe', 'C:/Program Files/ffmpeg/bin/ffmpeg.exe'];
+  }
+  return ['/usr/bin/ffmpeg', '/usr/local/bin/ffmpeg'];
 }
 
 /**

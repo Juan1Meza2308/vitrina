@@ -21,11 +21,14 @@ jobs:
           node-version: 22
           cache: npm
 
-      # ffprobe, que ffmpeg-static no trae: lo usan los tests del exportador
-      # para MEDIR el vídeo que acaban de producir (dimensiones, duración,
-      # pistas). La app no lo necesita para nada.
-      - name: Instalar ffprobe
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+      # Dos cosas que los tests necesitan y la app no:
+      #
+      #  - ffprobe, que ffmpeg-static no trae: los tests del exportador MIDEN el
+      #    vídeo que acaban de producir (dimensiones, duración, pistas).
+      #  - xvfb, una pantalla virtual: los tests de integración graban de verdad,
+      #    con un navegador de verdad, y el navegador abre una ventana.
+      - name: Herramientas de prueba
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg xvfb
 
       - run: npm ci
 
@@ -33,5 +36,6 @@ jobs:
 
       # Entre ellos, el que comprueba que el ffmpeg empaquetado trae prores_ks
       # y libopus: si un día deja de traerlos, esto se pone rojo antes de que
-      # nadie descargue un instalador que no sabe exportar.
-      - run: npm test
+      # nadie descargue un instalador que no sabe exportar. Y los de integración,
+      # que lanzan Chrome y graban unos segundos: de ahí el `xvfb-run`.
+      - run: xvfb-run -a npm test
