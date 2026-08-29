@@ -458,6 +458,13 @@ por error es el accidente típico y era irreversible.
 Las flechas mueven la aguja un frame, con `Shift` un segundo, e `Inicio`/`Fin`
 van a los extremos. Arrastrando no se llega al frame exacto.
 
+El aspecto sigue los principios de interfaz de Apple —material translúcido con
+desenfoque y filo de luz en vez de cajas opacas, respuesta **al pulsar** y no al
+soltar, tipografía con tracking e interlineado propios de cada tamaño, y las tres
+señales de accesibilidad: `prefers-reduced-motion`, `prefers-reduced-transparency`
+y `prefers-contrast`—. Toca la ventana y nada más: el compositor pinta sus
+propios colores, así que el vídeo exportado no se entera.
+
 **`?` abre la hoja de atajos.** Estaban todos y no se veían en ninguna parte:
 quien no leyera esto no sabía que existían.
 
