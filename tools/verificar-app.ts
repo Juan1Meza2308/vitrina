@@ -2085,7 +2085,9 @@ async function verificarVertical(): Promise<void> {
 async function medirVideo(file: string): Promise<string> {
   const ffmpeg = await findFfmpeg();
   if (!ffmpeg) return 'sin ffprobe';
-  const ffprobe = path.join(path.dirname(ffmpeg), path.basename(ffmpeg).replace('ffmpeg', 'ffprobe'));
+  // Al lado de ffmpeg, y si no, el del PATH: el que la app empaqueta viene solo.
+  const alLado = path.join(path.dirname(ffmpeg), path.basename(ffmpeg).replace('ffmpeg', 'ffprobe'));
+  const ffprobe = fs.existsSync(alLado) ? alLado : 'ffprobe';
   const { stdout } = await ejecutar(ffprobe, [
     '-v', 'error', '-select_streams', 'v:0',
     '-show_entries', 'stream=width,height', '-of', 'csv=p=0:s=,', file,

@@ -15,13 +15,15 @@ import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import fsp from 'node:fs/promises';
+import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { FrameIndex } from '@vitrina/core';
 import type { Manifest, Project, QualityBudget, ZoomSegment } from '@vitrina/core';
 import { clampZooms, exportRecording, ExportAbortedError } from './exporter.ts';
 import { EXPORT_PRESETS, extensionFor, resolvePreset } from './presets.ts';
-import { findFfmpeg, comoInstalarFfmpeg, cadenaAtempo } from './ffmpeg.ts';
+import { spawnSync } from 'node:child_process';
+import { findFfmpeg, comoInstalarFfmpeg, origenDeFfmpeg, cadenaAtempo } from './ffmpeg.ts';
 
 const run = promisify(execFile);
 const T0 = 1_700_000_000_000;
@@ -174,12 +176,19 @@ async function makeCamara(dir: string, segundos: number): Promise<void> {
   ]);
 }
 
-/** ffprobe vive junto a ffmpeg. Solo se sustituye el nombre del binario: un
- *  replace sobre la ruta entera convertiria C:/ffmpeg/bin/ffmpeg.exe en
- *  C:/ffprobe/bin/ffmpeg.exe, que no existe. */
+/**
+ * ffprobe suele vivir junto a ffmpeg. Solo se sustituye el nombre del binario:
+ * un replace sobre la ruta entera convertiria C:/ffmpeg/bin/ffmpeg.exe en
+ * C:/ffprobe/bin/ffmpeg.exe, que no existe.
+ *
+ * Y si al lado no hay ninguno, se deja que lo resuelva el PATH: el ffmpeg que
+ * la app empaqueta viene SOLO, sin ffprobe, porque la app no lo necesita para
+ * nada —solo lo usan estos tests y la verificacion, para medir lo que ha salido—.
+ */
 function ffprobePath(): string {
   const ff = findFfmpeg();
-  return path.join(path.dirname(ff), path.basename(ff).replace('ffmpeg', 'ffprobe'));
+  const alLado = path.join(path.dirname(ff), path.basename(ff).replace('ffmpeg', 'ffprobe'));
+  return fs.existsSync(alLado) ? alLado : 'ffprobe';
 }
 
 /**
@@ -730,20 +739,76 @@ describe('exportRecording', () => {
 });
 
 describe('findFfmpeg · rutas por plataforma', () => {
-  it('en macOS busca primero Homebrew de Apple Silicon', () => {
-    // No se puede comprobar que exista —esto es Windows— pero si que el orden
-    // de busqueda sea el correcto cuando ninguna esta.
-    const brew = '/opt/homebrew/bin/ffmpeg';
-    expect(brew).toMatch(/^\/opt\/homebrew\//);
+  it('sin ninguna ruta conocida cae al PATH en vez de fallar', () => {
+    // `existe` se pasa a proposito. Antes este test llamaba a `findFfmpeg` a
+    // secas y dependia de la maquina: en cualquier Linux con `/usr/bin/ffmpeg`
+    // —todos los runners de CI, y el contenedor donde se escribio esto— esa es
+    // una de las rutas que se prueban para macOS, asi que el test fallaba sin
+    // que nada estuviera roto. Un test que falla segun donde corre no dice nada.
+    expect(findFfmpeg('darwin', () => false)).toBe('ffmpeg');
   });
 
-  it('sin ninguna ruta conocida cae al PATH en vez de fallar', () => {
-    expect(findFfmpeg('darwin')).toBe('ffmpeg');
+  it('en macOS busca Homebrew antes que /usr/bin', () => {
+    const vistas: string[] = [];
+    findFfmpeg('darwin', (p) => { vistas.push(p); return false; });
+    const soloSistema = vistas.filter((p) => p.startsWith('/opt') || p.startsWith('/usr'));
+    expect(soloSistema[0]).toBe('/opt/homebrew/bin/ffmpeg');
+    expect(soloSistema).toContain('/usr/bin/ffmpeg');
+  });
+
+  it('el que viaja con la app gana al del sistema', () => {
+    // Si alguien tiene una version antigua instalada, la que manda es la que
+    // viene probada con la app.
+    const vistas: string[] = [];
+    findFfmpeg('win32', (p) => { vistas.push(p); return false; });
+    const empaquetado = vistas.findIndex((p) => p.includes('ffmpeg-static'));
+    const sistema = vistas.findIndex((p) => p.startsWith('C:/ffmpeg'));
+    expect(empaquetado).toBeGreaterThanOrEqual(0);
+    expect(empaquetado).toBeLessThan(sistema);
+  });
+
+  it('en Windows busca un .exe y en lo demas no', () => {
+    const dePlataforma = (plat: NodeJS.Platform) => {
+      const vistas: string[] = [];
+      findFfmpeg(plat, (p) => { vistas.push(p); return false; });
+      return vistas.filter((p) => p.includes('ffmpeg-static'));
+    };
+    expect(dePlataforma('win32').every((p) => p.endsWith('.exe'))).toBe(true);
+    expect(dePlataforma('darwin').every((p) => !p.endsWith('.exe'))).toBe(true);
+  });
+
+  it('dice de donde ha salido, para poder contarlo en la bienvenida', () => {
+    expect(origenDeFfmpeg('ffmpeg')).toBe('path');
+    expect(origenDeFfmpeg('/usr/bin/ffmpeg', 'darwin')).toBe('sistema');
+    expect(origenDeFfmpeg(findFfmpeg())).toBe('incluido');
   });
 
   it('la ayuda de instalacion es la del sistema que corresponde', () => {
     expect(comoInstalarFfmpeg('darwin')).toContain('brew install ffmpeg');
     expect(comoInstalarFfmpeg('win32')).toContain('ffmpeg.org');
+  });
+});
+
+/**
+ * La razon por la que durante meses NO se empaqueto ffmpeg era buena: un build
+ * sin `prores_ks` o sin `libopus` rompe los presets `alpha` y `webm`, y ese
+ * fallo solo aparece en la maquina de quien lo descarga. Ahora se empaqueta, asi
+ * que la objecion se convierte en un test: si el binario que viaja con la app
+ * deja de traer lo que los presets piden, esto se pone rojo antes de publicar.
+ */
+describe('el ffmpeg que viaja con la app', () => {
+  const codecs = (() => {
+    const r = spawnSync(findFfmpeg(), ['-hide_banner', '-encoders'], { encoding: 'utf8' });
+    return r.stdout ?? '';
+  })();
+
+  it.each([
+    ['libx264', 'los presets de mp4'],
+    ['prores_ks', 'el preset alpha (.mov con transparencia)'],
+    ['libopus', 'el audio de webm'],
+    ['gif', 'el preset gif'],
+  ])('trae %s, que necesita %s', (codec) => {
+    expect(codecs).toContain(codec);
   });
 });
 

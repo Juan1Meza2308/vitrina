@@ -8,6 +8,7 @@
  */
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
+import path from 'node:path';
 import type { ExportSettings } from '@vitrina/core';
 import { supportsAudio } from '@vitrina/core';
 
@@ -15,13 +16,43 @@ import { supportsAudio } from '@vitrina/core';
 const STDERR_LINES = 12;
 
 /**
- * Rutas donde suele estar ffmpeg, por sistema.
+ * Rutas del ffmpeg que viaja CON la app.
  *
- * Se depende del ffmpeg del sistema en vez de empaquetar uno a proposito: los
- * presets `alpha` y `webm` necesitan `prores_ks` y `libopus`, y un build
- * empaquetado puede no traerlos. Un fallo de codec que solo aparece en la
- * maquina de otro es mucho peor que un paso de instalacion.
+ * Durante mucho tiempo aqui no habia nada: se dependia del ffmpeg del sistema
+ * porque los presets `alpha` y `webm` necesitan `prores_ks` y `libopus`, y un
+ * build empaquetado puede no traerlos —un fallo de codec que solo aparece en la
+ * maquina de otro es peor que un paso de instalacion—. La objecion era buena, y
+ * por eso no se cambio a ojo: se comprobo. El build de `ffmpeg-static` (7.0.2,
+ * de johnvansickle.com) trae `prores_ks`, `libopus`, `libx264` y `gif`, y hay un
+ * test que lo verifica y para la CI si algun dia deja de traerlos.
+ *
+ * Lo que se gana es que la app FUNCIONE al abrirla. Pedirle a quien acaba de
+ * descargar un instalador que ademas busque ffmpeg y lo deje en `C:/ffmpeg/bin`
+ * es perder a casi todo el mundo en el unico paso que no tiene nada que ver con
+ * grabar una demo.
+ *
+ * Dos sitios, por este orden:
+ *  1. Los recursos de la app instalada (`extraResources` de electron-builder).
+ *  2. El `node_modules` de quien la ejecuta desde el codigo. Se sube carpeta a
+ *     carpeta porque en un workspace de npm el binario esta izado a la raiz, no
+ *     al lado del paquete que lo usa.
  */
+function rutasEmpaquetadas(plataforma: NodeJS.Platform): string[] {
+  const bin = plataforma === 'win32' ? 'ffmpeg.exe' : 'ffmpeg';
+  const rutas: string[] = [];
+  // `resourcesPath` solo existe dentro de Electron; en Node es undefined.
+  const recursos = (process as { resourcesPath?: string }).resourcesPath;
+  if (recursos) rutas.push(path.join(recursos, bin));
+
+  let dir = import.meta.dirname;
+  for (let i = 0; i < 6 && dir !== path.dirname(dir); i++) {
+    rutas.push(path.join(dir, 'node_modules', 'ffmpeg-static', bin));
+    dir = path.dirname(dir);
+  }
+  return rutas;
+}
+
+/** Rutas donde suele estar el ffmpeg del sistema, por si no viaja ninguno. */
 function rutasFfmpeg(plataforma: NodeJS.Platform): string[] {
   if (plataforma === 'darwin') {
     return [
@@ -37,26 +68,52 @@ function rutasFfmpeg(plataforma: NodeJS.Platform): string[] {
  * Nunca devuelve null: si no encuentra una ruta conocida cae a `ffmpeg` y deja
  * que lo resuelva el PATH. Si tampoco esta ahi, el fallo aparece al arrancar el
  * proceso, con un mensaje que dice como instalarlo.
+ *
+ * `existe` es un parametro por la misma razon que `home` lo es en
+ * `candidates()` del navegador: sin el, el test "sin ninguna ruta conocida cae
+ * al PATH" depende de la maquina que lo corre. En un runner de Ubuntu —o en
+ * este contenedor— hay un `/usr/bin/ffmpeg` de verdad, que es una de las rutas
+ * de macOS, asi que el test fallaba sin que nada estuviera mal.
  */
-export function findFfmpeg(plataforma: NodeJS.Platform = process.platform): string {
+export function findFfmpeg(
+  plataforma: NodeJS.Platform = process.platform,
+  existe: (p: string) => boolean = fs.existsSync,
+): string {
   const candidates = [
+    // Primero la eleccion explicita: la variable de entorno la pone tambien la
+    // app cuando el usuario senala el ejecutable a mano desde la bienvenida.
     process.env['FFMPEG_PATH'],
+    ...rutasEmpaquetadas(plataforma),
     ...rutasFfmpeg(plataforma),
   ].filter((p): p is string => Boolean(p));
 
   for (const p of candidates) {
-    if (fs.existsSync(p)) return p;
+    if (existe(p)) return p;
   }
   // Ultimo recurso: que lo resuelva el PATH.
   return 'ffmpeg';
 }
 
+/**
+ * De donde ha salido el ffmpeg que se va a usar, para poder decirlo en la
+ * pantalla de bienvenida: no es lo mismo "viene con la app" que "lo tienes tu
+ * instalado", y quien lo lee decide distinto segun cual sea.
+ */
+export function origenDeFfmpeg(
+  ruta: string,
+  plataforma: NodeJS.Platform = process.platform,
+): 'incluido' | 'sistema' | 'path' {
+  if (ruta === 'ffmpeg') return 'path';
+  return rutasEmpaquetadas(plataforma).includes(ruta) ? 'incluido' : 'sistema';
+}
+
 /** Como instalarlo, dicho en concreto para el sistema que corresponde. */
 export function comoInstalarFfmpeg(plataforma: NodeJS.Platform = process.platform): string {
   return plataforma === 'darwin'
-    ? 'Instala ffmpeg con `brew install ffmpeg`.'
-    : 'Descarga ffmpeg de ffmpeg.org y deja el ejecutable en C:/ffmpeg/bin, '
-      + 'o apunta FFMPEG_PATH a el.';
+    ? 'Vitrina trae su propio ffmpeg; si no aparece, instalalo con '
+      + '`brew install ffmpeg` o senala el ejecutable a mano.'
+    : 'Vitrina trae su propio ffmpeg; si no aparece, descargalo de ffmpeg.org y '
+      + 'dejalo en C:/ffmpeg/bin, o senala el ejecutable a mano.';
 }
 
 /** Pista de audio ya alineada, lista para pasar a ffmpeg. */
