@@ -51,6 +51,16 @@ jobs:
       # Sin `fail-fast`: si el .dmg falla, el .exe se publica igual. Media
       # Release es mejor que ninguna, y la que falta se ve en el momento.
       fail-fast: false
+      # DE UNO EN UNO, y esto no es una preferencia: la primera publicacion de
+      # verdad fallo justo por no tenerlo. Los dos trabajos arrancaron a la vez
+      # y los dos intentaron CREAR la Release; Windows llego primero y macOS se
+      # estrello contra un 422 «Published releases must have a valid tag»,
+      # porque en ese instante el tag todavia no existia. En serie, el primero
+      # crea la Release y el tag, y el segundo solo sube sus ficheros.
+      #
+      # Cuesta un par de minutos mas por publicacion. Publicar es algo que pasa
+      # una vez por version, no una vez por commit.
+      max-parallel: 1
       matrix:
         include:
           - so: windows-latest
