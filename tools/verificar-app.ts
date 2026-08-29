@@ -115,6 +115,28 @@ const FIRMA_DENSA = `
   })()
 `;
 
+/**
+ * Firma de la REGION de la burbuja de camara, en la esquina de siempre.
+ *
+ * Mirar el lienzo entero no serviria: la burbuja ocupa un 5 % del area y la
+ * pagina grabada cambia sola, asi que una firma global cambiaria igual sin
+ * burbuja. Esto mide solo el cuadrado donde tiene que estar.
+ */
+const FIRMA_BURBUJA = `
+  (() => {
+    const c = document.querySelector('canvas');
+    const g = c.getContext('2d');
+    const d = Math.round(c.height * 0.22);
+    const m = Math.round(c.width * 0.025);
+    const px = g.getImageData(c.width - m - d, c.height - m - d, d, d).data;
+    let h = 0;
+    for (let i = 0; i < px.length; i += 4) {
+      h = (h * 31 + px[i] * 3 + px[i + 1] * 5 + px[i + 2]) % 2147483647;
+    }
+    return String(h);
+  })()
+`;
+
 /** Evalua en la pagina y devuelve el valor ya serializado. */
 async function ev<T>(c: Cliente, expr: string): Promise<T> {
   const { result } = await c.Runtime.evaluate({
@@ -779,6 +801,131 @@ async function verificarGrabacion(): Promise<void> {
 }
 
 /**
+ * Verifica la camara web de punta a punta.
+ *
+ * La maquina de desarrollo no tiene camara, asi que se usa el dispositivo falso
+ * de Chromium —el mismo truco que ya hace posible comprobar el microfono—: da
+ * un patron sintetico en movimiento y concede el permiso solo. Lo que queda sin
+ * probar es el encuadre de una cara de verdad; todo lo demas —captura, fichero,
+ * desfase, burbuja en el lienzo— se comprueba aqui.
+ */
+async function verificarCamara(): Promise<void> {
+  const fixture = pathToFileURL(path.resolve('spikes/stress.html')).href;
+  const salidas = path.join(os.homedir(), 'Videos', 'Vitrina');
+  const antes = new Set(await listar(salidas));
+
+  console.log(`  grabando con camara   ${fixture}\n`);
+  const child = spawn(ELECTRON, [
+    APP,
+    `--remote-debugging-port=${PORT}`,
+    '--use-fake-device-for-media-stream',
+    '--use-fake-ui-for-media-stream',
+  ], { stdio: ['ignore', 'ignore', 'inherit'] });
+  const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+  await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+  await sleep(2000);
+
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Con camara')?.click()
+  `);
+  // Abrir la camara y pintar el primer frame tarda; sin esta espera se graba
+  // antes de que el dispositivo este listo y la pista sale vacia.
+  check('la previsualizacion de camara aparece',
+    await esperarA(client, '!!document.querySelector(".camara-previa")', 'video de previa'));
+  await sleep(1500);
+
+  await ev(client, `
+    (() => {
+      const i = document.querySelector('#url');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+        .call(i, ${JSON.stringify(fixture)});
+      i.dispatchEvent(new Event('input', { bubbles: true }));
+      [...document.querySelectorAll('button')].find(b => b.textContent === 'Grabar').click();
+    })()
+  `);
+
+  check('la app entro en modo grabacion',
+    await esperarA(client, '!!document.querySelector(".pulso")', 'estado grabando'));
+
+  await interactuarConLoGrabado();
+  await sleep(1500);
+
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Parar y editar')?.click()
+  `);
+  check('parar lleva al editor',
+    await esperarA(client, '!!document.querySelector("canvas")', 'editor abierto'));
+
+  const nuevas = (await listar(salidas)).filter((n) => !antes.has(n));
+  const carpeta = nuevas[0] ? path.join(salidas, nuevas[0]) : null;
+  if (!carpeta) {
+    check('se creo la carpeta de grabacion', false);
+  } else {
+    const manifest = JSON.parse(
+      await fsp.readFile(path.join(carpeta, 'manifest.json'), 'utf8'),
+    ) as { startedAt: number; camara?: { file: string; startedAt: number; w: number; h: number } | null };
+
+    check('el manifest registra la pista de camara', !!manifest.camara,
+      manifest.camara ? `${manifest.camara.file} ${manifest.camara.w}x${manifest.camara.h}` : 'sin camara');
+
+    const webm = await fsp.stat(path.join(carpeta, 'camara.webm')).catch(() => null);
+    check('camara.webm tiene contenido', (webm?.size ?? 0) > 1000, `${webm?.size ?? 0} bytes`);
+
+    if (manifest.camara) {
+      const adelanto = manifest.startedAt - manifest.camara.startedAt;
+      check('la camara arranco antes que el video', adelanto > 0, `${adelanto} ms de adelanto`);
+    }
+
+    // Que el manifest la anote no significa que se pueda dibujar: el elemento
+    // de video pasa por el esquema propio y por la CSP, y los dos han dejado
+    // ya una pista muda en este proyecto sin avisar.
+    check('el editor puede decodificar la camara',
+      await esperarA(client,
+        '(() => { const v = document.querySelector("video"); return !!v && v.readyState >= 2 && !v.error; })()',
+        'video decodificable', 15_000));
+
+    check('el editor ofrece el panel de camara',
+      await ev<boolean>(client, 'document.body.textContent.includes("Camara web")'));
+
+    // Y la prueba que importa: la burbuja esta EN EL LIENZO. Se compara la
+    // region con y sin ella; el lienzo entero cambiaria igual, porque la pagina
+    // grabada se mueve sola.
+    await esperarA(client, `(${FIRMA}) !== '0'`, 'primer frame pintado', 15_000);
+    await sleep(500);
+    const conBurbuja = await ev<string>(client, FIRMA_BURBUJA);
+    await ev(client, `
+      [...document.querySelectorAll('button')].find(b => b.textContent === 'Quitar la burbuja')?.click()
+    `);
+    await sleep(600);
+    const sinBurbuja = await ev<string>(client, FIRMA_BURBUJA);
+    check('la burbuja se dibuja en el lienzo', conBurbuja !== sinBurbuja,
+      `${conBurbuja} -> ${sinBurbuja}`);
+
+    await ev(client, `
+      [...document.querySelectorAll('button')].find(b => b.textContent === 'Poner la burbuja')?.click()
+    `);
+    await sleep(600);
+    check('se puede volver a ponerla',
+      await ev<string>(client, FIRMA_BURBUJA) !== sinBurbuja);
+  }
+
+  await capturar(client, 'apps/desktop/captura-camara.png');
+  await client.close();
+  child.kill();
+  await sleep(800);
+
+  for (const nombre of await listar(salidas)) {
+    if (antes.has(nombre)) continue;
+    await fsp.rm(path.join(salidas, nombre), { recursive: true, force: true }).catch(() => {});
+    console.log(`  limpiado   ${nombre}`);
+  }
+
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}`);
+  console.log('  captura: apps/desktop/captura-camara.png\n');
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
  * Verifica la grabacion vertical de principio a fin.
  *
  * Es el flujo que pidio el encargo y el unico modo que lo cubre entero: elegir
@@ -1209,6 +1356,7 @@ async function verificarSilencios(): Promise<void> {
 
 const flujo = process.argv.includes('--silencios') ? verificarSilencios
   : process.argv.includes('--vertical') ? verificarVertical
+  : process.argv.includes('--camara') ? verificarCamara
   : process.argv.includes('--grabar') ? verificarGrabacion : main;
 flujo().catch((e: unknown) => {
   console.error('FALLO:', e instanceof Error ? e.message : String(e));
