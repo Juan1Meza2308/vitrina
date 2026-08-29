@@ -26,7 +26,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
 import type {
-  AudioTrack, CamTrack, CaptureSize, Frame, InputEvent, Manifest, Tapado,
+  AudioTrack, CamTrack, CaptureSize, Cut, Frame, InputEvent, Manifest, Tapado,
 } from '@vitrina/core/types';
 import {
   defaultProject, hostFromUrl, planSegments, computeQualityBudget,
@@ -127,6 +127,10 @@ export class Recorder {
   private recording = false;
   private audio: AudioTrack | null = null;
   private camara: CamTrack | null = null;
+  /** Tramos con el screencast parado, en offsets desde `startedAt`. */
+  private pausas: Cut[] = [];
+  /** Instante en que empezo la pausa en curso. 0 si no hay ninguna. */
+  private pausadaEn = 0;
 
   constructor(options: RecorderOptions) {
     this.opts = { quality: 92, port: 9222, ...options };
@@ -265,6 +269,50 @@ export class Recorder {
     });
   }
 
+  get pausada(): boolean {
+    return this.pausadaEn !== 0;
+  }
+
+  /**
+   * Pausa la captura de VIDEO. El microfono y la camara siguen grabando.
+   *
+   * No es un descuido: el reloj del audio tiene que seguir coincidiendo con el
+   * de pared, que es de lo que vive `audioTimeFor`. Parar el micro obligaria a
+   * reescribir el mapeo de la narracion entera para ahorrar unos segundos de
+   * ruido de sala que el corte se lleva igualmente.
+   *
+   * El hueco queda en la linea de tiempo y se guarda como un corte, asi que el
+   * video sale sin el y se puede recuperar quitando el corte.
+   */
+  async pausar(): Promise<void> {
+    if (!this.client || !this.recording || this.pausadaEn) return;
+    this.pausadaEn = Date.now();
+    await this.client.Page.stopScreencast().catch(() => {});
+  }
+
+  async reanudar(): Promise<void> {
+    if (!this.client || !this.recording || !this.pausadaEn) return;
+    this.cerrarPausa();
+    await this.client.Page.startScreencast({
+      format: 'jpeg',
+      quality: this.opts.quality,
+      maxWidth: 4096,
+      maxHeight: 2560,
+      everyNthFrame: 1,
+    });
+  }
+
+  /** Anota la pausa en curso. Se llama al reanudar y tambien al parar, porque
+   *  parar en pausa es lo normal si el usuario se ha ido. */
+  private cerrarPausa(): void {
+    if (!this.pausadaEn) return;
+    this.pausas.push({
+      startMs: this.pausadaEn - this.startedAt,
+      endMs: Date.now() - this.startedAt,
+    });
+    this.pausadaEn = 0;
+  }
+
   private handleFrame(data: string, timestamp: number): void {
     const buf = Buffer.from(data, 'base64');
     const size = jpegSize(buf);
@@ -294,6 +342,7 @@ export class Recorder {
   async stop(): Promise<RecordingResult> {
     if (!this.client) throw new Error('launch() antes de stop()');
     const { Page } = this.client;
+    this.cerrarPausa();
     this.recording = false;
     await Page.stopScreencast().catch(() => {});
     const durationMs = Date.now() - this.startedAt;
@@ -355,6 +404,10 @@ export class Recorder {
         durationMs,
         config: cameraConfigForBudget(CAMERA_PRESETS.normal, budget.maxSharpZoom),
       });
+      // Las pausas se guardan como cortes: son exactamente eso, trozos del
+      // material que no llegan al video. Como dato y no aplicados, asi que
+      // quitar el corte devuelve el tramo por si alguien lo quiere.
+      if (this.pausas.length > 0) project.cuts = this.pausas;
       await fsp.writeFile(projectPath, JSON.stringify(project, null, 2));
     }
 
