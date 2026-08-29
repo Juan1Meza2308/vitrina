@@ -3,9 +3,10 @@ import {
   CAMERA_PRESETS, cameraConfigForBudget, computeQualityBudget, describeBudget,
   planSegments, deleteSegment, setSegmentScale, insertSegment, hasManualEdits,
   clampTrim, CursorPath, moveSegmentTarget, layoutFrame, viewRect, TimeMap,
-  paraOrientacion, defaultExportFor,
+  paraOrientacion, defaultExportFor, colorDominante,
   tramosSinActividad, ahorroDe,
 } from '@vitrina/core';
+import { withAlpha } from '@vitrina/renderer';
 import type {
   Background, CameraPresetName, CapturePreset, Cut, Orientacion, Project, ZoomSegment,
 } from '@vitrina/core';
@@ -1248,6 +1249,29 @@ function Editor(
     if (doblando && !reproduciendo) void pararDoblaje();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [reproduciendo]);
+
+  /*
+   * El cristal de la app se tine con la demo abierta.
+   *
+   * El material toma un poco del color de lo que hay detras, y aqui detras esta
+   * el fondo del proyecto. Cambiar de fondo tine la ventana entera, que es
+   * justo lo que hace que el cristal parezca material y no gris translucido.
+   *
+   * Se limpia al salir del editor: en la pantalla de inicio no hay demo de la
+   * que tomar color.
+   */
+  useEffect(() => {
+    const raiz = document.documentElement;
+    const color = colorDominante(project.background);
+    if (color) {
+      raiz.style.setProperty(
+        '--tinte',
+        `linear-gradient(150deg, ${withAlpha(color, 0.16)}, transparent 65%)`);
+    } else {
+      raiz.style.removeProperty('--tinte');
+    }
+    return () => { raiz.style.removeProperty('--tinte'); };
+  }, [project.background]);
 
   /** Que se oye: sin marcar nada manda la voz doblada si la hay. */
   const pistaElegida = project.pista ?? (project.voz ? 'voz' : 'micro');

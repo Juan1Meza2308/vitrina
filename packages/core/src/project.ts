@@ -6,7 +6,7 @@
  * que escribir una carpeta `.vitrina` completa. Si cada productor inventa sus
  * defaults, unas grabaciones se pueden abrir en el editor y otras no.
  */
-import type { CaptureSize, Project } from './types.ts';
+import type { Background, CaptureSize, Project } from './types.ts';
 import { computeQualityBudget } from './quality.ts';
 
 export interface ProjectDefaults {
@@ -85,6 +85,28 @@ export function defaultProject(opts: ProjectDefaults = {}): Project {
 }
 
 /** Dominio legible para la barra sintetica, tolerante a urls raras. */
+/**
+ * Color con el que se tine la ventana cuando esta grabacion esta abierta.
+ *
+ * El material de la interfaz toma un poco del color de lo que hay detras, y en
+ * el editor "lo que hay detras" es la demo: su fondo. Sale del proyecto, que ya
+ * lo lleva, sin decodificar nada.
+ *
+ * Con un fondo de imagen se devuelve null en vez de inventar un color: habria
+ * que decodificarla y muestrearla, y un tinte equivocado es peor que ninguno.
+ * Sin fondo, tampoco hay tinte: no hay de donde sacarlo.
+ */
+export function colorDominante(background: Background): string | null {
+  switch (background.kind) {
+    case 'solid': return background.color;
+    // El primero del degradado y no una media: es el que ocupa la esquina
+    // superior izquierda, que es de donde cae la luz del material.
+    case 'linear': return background.from;
+    case 'mesh': return background.colors[0] ?? null;
+    default: return null;
+  }
+}
+
 export function hostFromUrl(url: string): string {
   try {
     return new URL(url).host || 'localhost';
