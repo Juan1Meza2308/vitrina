@@ -454,7 +454,7 @@ export function App() {
         {/* Columna izquierda: lo que hay que decidir para grabar, y el boton
             DENTRO de la tarjeta. Antes vivia al final de la pagina, detras de
             todo lo demas y fuera de la ventana en un portatil. */}
-        <section className="tarjeta">
+        <section className="tarjeta cristal">
           <h2 className="titulo-panel"><IconoGrabacion /> Nueva grabación</h2>
 
           <div className="campo">
@@ -552,7 +552,7 @@ export function App() {
 
         {/* Columna derecha: de donde sale el material, y lo ya grabado. */}
         <div className="lado">
-          <section className="tarjeta">
+          <section className="tarjeta cristal">
             <h2 className="titulo-panel"><IconoSonido /> Micrófono y cámara</h2>
 
             <div className="campo">
@@ -610,7 +610,7 @@ export function App() {
             </div>
           </section>
 
-          <section className="tarjeta">
+          <section className="tarjeta cristal">
             <h2 className="titulo-panel"><IconoCarpeta /> Recientes</h2>
             {recientes.length > 0 ? (
               <Recientes
@@ -630,7 +630,7 @@ export function App() {
         {/* Flotante y no en la columna: apareciendo entre los campos empujaba
             todo hacia abajo y el boton de Grabar se movia debajo del cursor. */}
         {error && (
-          <div className="aviso-flotante" role="alert" onClick={() => setError('')}>
+          <div className="aviso-flotante cristal flota" role="alert" onClick={() => setError('')}>
             {error}
             <span>Toca para cerrar</span>
           </div>
@@ -1296,7 +1296,7 @@ function Editor(
   return (
     <div className="editor">
       <div className="fila-alta">
-      <aside className="biblioteca">
+      <aside className="biblioteca cristal">
         <div className="grupo">
           <h2 className="titulo-panel"><IconoGrabacion /> Grabación</h2>
           <p className="sutil">
@@ -1465,7 +1465,7 @@ function Editor(
               los controles estan donde se esta mirando y no en otra fila que
               obliga a bajar la vista. Cada icono lleva su texto en `title`,
               porque un dibujo solo se adivina. */}
-          <div className="transporte">
+          <div className="transporte cristal flota">
             <button className="redondo primario"
                     title={reproduciendo ? 'Pausar (Espacio)' : 'Reproducir (Espacio)'}
                     aria-label={reproduciendo ? 'Pausar' : 'Reproducir'}
@@ -1492,7 +1492,7 @@ function Editor(
         {atajos !== 'oculto' && (
           <div className={`atajos${atajos === 'cerrando' ? ' saliendo' : ''}`}
                onClick={cerrarAtajos}>
-            <div className="hoja" onClick={(e) => e.stopPropagation()}>
+            <div className="hoja cristal modal" onClick={(e) => e.stopPropagation()}>
               <h3>Atajos</h3>
               <dl>
                 <dt>Espacio</dt><dd>reproducir o parar</dd>
@@ -1519,7 +1519,7 @@ function Editor(
 
       </div>
 
-      <aside className="panel">
+      <aside className="panel cristal">
         <h2 className="titulo-panel"><IconoAjustes /> Configuración</h2>
         <div className="grupo">
           <h3>Marco</h3>
@@ -1812,7 +1812,7 @@ function Editor(
       </aside>
       </div>
 
-      <div className="linea">
+      <div className="linea cristal">
         <div className="barra">
           <button onClick={() => setHist(deshacer)} disabled={!puedeDeshacer(hist)}
                   title="Deshacer (Ctrl+Z)">Deshacer</button>
