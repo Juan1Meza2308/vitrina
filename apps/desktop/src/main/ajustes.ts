@@ -11,6 +11,9 @@
  */
 import type { Background, FrameStyle, Orientacion, Project, Watermark } from '@vitrina/core';
 
+/** Aspecto de la app. No toca el video: el compositor pinta lo suyo. */
+export type Tema = 'oscuro' | 'claro';
+
 /**
  * Un "look" guardado: el aspecto, sin nada de una grabacion concreta.
  *
@@ -42,6 +45,7 @@ export interface Ajustes {
    *  una demo concreta. */
   camOn: boolean;
   camDeviceId: string;
+  tema: Tema;
   looks: Look[];
   /** Nombre del look que se aplica solo a las grabaciones nuevas. */
   lookPorDefecto: string | null;
@@ -56,6 +60,7 @@ export const AJUSTES_POR_DEFECTO: Ajustes = {
   tapar: '',
   camOn: false,
   camDeviceId: '',
+  tema: 'oscuro',
   looks: [],
   lookPorDefecto: null,
 };
@@ -75,6 +80,7 @@ export function normalizarAjustes(crudo: unknown): Ajustes {
     camOn: typeof o.camOn === 'boolean' ? o.camOn : AJUSTES_POR_DEFECTO.camOn,
     camDeviceId: typeof o.camDeviceId === 'string'
       ? o.camDeviceId : AJUSTES_POR_DEFECTO.camDeviceId,
+    tema: o.tema === 'claro' ? 'claro' : 'oscuro',
     looks: Array.isArray(o.looks) ? o.looks.filter(esLook) : [],
     lookPorDefecto: typeof o.lookPorDefecto === 'string' ? o.lookPorDefecto : null,
   };

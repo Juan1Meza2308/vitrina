@@ -7,7 +7,34 @@
   --dim: #8b98a5;
   --acc: #c3f53c;
   --peligro: #ff6b5e;
+  /** Texto sobre el acento. Cambia con el tema: el acento claro es oscuro. */
+  --acc-fg: #10160a;
+  /** Fondo del boton activo: el acento en crudo tapaba el texto. */
+  --acc-suave: rgba(195, 245, 60, .08);
   --radio: 10px;
+}
+
+/*
+ * Tema claro.
+ *
+ * Solo se redefinen los tokens: el resto de la hoja no sabe que existe un tema.
+ * El acento tambien cambia —el lima sobre blanco no se lee— y con el, el color
+ * del texto que va encima.
+ *
+ * No toca el video: el compositor pinta sus propios colores, asi que cambiar el
+ * aspecto de la ventana no cambia lo que se exporta.
+ */
+:root[data-tema="claro"] {
+  --bg: #f4f6f8;
+  --panel: #ffffff;
+  --panel-alto: #eaeef3;
+  --linea: #d7dee6;
+  --fg: #131a22;
+  --dim: #5a6775;
+  --acc: #4e7d0e;
+  --peligro: #c33b2e;
+  --acc-fg: #ffffff;
+  --acc-suave: rgba(78, 125, 14, .10);
 }
 
 * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -33,10 +60,10 @@ button {
 }
 button:hover:not(:disabled) { border-color: #38424e; }
 button:disabled { opacity: .4; cursor: default; }
-button.primario { background: var(--acc); border-color: var(--acc); color: #10160a; font-weight: 600; }
+button.primario { background: var(--acc); border-color: var(--acc); color: var(--acc-fg); font-weight: 600; }
 button.primario:hover:not(:disabled) { filter: brightness(1.08); }
 button.peligro { border-color: #4a2b28; color: var(--peligro); }
-button.on { border-color: var(--acc); color: var(--acc); background: rgba(195, 245, 60, .08); }
+button.on { border-color: var(--acc); color: var(--acc); background: var(--acc-suave); }
 
 input[type="text"] {
   font: inherit;
@@ -88,7 +115,7 @@ input[type="range"] { width: 100%; accent-color: var(--acc); }
 }
 .preset b { font-size: 13px; font-weight: 600; }
 .preset small { display: block; color: var(--dim); font-size: 10.5px; line-height: 1.35; }
-.preset.on small { color: rgba(195, 245, 60, .75); }
+.preset.on small { color: var(--acc); opacity: .85; }
 
 .nota-calidad {
   display: flex; align-items: center; gap: 8px;
@@ -400,3 +427,38 @@ select:focus { outline: none; border-color: var(--acc); }
   pointer-events: none;
   z-index: 50;
 }
+
+/* Hoja de atajos: los atajos ya existian, pero no se veian en ninguna parte. */
+.atajos {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(0, 0, 0, .55);
+  display: flex; align-items: center; justify-content: center;
+}
+.atajos .hoja {
+  background: var(--panel); border: 1px solid var(--linea); border-radius: 14px;
+  padding: 22px 24px; min-width: 340px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+.atajos h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .07em; color: var(--dim); }
+.atajos dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 16px; align-items: baseline; }
+.atajos dt {
+  font-variant-numeric: tabular-nums; color: var(--acc);
+  border: 1px solid var(--linea); border-radius: 6px; padding: 2px 8px;
+  font-size: 12px; justify-self: start;
+}
+.atajos dd { color: var(--dim); font-size: 13px; }
+
+/* El interruptor de tema vive en la marca, discreto y a la derecha. */
+.marca .tema { margin-left: auto; padding: 5px 12px; font-size: 12px; }
+
+/* Aviso flotante: informa sin mover un solo campo de sitio. */
+.aviso-flotante {
+  position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%);
+  z-index: 70; max-width: 520px;
+  display: flex; flex-direction: column; gap: 4px;
+  background: var(--panel-alto); color: var(--fg);
+  border: 1px solid var(--peligro); border-radius: var(--radio);
+  padding: 12px 16px; cursor: pointer;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, .35);
+}
+.aviso-flotante span { color: var(--dim); font-size: 11px; }

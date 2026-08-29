@@ -7,7 +7,7 @@ describe('normalizarAjustes', () => {
       url: 'http://localhost:4321', presetName: 'nitido',
       orientacion: 'vertical' as const, micOn: false, micDeviceId: 'abc',
       tapar: '#saldo, .email', camOn: true, camDeviceId: 'cam-1',
-      looks: [], lookPorDefecto: null,
+      tema: 'claro' as const, looks: [], lookPorDefecto: null,
     };
     expect(normalizarAjustes(guardado)).toEqual(guardado);
   });
@@ -25,6 +25,13 @@ describe('normalizarAjustes', () => {
     expect(r.url).toBe('http://x.test');            // el bueno se conserva
     expect(r.presetName).toBe(AJUSTES_POR_DEFECTO.presetName);
     expect(r.micOn).toBe(AJUSTES_POR_DEFECTO.micOn);
+  });
+
+  it('un tema desconocido cae en oscuro', () => {
+    // Es el aspecto de siempre: una app que arranca en claro porque el JSON
+    // trae basura asusta mas que cualquier otro campo mal leido.
+    expect(normalizarAjustes({ tema: 'neon' }).tema).toBe('oscuro');
+    expect(normalizarAjustes({ tema: 'claro' }).tema).toBe('claro');
   });
 
   it('una orientacion desconocida cae en horizontal', () => {

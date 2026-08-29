@@ -29,6 +29,7 @@ export interface Ajustes {
   tapar: string;
   camOn: boolean;
   camDeviceId: string;
+  tema: 'oscuro' | 'claro';
   looks: Look[];
   lookPorDefecto: string | null;
 }
@@ -54,6 +55,17 @@ export interface ExportProgressMsg {
   fraction: number;
   fps: number;
   etaMs: number;
+}
+
+/** Lo que devuelve un export, ya resumido para poder ensenarlo. */
+export interface ResultadoExport {
+  file: string;
+  settings: { width: number; height: number; fps: number; format: string };
+  frames: number;
+  durationMs: number;
+  bytes: number;
+  elapsedMs: number;
+  warnings: string[];
 }
 
 export interface ExportPresetInfo {
@@ -130,8 +142,10 @@ const api = {
   planCamera: (dir: string, preset: CameraPresetName): Promise<Project> =>
     ipcRenderer.invoke('camera:plan', dir, preset),
 
-  runExport: (opts: { dir: string; preset: string; cameraPreset: CameraPresetName; soft: boolean }) =>
-    ipcRenderer.invoke('export:run', opts),
+  runExport: (opts: { dir: string; preset: string; cameraPreset: CameraPresetName; soft: boolean }):
+    // Cancelar no es un error: el proceso principal devuelve una marca en vez
+    // de lanzar, y quien llama decide como contarlo.
+    Promise<ResultadoExport | { cancelled: true }> => ipcRenderer.invoke('export:run', opts),
   cancelExport: (): Promise<void> => ipcRenderer.invoke('export:cancel'),
   onExportProgress: (cb: (p: ExportProgressMsg) => void) => subscribe('export:progress', cb),
 

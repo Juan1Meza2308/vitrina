@@ -9,7 +9,9 @@ import {
 import type {
   Background, CameraPresetName, CapturePreset, Cut, Orientacion, Project, ZoomSegment,
 } from '@vitrina/core';
-import type { RecordingData, ExportProgressMsg, ExportPresetInfo, GrabacionReciente, Look } from '../preload/index.ts';
+import type {
+  RecordingData, ExportProgressMsg, ExportPresetInfo, GrabacionReciente, Look, ResultadoExport,
+} from '../preload/index.ts';
 import { Preview, makeTrack } from './preview.ts';
 import { Timeline } from './Timeline.tsx';
 import { grabarMicrofono, listarMicrofonos, type MicHandle, type DispositivoAudio } from './mic.ts';
@@ -67,6 +69,7 @@ export function App() {
 
   const [recientes, setRecientes] = useState<GrabacionReciente[]>([]);
   const [arrastrando, setArrastrando] = useState(false);
+  const [tema, setTema] = useState<'oscuro' | 'claro'>('oscuro');
 
   useEffect(() => {
     void window.vitrina.capturePresets().then(setPresets);
@@ -82,6 +85,7 @@ export function App() {
       setTapar(a.tapar);
       setCamOn(a.camOn);
       setCamDeviceId(a.camDeviceId);
+      setTema(a.tema);
     });
   }, []);
 
@@ -132,6 +136,12 @@ export function App() {
       { fill: 0.8, chrome: orientacion === 'vertical' ? 'phone' : 'macos' },
     );
   }, [preset?.capture.w, preset?.capture.h, salidaInicial?.w, salidaInicial?.h, orientacion]);
+
+  // El tema se aplica a la raiz y se guarda al cambiarlo, no al grabar: es un
+  // ajuste de la ventana, no de la demo.
+  useEffect(() => {
+    document.documentElement.dataset['tema'] = tema;
+  }, [tema]);
 
   // La lista de camaras solo trae etiquetas utiles con permiso concedido, igual
   // que la de microfonos: se pide al encender la camara, no al arrancar la app.
@@ -332,6 +342,14 @@ export function App() {
         <div className="marca">
           <h1>Vitrina</h1>
           <span>demos de apps web con zoom automatico</span>
+          <button className="tema" title="Cambiar el aspecto de la app"
+                  onClick={() => {
+                    const otro = tema === 'oscuro' ? 'claro' : 'oscuro';
+                    setTema(otro);
+                    void window.vitrina.guardarAjustes({ tema: otro });
+                  }}>
+            {tema === 'oscuro' ? 'Claro' : 'Oscuro'}
+          </button>
         </div>
 
         <div className="campo">
@@ -461,7 +479,14 @@ export function App() {
           </div>
         )}
 
-        {error && <p className="error">{error}</p>}
+        {/* Flotante y no en la columna: apareciendo entre los campos empujaba
+            todo hacia abajo y el boton de Grabar se movia debajo del cursor. */}
+        {error && (
+          <div className="aviso-flotante" role="alert" onClick={() => setError('')}>
+            {error}
+            <span>Toca para cerrar</span>
+          </div>
+        )}
 
         <div className="acciones">
           <button className="primario" onClick={() => void grabar()}>Grabar</button>
@@ -550,6 +575,7 @@ function Editor(
   // mano, recalcularlos en cada render borraria el trabajo del usuario. Viven
   // dentro del historial, arriba, junto al proyecto.
   const [seleccion, setSeleccion] = useState<number | null>(null);
+  const [atajos, setAtajos] = useState(false);
   const [looks, setLooks] = useState<Look[]>([]);
   const [repitiendo, setRepitiendo] = useState(false);
   const [calidadRepeticion, setCalidadRepeticion] = useState('');
@@ -803,6 +829,10 @@ function Editor(
       }
       if (e.key === 'Home') { setReproduciendo(false); setTMs(0); }
       if (e.key === 'End') { setReproduciendo(false); setTMs(duracion); }
+      // Los atajos existian y no se veian en ninguna parte: quien no leyera el
+      // README no sabia que estaban.
+      if (e.key === '?') setAtajos((v) => !v);
+      if (e.key === 'Escape') setAtajos(false);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -1206,6 +1236,24 @@ function Editor(
             onPointerCancel={encuadreSoltar}
           />
         </div>
+        {atajos && (
+          <div className="atajos" onClick={() => setAtajos(false)}>
+            <div className="hoja" onClick={(e) => e.stopPropagation()}>
+              <h3>Atajos</h3>
+              <dl>
+                <dt>Espacio</dt><dd>reproducir o parar</dd>
+                <dt>← →</dt><dd>un frame; con Mayus, un segundo</dd>
+                <dt>Inicio / Fin</dt><dd>al principio o al final</dd>
+                <dt>Supr</dt><dd>borrar el tramo seleccionado</dd>
+                <dt>Ctrl+Z</dt><dd>deshacer</dd>
+                <dt>Ctrl+Mayus+Z</dt><dd>rehacer</dd>
+                <dt>?</dt><dd>abrir y cerrar esta hoja</dd>
+              </dl>
+              <button onClick={() => setAtajos(false)}>Cerrar</button>
+            </div>
+          </div>
+        )}
+
         {audioUrl && <audio ref={audio} src={audioUrl} preload="auto" />}
         {/* Fuera de la vista pero NO con display:none: un elemento oculto asi
             puede dejar de decodificar, y el compositor se quedaria dibujando el
@@ -1538,7 +1586,7 @@ function Exportar(
   const [presets, setPresets] = useState<ExportPresetInfo[]>([]);
   const [elegido, setElegido] = useState('720p');
   const [progreso, setProgreso] = useState<ExportProgressMsg | null>(null);
-  const [resultado, setResultado] = useState<{ file: string; warnings: string[] } | null>(null);
+  const [resultado, setResultado] = useState<ResultadoExport | null>(null);
   const [error, setError] = useState('');
 
   useEffect(() => {
@@ -1563,7 +1611,7 @@ function Exportar(
       await guardar();
       const r = await window.vitrina.runExport({ dir, preset: elegido, cameraPreset: camara, soft: false });
       if (r && 'cancelled' in r) setError('Exportacion cancelada');
-      else if (r) setResultado({ file: r.file, warnings: r.warnings ?? [] });
+      else if (r) setResultado(r);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     } finally {
@@ -1602,6 +1650,14 @@ function Exportar(
 
       {resultado && (
         <>
+          {/* Que salio, en una linea: sin esto el unico rastro del export era un
+              boton, y no habia forma de saber si el fichero pesaba 8 MB o 200. */}
+          <p className="sutil">
+            {resultado.settings.width}×{resultado.settings.height}
+            {' · '}{(resultado.durationMs / 1000).toFixed(1)}s
+            {' · '}{(resultado.bytes / 1024 / 1024).toFixed(1)} MB
+            {' · '}{(resultado.elapsedMs / 1000).toFixed(1)}s en salir
+          </p>
           {resultado.warnings.map((w, i) => <p key={i} className="aviso">{w}</p>)}
           <button onClick={() => void window.vitrina.reveal(resultado.file)}>Mostrar en la carpeta</button>
         </>
