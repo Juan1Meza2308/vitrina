@@ -28,13 +28,9 @@
  * ninguna manera es mejor no tenerlo en pantalla.
  */
 
-/** Que tapar y cuanto. */
-export interface Tapado {
-  /** Selectores CSS de lo que no debe salir. Vacio: no se toca nada. */
-  selectores: string[];
-  /** Radio del desenfoque en px CSS. Escala sola con `deviceScaleFactor`. */
-  desenfoque?: number;
-}
+import type { Tapado } from '@vitrina/core/types';
+
+export type { Tapado };
 
 /** Id del `<style>` inyectado. Fijo, para poder reponerlo sin duplicarlo. */
 export const ESTILO_ID = 'vitrina-tapado';

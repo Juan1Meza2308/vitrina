@@ -75,6 +75,20 @@ export interface CaptureSize {
   h: number;
 }
 
+/**
+ * Lo que se tapo al grabar.
+ *
+ * Va en el manifest y no en el proyecto porque no es una decision de montaje
+ * que se pueda deshacer: describe lo que YA no esta en los frames. Ademas es lo
+ * que permite que repetir la grabacion vuelva a tapar lo mismo.
+ */
+export interface Tapado {
+  /** Selectores CSS de lo que no debia salir. */
+  selectores: string[];
+  /** Radio del desenfoque en px CSS que se aplico. */
+  desenfoque?: number;
+}
+
 export interface Manifest {
   version: 1;
   /** Identificador del navegador usado, para diagnostico. */
@@ -104,6 +118,14 @@ export interface Manifest {
    * resuelve `audioAlignment`.
    */
   audio?: AudioTrack | null;
+  /**
+   * Que se difumino al grabar, si se difumino algo.
+   *
+   * Es informativo para el editor y necesario para repetir: una repeticion que
+   * no tapara lo mismo publicaria en la segunda toma lo que se tapo en la
+   * primera.
+   */
+  tapado?: Tapado | null;
 }
 
 /** Fondo sobre el que se compone la ventana grabada. */
