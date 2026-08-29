@@ -916,6 +916,15 @@ function Editor(
   // La camara tiene el mismo desfase que la narracion y se resuelve igual: se
   // grabo en otro proceso y arranco antes que el video.
   const pistaCam = datos.manifest.camara ?? null;
+
+  // Momentos senalados durante la grabacion. Se calculan una vez: el log no
+  // cambia mientras el editor esta abierto.
+  const hitos = useMemo(
+    () => datos.events
+      .filter((e) => e.type === 'mark')
+      .map((e) => ({ ms: e.t - datos.manifest.startedAt, label: e.label })),
+    [datos],
+  );
   const tiempoCam = (ms: number) =>
     (datos.manifest.startedAt - (pistaCam?.startedAt ?? 0) + ms) / 1000;
 
@@ -1623,6 +1632,7 @@ function Editor(
           speeds={project.speeds ?? []}
           escala={escalaTl}
           onda={onda}
+          hitos={hitos}
           onTrim={(t) => setProject((p) => ({ ...p, ...t }))}
         />
       </div>

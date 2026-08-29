@@ -28,7 +28,12 @@ export interface Rect {
   h: number;
 }
 
-export type InputEventType = 'move' | 'down' | 'up' | 'wheel' | 'key' | 'scroll';
+/**
+ * `mark` no viene de la pagina: lo pone quien graba con un atajo, para senalar
+ * un momento que le importa. Va en el mismo log porque comparte reloj con todo
+ * lo demas, que es lo que hace que la marca caiga en el frame exacto.
+ */
+export type InputEventType = 'move' | 'down' | 'up' | 'wheel' | 'key' | 'scroll' | 'mark';
 
 /**
  * Un evento de entrada, capturado desde el DOM de la pagina grabada.

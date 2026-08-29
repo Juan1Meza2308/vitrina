@@ -269,6 +269,22 @@ export class Recorder {
     });
   }
 
+  /**
+   * Senala el instante actual.
+   *
+   * Se guarda como un evento mas del log: comparte reloj con los frames, asi
+   * que la marca cae en el frame exacto sin alinear nada. Durante una pausa no
+   * se marca: ese trozo no va a estar en el video.
+   */
+  marcar(nombre?: string): void {
+    if (!this.recording || this.pausadaEn) return;
+    this.events.push({
+      t: Date.now(),
+      type: 'mark',
+      label: nombre?.trim() || null,
+    });
+  }
+
   get pausada(): boolean {
     return this.pausadaEn !== 0;
   }

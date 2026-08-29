@@ -46,6 +46,12 @@ export interface TimelineProps {
   escala?: number;
   /** Picos de la narracion, 0-1. Vacio si la grabacion no tiene audio. */
   onda?: Float32Array | null;
+  /**
+   * Momentos senalados con el atajo durante la grabacion, en offsets desde el
+   * inicio del material. Se llaman `hitos` y no `marcas` porque en este fichero
+   * `marcas` ya son las de la regla, y confundirlos costaria un rato.
+   */
+  hitos?: { ms: number; label?: string | null }[];
   onTrim: (t: { trimStartMs: number; trimEndMs: number | null }) => void;
 }
 
@@ -179,6 +185,19 @@ export function Timeline(props: TimelineProps) {
               <span key={m.ms} className="tl-marca" style={{ left: `${m.f * 100}%` }}>
                 {m.etiqueta}
               </span>
+            ))}
+            {/* Los hitos se pintan sobre la regla y no en un carril propio: son
+                instantes, no tramos, y un carril entero para una chincheta
+                robaria alto a lo que si dura. */}
+            {(props.hitos ?? []).map((h, i) => (
+              <button
+                key={`h${i}`}
+                className="hito"
+                style={{ left: pct(h.ms) }}
+                title={`${h.label ?? 'Momento senalado'} · ${(h.ms / 1000).toFixed(1)}s`}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={() => props.onSeek(h.ms)}
+              />
             ))}
           </div>
 
