@@ -53,13 +53,17 @@ export function audioAlignment(
  * `audioAlignment` resuelve el caso simple (un unico salto al principio). Esto
  * hace falta cuando se quitan trozos del interior: cada tramo conservado
  * necesita su propio par de tiempos dentro del fichero.
+ *
+ * El parametro es cualquier pista con `startedAt`, no solo la de audio: la
+ * camara web tiene el mismo problema y la misma solucion, y con esto los cortes
+ * y las aceleraciones le salen gratis igual que al video.
  */
 export function audioTimeFor(
-  audio: AudioTrack,
+  pista: { startedAt: number },
   videoStartedAt: number,
   sourceMs: number,
 ): number {
-  return Math.max(0, (videoStartedAt - audio.startedAt + sourceMs) / 1000);
+  return Math.max(0, (videoStartedAt - pista.startedAt + sourceMs) / 1000);
 }
 
 /** Formatos que admiten pista de audio. El GIF no, por definicion. */
