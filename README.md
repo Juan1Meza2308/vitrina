@@ -433,7 +433,9 @@ Tres decisiones que no son evidentes:
 
 - **Se difumina, no se oculta.** `display:none` mueve la maqueta y la demo deja
   de ser la demo: los botones cambian de sitio y la cámara encuadra otra cosa.
-  El desenfoque deja el hueco donde estaba.
+  El desenfoque deja el hueco donde estaba. Conviene apuntar al dato y no a
+  media página: un `filter` crea contenedor para los `position: fixed` que haya
+  dentro, y una cabecera fija sí se movería.
 - **Es CSS, no un script que recorra el DOM.** Una hoja de estilos cubre también
   lo que aparezca después —una fila que llega por fetch, un modal que se abre a
   mitad de demo— sin volver a mirar. Un script tendría que reaccionar a cada
