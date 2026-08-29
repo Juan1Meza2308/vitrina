@@ -51,6 +51,7 @@ todavía no.
 | Looks guardados y marca de agua | hecho |
 | Repetir la grabación | hecho |
 | Tapar datos sensibles | hecho |
+| Cámara web en burbuja | hecho |
 | macOS y Windows | hecho (sin probar en Mac) |
 | Grabación vertical (9:16) | hecho |
 
@@ -358,6 +359,55 @@ narración a partir del primer silencio y el desfase crecería con cada corte.
 Todo el tiempo de la salida pasa por un mapa: recortar los extremos y quitar
 silencios son la misma operación vista de dos formas. La reproducción del editor
 usa ese mismo mapa, así que salta los silencios igual que el vídeo final.
+
+## Tu cara en la demo
+
+La cámara se enciende en la pantalla de inicio, al lado del micrófono, y sale en
+una **burbuja** sobre el vídeo. La previsualización de antes de grabar es
+redonda y del tamaño real de la burbuja: lo que se ve ahí es lo que va a salir,
+recorte incluido, y así no se descubre al terminar que se sale medio hombro.
+
+Se graba en **su propio fichero**, aparte del vídeo, y eso es lo que permite
+tratarla como montaje y no como material quemado:
+
+- La burbuja se mueve de esquina, cambia de tamaño y de forma, se voltea o se
+  quita entera **sin volver a grabar**.
+- Va **anclada al lienzo**, no al contenido: una burbuja que se moviera con el
+  zoom sería parte de la demo, y no lo es —es quien la cuenta—. Es el mismo
+  argumento que la marca de agua, y va debajo de ella para que la firma gane si
+  comparten esquina.
+- La imagen se **recorta**, nunca se deforma. La cámara entrega 4:3 y la burbuja
+  es cuadrada; escalar para que quepa haría una cara más estrecha de lo que es,
+  que es justo el defecto que nadie perdona en su propia imagen.
+- Sin espejo por defecto: quien se graba se ve en espejo y le resulta natural,
+  pero quien mira el vídeo espera el texto de la camiseta al derecho.
+
+> **Un solo compositor, también aquí.** La burbuja la dibuja `composite()` en
+> Canvas 2D, la misma función que pinta el preview y el export. Componerla con
+> un filtro `overlay` de ffmpeg habría sido más corto y habría roto lo único que
+> este proyecto no negocia: que lo que se ve al editar sea lo que sale. El precio
+> es un pre-pase que extrae el `webm` a imágenes antes de exportar, ya escaladas
+> al tamaño de la burbuja.
+
+Los cortes y las aceleraciones le salen **gratis**: la cámara se muestrea por el
+mismo instante de material que el vídeo, así que un tramo a 4× lleva la cara a
+4× sin tocar nada. Y la narración y la cámara comparten la corrección de desfase,
+porque las dos se capturan en otro proceso y arrancan antes que el vídeo.
+
+Dos cosas que conviene saber:
+
+- **La repetición no arrastra la cámara.** Se repite la demo, no a quien la
+  cuenta: sin volver a grabar no hay pista.
+- **Grabar la cámara no le cuesta fps al vídeo** —medido en
+  [`spikes/HALLAZGOS.md`](spikes/HALLAZGOS.md), M11: 479 frames sola contra 480
+  con la cámara capturando—. Para comprobarlo en tu equipo:
+  `node spikes/m11-camara-fps.mjs`.
+
+Se verifica con el dispositivo falso de Chromium, igual que el micrófono, así
+que una máquina sin cámara puede comprobar la ruta entera:
+`node tools/verificar-app.ts --camara` graba con cámara, comprueba el fichero y
+el desfase, y **mide por píxeles** la región del lienzo donde va la burbuja con
+ella y sin ella. Lo que queda sin probar es el encuadre de una cara de verdad.
 
 ## El editor
 
