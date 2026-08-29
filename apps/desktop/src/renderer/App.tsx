@@ -170,7 +170,7 @@ export function App() {
     };
     // `camPreview` no va en las dependencias a proposito: lo escribe este mismo
     // efecto, y meterlo lo haria reabrir la camara en bucle.
-     
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [camOn, camDeviceId]);
 
   useEffect(() => {
@@ -274,7 +274,7 @@ export function App() {
       return;
     }
     void abrirDir(ruta);
-  }, []);
+  }, [abrirDir]);
 
   const abrir = useCallback(async () => {
     const d = await window.vitrina.openRecording();
