@@ -53,6 +53,7 @@ todavía no.
 | Tapar datos sensibles | hecho |
 | Cámara web en burbuja | hecho |
 | Tema claro y hoja de atajos | hecho |
+| Interfaz de cristal | hecho |
 | Pausa, atajos globales y marcas | hecho |
 | La demo se documenta sola | hecho |
 | Doblar la narración | hecho |
@@ -596,6 +597,25 @@ por error es el accidente típico y era irreversible.
 
 Las flechas mueven la aguja un frame, con `Shift` un segundo, e `Inicio`/`Fin`
 van a los extremos. Arrastrando no se llega al frame exacto.
+
+La interfaz es de **cristal**, con cuatro reglas escritas en la hoja de estilos:
+
+- **El cristal es del contenedor, nunca del contenido.** Panel, píldora, hoja y
+  tarjeta son cristal; botón, campo y carril son superficie sólida. Dos velos
+  apilados no se leen: cada uno suma su neblina sobre el texto.
+- **La luz viene de arriba**: filo claro en el canto superior, oscuro en el
+  inferior, y un brillo que **sigue al cursor** por las superficies grandes.
+- **Cuanto más flota, más grueso**: tres niveles —panel, flotante, modal— en los
+  que suben a la vez opacidad, desenfoque y sombra.
+- **El color lo pone lo que hay detrás**: el material se tiñe con el fondo de la
+  demo que tienes abierta, así que el editor cambia de color con cada grabación.
+
+> **El desenfoque solo se pone donde se lo gana: encima de algo.** Los paneles
+> van al lado del lienzo, no sobre él, así que detrás sólo hay un fondo plano:
+> desenfocarlo no cambia un píxel y cuesta recomponer toda esa superficie en cada
+> repintado. Medido: con desenfoque en todo, la reproducción del editor caía de
+> 27 a 13 fps —ver [`spikes/HALLAZGOS.md`](spikes/HALLAZGOS.md), M12—. Se queda
+> donde sí hay vídeo detrás: la píldora del transporte, la hoja y los avisos.
 
 El aspecto sigue los principios de interfaz de Apple —material translúcido con
 desenfoque y filo de luz en vez de cajas opacas, respuesta **al pulsar** y no al
