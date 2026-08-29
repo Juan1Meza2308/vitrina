@@ -52,6 +52,7 @@ todavía no.
 | Repetir la grabación | hecho |
 | Tapar datos sensibles | hecho |
 | Cámara web en burbuja | hecho |
+| Tema claro y hoja de atajos | hecho |
 | macOS y Windows | hecho (sin probar en Mac) |
 | Grabación vertical (9:16) | hecho |
 
@@ -103,6 +104,10 @@ la línea de comandos:
 ```bash
 npm run app:build && npx electron apps/desktop grabaciones/mi-demo.vitrina
 ```
+
+Las grabaciones recientes salen con un **sello** —un frame del 25 %, no el
+primero, que suele estar en blanco—, y una carpeta `.vitrina` se puede **soltar
+sobre la ventana** para abrirla.
 
 ### Calibrar (opcional, una vez)
 
@@ -452,6 +457,13 @@ por error es el accidente típico y era irreversible.
 
 Las flechas mueven la aguja un frame, con `Shift` un segundo, e `Inicio`/`Fin`
 van a los extremos. Arrastrando no se llega al frame exacto.
+
+**`?` abre la hoja de atajos.** Estaban todos y no se veían en ninguna parte:
+quien no leyera esto no sabía que existían.
+
+La ventana tiene **tema claro** además del oscuro, con el interruptor en la
+esquina de la pantalla de inicio. Cambia el aspecto de la app y nada más: el
+compositor pinta sus propios colores, así que el vídeo exportado no se entera.
 
 La app **recuerda** la última dirección, preset, orientación y micrófono en un
 `ajustes.json` en `userData`, y ofrece las últimas grabaciones en la pantalla de
