@@ -14,6 +14,10 @@ import type {
 } from '../preload/index.ts';
 import { Preview, makeTrack } from './preview.ts';
 import { Timeline } from './Timeline.tsx';
+import {
+  IconoGrabacion, IconoAjustes, IconoRepetir, IconoImagen, IconoReproducir,
+  IconoPausa, IconoInicio, IconoSonido, IconoSilencio, IconoAnadir, IconoBorrar,
+} from './Iconos.tsx';
 import { grabarMicrofono, listarMicrofonos, type MicHandle, type DispositivoAudio } from './mic.ts';
 import {
   grabarCamara, listarCamaras, abrirCamara,
@@ -300,7 +304,7 @@ export function App() {
       <div className="app">
         <div className="centro">
           <div className="cuenta">{cuenta}</div>
-          <p style={{ color: 'var(--dim)' }}>Se abrira una ventana con tu app. Haz la demo ahi.</p>
+          <p style={{ color: 'var(--dim)' }}>Se abrirá una ventana con tu app. Haz la demo ahí.</p>
         </div>
       </div>
     );
@@ -341,7 +345,7 @@ export function App() {
       <div className="inicio">
         <div className="marca">
           <h1>Vitrina</h1>
-          <span>demos de apps web con zoom automatico</span>
+          <span>demos de apps web con zoom automático</span>
           <button className="tema" title="Cambiar el aspecto de la app"
                   onClick={() => {
                     const otro = tema === 'oscuro' ? 'claro' : 'oscuro';
@@ -353,7 +357,7 @@ export function App() {
         </div>
 
         <div className="campo">
-          <label htmlFor="url">Direccion de tu app</label>
+          <label htmlFor="url">Dirección de tu app</label>
           <input id="url" type="text" value={url} onChange={(e) => setUrl(e.target.value)}
                  placeholder="http://localhost:3000" spellCheck={false} />
         </div>
@@ -372,15 +376,16 @@ export function App() {
           </div>
           {orientacion === 'vertical' && (
             <p className="nota-formato">
-              La pestana se abre a <b>{preset?.css?.w ?? 430} px</b> como un movil de
-              verdad, asi que tu web muestra su diseno movil. Se captura a escala
-              ×{preset?.dsf ?? 2}: sale nitida pese al viewport pequeno.
+              La ventana se abre a <b>{preset?.css?.w ?? 430} px</b> como un móvil
+              de verdad, así que tu web enseña su diseño móvil. Se captura a
+              escala ×{preset?.dsf ?? 2}: sale nítida pese a la pantalla pequeña.
               <br />
               {/* Los fps de abajo son los medidos EN HORIZONTAL. Se dicen asi de
                   claro porque todo el proyecto se apoya en no prometer numeros
                   sin medir, y en vertical no se han medido. */}
-              Los fps son los medidos en horizontal; en vertical pueden ser menores.
-              Para comprobarlo en tu equipo: <code>node tools/calibrar.ts --vertical</code>.
+              Los fps de abajo están medidos en horizontal; en vertical pueden ser
+              menores. Para medirlo en tu equipo:{' '}
+              <code>node tools/calibrar.ts --vertical</code>.
             </p>
           )}
         </div>
@@ -397,7 +402,7 @@ export function App() {
                   {/* El ancho de maquetacion explica por que la UI se ve del
                       tamano que se ve, y es lo que antes se inflaba hasta 2560
                       para comprar margen de zoom. Ahora se compra con escala. */}
-                  <small>maqueta a {t.css?.w ?? t.capture.w} px</small>
+                  <small>tu web a {t.css?.w ?? t.capture.w} px</small>
                   <small>~{p.measuredFps} fps</small>
                 </button>
               );
@@ -406,14 +411,14 @@ export function App() {
         </div>
 
         <div className="campo">
-          <label>Narracion</label>
+          <label>Narración</label>
           <div className="fila">
-            <button className={micOn ? 'on' : ''} onClick={() => setMicOn(true)}>Con microfono</button>
+            <button className={micOn ? 'on' : ''} onClick={() => setMicOn(true)}>Con micrófono</button>
             <button className={!micOn ? 'on' : ''} onClick={() => setMicOn(false)}>Sin audio</button>
           </div>
           {micOn && micDevices.length > 1 && (
             <select value={micDeviceId} onChange={(e) => setMicDeviceId(e.target.value)}>
-              <option value="">Microfono predeterminado</option>
+              <option value="">Micrófono predeterminado</option>
               {micDevices.map((d) => (
                 <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
               ))}
@@ -422,20 +427,20 @@ export function App() {
         </div>
 
         <div className="campo">
-          <label>Camara</label>
+          <label>Cámara</label>
           <div className="fila">
             <button className={camOn ? 'on' : ''} onClick={() => setCamOn(true)}>
-              Con camara
+              Con cámara
             </button>
             <button className={!camOn ? 'on' : ''} onClick={() => setCamOn(false)}>
-              Sin camara
+              Sin cámara
             </button>
           </div>
           {camOn && (
             <>
               {camDevices.length > 1 && (
                 <select value={camDeviceId} onChange={(e) => setCamDeviceId(e.target.value)}>
-                  <option value="">Camara predeterminada</option>
+                  <option value="">Cámara predeterminada</option>
                   {camDevices.map((d) => (
                     <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
                   ))}
@@ -447,9 +452,8 @@ export function App() {
               <video ref={videoPreview} className="camara-previa"
                      autoPlay muted playsInline />
               <p className="nota-formato">
-                Se graba en su propio fichero, aparte del video. En el editor se
-                elige esquina, tamano y forma, y se puede quitar sin volver a
-                grabar.
+                Se graba aparte del vídeo, así que luego puedes moverla, cambiar
+                su tamaño o quitarla sin volver a grabar.
               </p>
             </>
           )}
@@ -461,14 +465,13 @@ export function App() {
                  onChange={(e) => setTapar(e.target.value)}
                  placeholder="#saldo, .email, [data-privado]" />
           <p className="nota-formato">
-            Selectores CSS que se difuminan <b>al grabar</b>. El frame que se
-            guarda ya va tapado, asi que el dato en claro no llega a existir en
-            la carpeta: taparlo despues, en el editor, lo dejaria dentro de cada
-            JPEG. El texto de esos elementos tampoco se guarda en el log.
+            Escribe qué partes de tu web no deben salir, con el selector CSS de
+            cada una. Se difuminan <b>mientras grabas</b>, así que el dato nunca
+            llega al vídeo ni queda en la carpeta.
             <br />
-            Se difumina en vez de ocultar para no mover la maqueta: esconder el
-            elemento cambiaria de sitio los botones y el zoom automatico
-            encuadraria otra cosa.
+            Se difuminan en vez de ocultarse para no mover nada de sitio: si
+            desaparecieran, los botones cambiarían de sitio y el zoom acabaría
+            encuadrando otra cosa.
           </p>
         </div>
 
@@ -490,7 +493,7 @@ export function App() {
 
         <div className="acciones">
           <button className="primario" onClick={() => void grabar()}>Grabar</button>
-          <button onClick={() => void abrir()}>Abrir grabacion</button>
+          <button onClick={() => void abrir()}>Abrir grabación</button>
         </div>
 
         <div className="campo">
@@ -512,8 +515,8 @@ export function App() {
             </div>
           ) : (
             <p className="nota-formato">
-              Aqui apareceran tus grabaciones. Tambien puedes soltar una carpeta
-              <code> .vitrina </code> sobre la ventana para abrirla.
+              Aquí aparecerán tus grabaciones. También puedes arrastrar una
+              carpeta <code>.vitrina</code> hasta esta ventana para abrirla.
             </p>
           )}
         </div>
@@ -582,6 +585,7 @@ function Editor(
    * entro: quitarla del arbol de golpe la hace desaparecer, y una cosa que
    * entra desvaneciendose y sale de golpe se lee como un fallo.
    */
+  const [mudo, setMudo] = useState(false);
   const [atajos, setAtajos] = useState<'oculto' | 'abierto' | 'cerrando'>('oculto');
   const cerrarAtajos = useCallback(() => {
     setAtajos((v) => (v === 'abierto' ? 'cerrando' : v));
@@ -998,6 +1002,12 @@ function Editor(
   // y despues de cada salto el frame llega DESPUES del ultimo repintado, asi que
   // la burbuja se quedaria vacia o con la cara del instante anterior hasta que
   // algo mas obligara a repintar. Lo caza la verificacion de camara por pixeles.
+  // Silenciar es solo para editar: el mp4 se monta con la narracion pase lo que
+  // pase aqui. Editar oyendo la misma frase cuarenta veces cansa.
+  useEffect(() => {
+    if (audio.current) audio.current.muted = mudo;
+  }, [mudo]);
+
   useEffect(() => {
     const el = camEl.current;
     if (!el || !camUrl) return;
@@ -1101,7 +1111,7 @@ function Editor(
       <div className="fila-alta">
       <aside className="biblioteca">
         <div className="grupo">
-          <h3>Grabacion</h3>
+          <h2 className="titulo-panel"><IconoGrabacion /> Grabación</h2>
           <p className="sutil">
             {datos.manifest.capture?.w ?? datos.manifest.viewport.w}×
             {datos.manifest.capture?.h ?? datos.manifest.viewport.h}
@@ -1147,9 +1157,9 @@ function Editor(
         <div className="grupo">
           <h3>Repetir</h3>
           <p className="sutil">
-            Vuelve a ejecutar esta misma demo sola, conservando zooms y look.
-            Para regrabarla con mas resolucion, o despues de arreglar algo que
-            salia en el video.
+            Vuelve a hacer esta misma demo sola, conservando los zooms y el
+            aspecto. Sirve para regrabarla con más resolución, o después de
+            arreglar algo que salía en el vídeo.
           </p>
           <select value={calidadRepeticion} disabled={repitiendo}
                   onChange={(e) => setCalidadRepeticion(e.target.value)}>
@@ -1159,13 +1169,13 @@ function Editor(
             ))}
           </select>
           <button onClick={() => void repetir()} disabled={repitiendo}>
-            {repitiendo ? 'Repitiendo...' : 'Repetir esta grabacion'}
+            {repitiendo ? 'Repitiendo...' : 'Repetir esta grabación'}
           </button>
           <p className="sutil">
-            Lo que se escribio no se puede reproducir: el log guarda que se pulso
-            una tecla, nunca cual.
-            {datos.manifest.tapado && ' La repeticion vuelve a tapar lo mismo.'}
-            {pistaCam && ' La camara no: se repite la demo, no a quien la cuenta.'}
+            Lo que escribiste no se repite: se guarda que pulsaste una tecla,
+            nunca cuál.
+            {datos.manifest.tapado && ' Lo que tapaste se vuelve a tapar.'}
+            {pistaCam && ' La cámara no se repite: se repite la demo, no quien la cuenta.'}
           </p>
           {errorRepeticion && <p className="error">{errorRepeticion}</p>}
         </div>
@@ -1174,17 +1184,17 @@ function Editor(
           <h3>Looks</h3>
           {looks.length === 0 && (
             <p className="sutil">
-              Guarda el fondo, el marco y la marca para reutilizarlos en la
-              siguiente demo.
+              Guarda el fondo, el marco y la marca de agua con un nombre para
+              usarlos en la siguiente demo.
             </p>
           )}
           {looks.map((l) => (
             <div key={l.nombre} className="look">
-              <button onClick={() => usarLook(l)} title="Aplicar a esta grabacion">
+              <button onClick={() => usarLook(l)} title="Aplicar este look a la grabación abierta">
                 {l.nombre}
               </button>
               <button className={`fijar${lookPorDefecto === l.nombre ? ' on' : ''}`}
-                      title="Aplicar solo a las grabaciones nuevas"
+                      title="Usar este look en las grabaciones nuevas"
                       onClick={() => void marcarPorDefecto(
                         lookPorDefecto === l.nombre ? null : l.nombre)}>
                 ★
@@ -1225,7 +1235,7 @@ function Editor(
                        }))} />
               </div>
               <div className="deslizador">
-                <label>Tamano <b>{Math.round(project.watermark.scale * 100)}%</b></label>
+                <label>Tamaño <b>{Math.round(project.watermark.scale * 100)}%</b></label>
                 <input type="range" min={4} max={40}
                        value={Math.round(project.watermark.scale * 100)}
                        onChange={(e) => setProject((p) => ({
@@ -1255,6 +1265,34 @@ function Editor(
             onPointerUp={encuadreSoltar}
             onPointerCancel={encuadreSoltar}
           />
+
+          {/* El transporte flota SOBRE el lienzo, como en un reproductor: asi
+              los controles estan donde se esta mirando y no en otra fila que
+              obliga a bajar la vista. Cada icono lleva su texto en `title`,
+              porque un dibujo solo se adivina. */}
+          <div className="transporte">
+            <button className="redondo primario"
+                    title={reproduciendo ? 'Pausar (Espacio)' : 'Reproducir (Espacio)'}
+                    aria-label={reproduciendo ? 'Pausar' : 'Reproducir'}
+                    onClick={() => setReproduciendo((r) => !r)}>
+              {reproduciendo ? <IconoPausa /> : <IconoReproducir />}
+            </button>
+            <button className="redondo" title="Volver al principio (Inicio)"
+                    aria-label="Volver al principio"
+                    onClick={() => { setReproduciendo(false); setTMs(0); }}>
+              <IconoInicio />
+            </button>
+            {audioUrl && (
+              <button className="redondo" title={mudo ? 'Oír la narración' : 'Silenciar la narración'}
+                      aria-label={mudo ? 'Oir la narracion' : 'Silenciar la narracion'}
+                      onClick={() => setMudo((m) => !m)}>
+                {mudo ? <IconoSilencio /> : <IconoSonido />}
+              </button>
+            )}
+            <span className="reloj">
+              {(tMs / 1000).toFixed(1)}s / {(duracion / 1000).toFixed(1)}s
+            </span>
+          </div>
         </div>
         {atajos !== 'oculto' && (
           <div className={`atajos${atajos === 'cerrando' ? ' saliendo' : ''}`}
@@ -1263,9 +1301,9 @@ function Editor(
               <h3>Atajos</h3>
               <dl>
                 <dt>Espacio</dt><dd>reproducir o parar</dd>
-                <dt>← →</dt><dd>un frame; con Mayus, un segundo</dd>
+                <dt>← →</dt><dd>un fotograma; con Mayús, un segundo</dd>
                 <dt>Inicio / Fin</dt><dd>al principio o al final</dd>
-                <dt>Supr</dt><dd>borrar el tramo seleccionado</dd>
+                <dt>Supr</dt><dd>borrar el zoom seleccionado</dd>
                 <dt>Ctrl+Z</dt><dd>deshacer</dd>
                 <dt>Ctrl+Mayus+Z</dt><dd>rehacer</dd>
                 <dt>?</dt><dd>abrir y cerrar esta hoja</dd>
@@ -1284,20 +1322,14 @@ function Editor(
                  style={{ position: 'absolute', width: 1, height: 1, opacity: 0 }} />
         )}
 
-        <div className="transporte">
-          <button className="primario" onClick={() => setReproduciendo((r) => !r)}
-                  style={{ minWidth: 104 }}>
-            {reproduciendo ? 'Pausa' : 'Reproducir'}
-          </button>
-          <span className="reloj">{(tMs / 1000).toFixed(1)}s / {(duracion / 1000).toFixed(1)}s</span>
-        </div>
       </div>
 
       <aside className="panel">
+        <h2 className="titulo-panel"><IconoAjustes /> Configuración</h2>
         <div className="grupo">
           <h3>Marco</h3>
           <div className="deslizador">
-            <label>Tamano <b>{Math.round(project.frame.fill * 100)}%</b></label>
+            <label>Tamaño <b>{Math.round(project.frame.fill * 100)}%</b></label>
             <input type="range" min={40} max={100} value={project.frame.fill * 100}
                    onChange={(e) => setMarco({ fill: Number(e.target.value) / 100 })} />
           </div>
@@ -1316,14 +1348,14 @@ function Editor(
               <button key={c} className={project.frame.chrome === c ? 'on' : ''}
                       onClick={() => setMarco({ chrome: c })}>
                 {c === 'none' ? 'Sin marco' : c === 'macos' ? 'macOS'
-                  : c === 'windows' ? 'Windows' : 'Movil'}
+                  : c === 'windows' ? 'Windows' : 'Móvil'}
               </button>
             ))}
           </div>
         </div>
 
         <div className="grupo">
-          <h3>Camara</h3>
+          <h3>Movimiento del zoom</h3>
           <div className="fila">
             {(Object.keys(CAMERA_PRESETS) as CameraPresetName[]).map((c) => (
               <button key={c} className={camara === c ? 'on' : ''}
@@ -1342,7 +1374,7 @@ function Editor(
         </div>
 
         <div className="grupo">
-          <h3>Zoom · {zooms.length} {zooms.length === 1 ? 'tramo' : 'tramos'}</h3>
+          <h3>Tramos de zoom · {zooms.length}</h3>
 
           {sel && seleccion !== null ? (
             <>
@@ -1351,7 +1383,7 @@ function Editor(
                 {((sel.endMs - sel.startMs) / 1000).toFixed(1)}s
               </p>
               <div className="deslizador">
-                <label>Ampliacion <b>{sel.scale.toFixed(2)}×</b></label>
+                <label>Ampliación <b>{sel.scale.toFixed(2)}×</b></label>
                 <input type="range" min={100} max={Math.max(105, Math.round(presupuesto.maxSharpZoom * 100))}
                        value={Math.round(sel.scale * 100)}
                        onChange={(e) => setZooms((z) =>
@@ -1362,7 +1394,7 @@ function Editor(
                   ? 'Arrastra sobre la imagen para mover el encuadre.'
                   : 'Lleva la aguja dentro del tramo para poder reencuadrarlo.'}
               </p>
-              <button className="peligro" onClick={borrarSeleccion}>Borrar tramo (Supr)</button>
+              <button className="peligro" onClick={borrarSeleccion}>Borrar el zoom seleccionado</button>
             </>
           ) : (
             <p className="sutil">
@@ -1372,7 +1404,7 @@ function Editor(
           )}
 
           {editado && (
-            <button onClick={() => replanificar(camara)}>Volver al zoom automatico</button>
+            <button onClick={() => replanificar(camara)}>Volver al zoom automático</button>
           )}
         </div>
 
@@ -1381,11 +1413,11 @@ function Editor(
           <p className="sutil">
             {recorteActivo
               ? `${(project.trimStartMs / 1000).toFixed(1)}s – ${((project.trimEndMs ?? duracion) / 1000).toFixed(1)}s`
-              : 'Arrastra las asas grises de los extremos'}
+              : 'Arrastra las asas de los extremos para quitar el principio o el final'}
           </p>
           {recorteActivo && (
             <button onClick={() => setProject((p) => ({ ...p, ...clampTrim(0, null, duracion) }))}>
-              Quitar recorte
+              Quitar el recorte
             </button>
           )}
         </div>
@@ -1394,14 +1426,14 @@ function Editor(
           <h3>Audio</h3>
           <p className="sutil">
             {pista
-              ? 'Narracion grabada · se monta en mp4, webm y mov (el gif no lleva audio)'
-              : 'Esta grabacion no tiene narracion'}
+              ? 'Narración grabada · se incluye en mp4, webm y mov (el gif no lleva sonido)'
+              : 'Esta grabación no tiene narración'}
           </p>
 
           {pista && (
             <>
               <button onClick={() => void cortarSilencios()} disabled={buscando}>
-                {buscando ? 'Buscando silencios...' : 'Cortar silencios'}
+                {buscando ? 'Buscando silencios...' : 'Quitar los silencios'}
               </button>
               {cortes.length > 0 && (
                 <>
@@ -1410,18 +1442,18 @@ function Editor(
                     −{((duracion - mapa.outputDurationMs) / 1000).toFixed(1)}s
                   </p>
                   <button onClick={() => setProject((p) => ({ ...p, cuts: [] }))}>
-                    Quitar cortes
+                    Volver a poner los silencios
                   </button>
                 </>
               )}
-              {sinSilencios && <p className="sutil">No se encontraron silencios que quitar.</p>}
+              {sinSilencios && <p className="sutil">No hay silencios que quitar.</p>}
             </>
           )}
         </div>
 
         {pistaCam && (
           <div className="grupo">
-            <h3>Camara web</h3>
+            <h3>Cámara web</h3>
             {project.camara ? (
               <>
                 {/* Flechas y no texto: el inspector es estrecho y "Arriba
@@ -1429,10 +1461,10 @@ function Editor(
                     ponian lo mismo. El nombre entero va en el tooltip. */}
                 <div className="fila esquinas">
                   {([
-                    ['no', '↖', 'Arriba a la izquierda'],
-                    ['ne', '↗', 'Arriba a la derecha'],
-                    ['so', '↙', 'Abajo a la izquierda'],
-                    ['se', '↘', 'Abajo a la derecha'],
+                    ['no', 'Arriba izq.', 'Arriba a la izquierda'],
+                    ['ne', 'Arriba der.', 'Arriba a la derecha'],
+                    ['so', 'Abajo izq.', 'Abajo a la izquierda'],
+                    ['se', 'Abajo der.', 'Abajo a la derecha'],
                   ] as const).map(([e, flecha, titulo]) => (
                     <button key={e} title={titulo}
                             className={project.camara?.esquina === e ? 'on' : ''}
@@ -1443,7 +1475,7 @@ function Editor(
                   ))}
                 </div>
                 <div className="deslizador">
-                  <label>Tamano <b>{Math.round(project.camara.tamano * 100)}%</b></label>
+                  <label>Tamaño <b>{Math.round(project.camara.tamano * 100)}%</b></label>
                   <input type="range" min={6} max={45} value={Math.round(project.camara.tamano * 100)}
                          onChange={(ev) => setProject((p) => (p.camara
                            ? { ...p, camara: { ...p.camara, tamano: Number(ev.target.value) / 100 } }
@@ -1467,18 +1499,18 @@ function Editor(
                   Espejo
                 </button>
                 <p className="sutil">
-                  Sin espejo el texto de tu camiseta se lee al derecho, que es lo
-                  que espera quien mira el video. Con espejo te ves como en un
-                  espejo, que es lo que esperas tu.
+                  Con espejo te ves como en un espejo, que es a lo que estás
+                  acostumbrado. Sin espejo, el texto de tu camiseta se lee al
+                  derecho: es lo que espera quien mire el vídeo.
                 </p>
                 <button className="peligro"
                         onClick={() => setProject((p) => ({ ...p, camara: null }))}>
-                  Quitar la burbuja
+                  Quitar la cámara del vídeo
                 </button>
               </>
             ) : (
               <>
-                <p className="sutil">La grabacion trae camara, pero no se dibuja.</p>
+                <p className="sutil">Grabaste con cámara, pero ahora mismo no se ve en el vídeo.</p>
                 <button onClick={() => setProject((p) => ({
                   ...p,
                   camara: {
@@ -1486,7 +1518,7 @@ function Editor(
                     espejo: false, borde: 3, sombra: 24,
                   },
                 }))}>
-                  Poner la burbuja
+                  Poner la cámara en el vídeo
                 </button>
               </>
             )}
@@ -1504,15 +1536,15 @@ function Editor(
           <h3>Anotaciones</h3>
           <div className="fila">
             <button className={project.frame.labels ? 'on' : ''}
-                    title="Rotula el elemento pulsado con su texto, sacado del DOM"
-                    onClick={() => setMarco({ labels: !project.frame.labels })}>Rotulos</button>
+                    title="Escribe en el vídeo el nombre del botón que pulsas"
+                    onClick={() => setMarco({ labels: !project.frame.labels })}>Rótulos</button>
             <button className={project.frame.keys ? 'on' : ''}
-                    title="Muestra las teclas. Las imprimibles salen como un punto"
+                    title="Muestra las teclas que pulsas. Las letras salen como un punto, nunca la letra"
                     onClick={() => setMarco({ keys: !project.frame.keys })}>Teclas</button>
           </div>
           <p className="sutil">
-            Salen del DOM al grabar, no de los pixeles. Lo que se escribe nunca se
-            muestra: las teclas imprimibles se dibujan como un punto.
+            Salen de lo que pasó al grabar, no de los píxeles. Lo que escribes
+            nunca se enseña: cada letra sale como un punto.
           </p>
         </div>
 
@@ -1520,7 +1552,7 @@ function Editor(
           <h3>Ritmo</h3>
           <p className="sutil">
             Las esperas —una carga, un formulario que se rellena— siguen en el
-            video pero pasan mas deprisa.
+            vídeo, pero pasan más deprisa.
           </p>
           <button onClick={acelerarEsperas} disabled={propuesta.length === 0}>
             {propuesta.length === 0
@@ -1536,7 +1568,7 @@ function Editor(
                 −{(ahorroDe(project.speeds!) / 1000).toFixed(1)}s
               </p>
               <button onClick={() => setProject((p) => ({ ...p, speeds: [] }))}>
-                Volver a tiempo real
+                Volver a la velocidad normal
               </button>
             </>
           )}
@@ -1545,7 +1577,7 @@ function Editor(
         <Exportar dir={datos.dir} camara={camara} guardar={guardar} salida={project.export} />
 
         <div className="pie">
-          <button onClick={onSalir}>Nueva grabacion</button>
+          <button onClick={onSalir}>Nueva grabación</button>
         </div>
       </aside>
       </div>
@@ -1557,14 +1589,16 @@ function Editor(
           <button onClick={() => setHist(rehacer)} disabled={!puedeRehacer(hist)}
                   title="Rehacer (Ctrl+Shift+Z)">Rehacer</button>
           <span className="separador" />
-          <button onClick={() => borrarSeleccion()} disabled={seleccion === null}>
-            Borrar tramo
-          </button>
-          <button onClick={anadirTramo} disabled={dentroDeTramo}
+          <button className="con-icono" onClick={anadirTramo} disabled={dentroDeTramo}
                   title={dentroDeTramo
-                    ? 'La aguja esta dentro de un tramo. Muevela a un hueco.'
-                    : 'Crea un tramo en la posicion de la aguja'}>
-            Anadir tramo
+                    ? 'La aguja está dentro de un tramo: muévela a un hueco'
+                    : 'Crea un tramo de zoom donde está la aguja'}>
+            <IconoAnadir /> Añadir zoom
+          </button>
+          <button className="con-icono" onClick={() => borrarSeleccion()}
+                  disabled={seleccion === null}
+                  title="Borra el tramo de zoom seleccionado (Supr)">
+            <IconoBorrar /> Borrar zoom
           </button>
           <span className="hueco" />
           <label className="escala">

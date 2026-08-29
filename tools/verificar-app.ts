@@ -360,7 +360,7 @@ async function main(): Promise<void> {
   `);
   await sleep(400);
   await ev(client,
-    "[...document.querySelectorAll('button')].find(b => b.textContent === 'Borrar tramo').click()");
+    "[...document.querySelectorAll('button')].find(b => b.textContent.trim() === 'Borrar zoom').click()");
   await sleep(400);
   const tramosTrasBorrar = await ev<number>(client, 'document.querySelectorAll(".tramo").length');
   check('borrar quita un tramo', tramosTrasBorrar === tramosAntes - 1,
@@ -401,13 +401,13 @@ async function main(): Promise<void> {
 
     const conRotulos = await ev<string>(client, FIRMA_DENSA);
     await ev(client,
-      "[...document.querySelectorAll('button')].find(x => x.textContent === 'Rotulos').click()");
+      "[...document.querySelectorAll('button')].find(x => x.textContent === 'Rótulos').click()");
     await sleep(900);
     const sinRotulos = await ev<string>(client, FIRMA_DENSA);
     check('los rotulos llegan al lienzo', conRotulos !== sinRotulos,
       `"${conTexto.label}" en ${Math.round(enRotulo)}ms`);
     await ev(client,
-      "[...document.querySelectorAll('button')].find(x => x.textContent === 'Rotulos').click()");
+      "[...document.querySelectorAll('button')].find(x => x.textContent === 'Rótulos').click()");
     await sleep(600);
   }
 
@@ -431,7 +431,7 @@ async function main(): Promise<void> {
     check('y se puede volver a tiempo real',
       await esperarA(client, `
         (() => {
-          const b = [...document.querySelectorAll('button')].find(x => x.textContent === 'Volver a tiempo real');
+          const b = [...document.querySelectorAll('button')].find(x => x.textContent === 'Volver a la velocidad normal');
           if (b) { b.click(); return false; }
           return !document.querySelector('.veloz');
         })()
@@ -476,7 +476,7 @@ async function main(): Promise<void> {
   const tramosPrevios = await ev<number>(client, 'document.querySelectorAll(".tramo").length');
 
   await ev(client,
-    "[...document.querySelectorAll('button')].find(b => b.textContent === 'Repetir esta grabacion').click()");
+    "[...document.querySelectorAll('button')].find(b => b.textContent === 'Repetir esta grabación').click()");
   const repetida = await esperarA(client,
     "!!document.querySelector('canvas') && !document.body.textContent.includes('Repitiendo')",
     'repeticion terminada', 180_000);
@@ -575,7 +575,7 @@ async function verificarTimeline(client: Cliente): Promise<void> {
   check('pinchar un tramo lo selecciona',
     await ev<boolean>(client, '!!document.querySelector(".tramo.sel")'));
   check('el panel muestra los controles del tramo',
-    await ev<boolean>(client, '[...document.querySelectorAll("button")].some(b => b.textContent.includes("Borrar tramo"))'));
+    await ev<boolean>(client, '[...document.querySelectorAll("button")].some(b => b.textContent.includes("Borrar zoom"))'));
 
   // Mover
   await arrastrar(centro, centro + 70);
@@ -618,12 +618,12 @@ async function verificarTimeline(client: Cliente): Promise<void> {
   check('el hueco encontrado admite un tramo', hueco.w > 20, `${hueco.w.toFixed(0)}px`);
 
   const n0 = await ev<number>(client, 'document.querySelectorAll(".tramo").length');
-  await ev(client, '[...document.querySelectorAll("button")].find(b => b.textContent.trim() === "Anadir tramo").click()');
+  await ev(client, '[...document.querySelectorAll("button")].find(b => b.textContent.trim() === "Añadir zoom").click()');
   await sleep(400);
   const n1 = await ev<number>(client, 'document.querySelectorAll(".tramo").length');
   check('anadir crea un tramo nuevo', n1 === n0 + 1, `${n0} -> ${n1}`);
 
-  await ev(client, '[...document.querySelectorAll("button")].find(b => b.textContent.includes("Borrar tramo")).click()');
+  await ev(client, '[...document.querySelectorAll("button")].find(b => b.textContent.includes("Borrar zoom")).click()');
   await sleep(400);
   check('borrar quita el tramo',
     await ev<number>(client, 'document.querySelectorAll(".tramo").length') === n0,
@@ -668,14 +668,14 @@ async function verificarTimeline(client: Cliente): Promise<void> {
   // Recorte
   await arrastrar(Math.round(pista.x + 2), Math.round(pista.x + pista.w * 0.15));
   check('arrastrar el asa de recorte lo aplica',
-    await ev<boolean>(client, '[...document.querySelectorAll("button")].some(b => b.textContent === "Quitar recorte")'));
-  await ev(client, '[...document.querySelectorAll("button")].find(b => b.textContent === "Quitar recorte").click()');
+    await ev<boolean>(client, '[...document.querySelectorAll("button")].some(b => b.textContent === "Quitar el recorte")'));
+  await ev(client, '[...document.querySelectorAll("button")].find(b => b.textContent === "Quitar el recorte").click()');
   await sleep(300);
 
   // Volver al automatico
   check('se ofrece volver al zoom automatico',
-    await ev<boolean>(client, '[...document.querySelectorAll("button")].some(b => b.textContent.includes("automatico"))'));
-  await ev(client, '[...document.querySelectorAll("button")].find(b => b.textContent.includes("automatico")).click()');
+    await ev<boolean>(client, '[...document.querySelectorAll("button")].some(b => b.textContent.includes("automático"))'));
+  await ev(client, '[...document.querySelectorAll("button")].find(b => b.textContent.includes("automático")).click()');
   await sleep(500);
   check('replanificar borra las marcas manuales',
     !(await ev<boolean>(client, '!!document.querySelector(".tramo.manual")')));
@@ -770,7 +770,7 @@ async function verificarGrabacion(): Promise<void> {
         'audio decodificable', 12_000));
 
     check('el editor muestra que hay narracion',
-      await esperarA(client, 'document.body.textContent.includes("Narracion grabada")',
+      await esperarA(client, 'document.body.textContent.includes("Narración grabada")',
         'panel de audio', 8000));
   }
   const tramos = await ev<number>(client, 'document.querySelectorAll(".tramo").length');
@@ -826,7 +826,7 @@ async function verificarCamara(): Promise<void> {
   await sleep(2000);
 
   await ev(client, `
-    [...document.querySelectorAll('button')].find(b => b.textContent === 'Con camara')?.click()
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Con cámara')?.click()
   `);
   // Abrir la camara y pintar el primer frame tarda; sin esta espera se graba
   // antes de que el dispositivo este listo y la pista sale vacia.
@@ -885,7 +885,7 @@ async function verificarCamara(): Promise<void> {
         'video decodificable', 15_000));
 
     check('el editor ofrece el panel de camara',
-      await ev<boolean>(client, 'document.body.textContent.includes("Camara web")'));
+      await ev<boolean>(client, 'document.body.textContent.includes("Cámara web")'));
 
     // Y la prueba que importa: la burbuja esta EN EL LIENZO. Se compara la
     // region con y sin ella; el lienzo entero cambiaria igual, porque la pagina
@@ -894,7 +894,7 @@ async function verificarCamara(): Promise<void> {
     await sleep(500);
     const conBurbuja = await ev<string>(client, FIRMA_BURBUJA);
     await ev(client, `
-      [...document.querySelectorAll('button')].find(b => b.textContent === 'Quitar la burbuja')?.click()
+      [...document.querySelectorAll('button')].find(b => b.textContent === 'Quitar la cámara del vídeo')?.click()
     `);
     await sleep(600);
     const sinBurbuja = await ev<string>(client, FIRMA_BURBUJA);
@@ -902,7 +902,7 @@ async function verificarCamara(): Promise<void> {
       `${conBurbuja} -> ${sinBurbuja}`);
 
     await ev(client, `
-      [...document.querySelectorAll('button')].find(b => b.textContent === 'Poner la burbuja')?.click()
+      [...document.querySelectorAll('button')].find(b => b.textContent === 'Poner la cámara en el vídeo')?.click()
     `);
     await sleep(600);
     check('se puede volver a ponerla',
@@ -1317,10 +1317,10 @@ async function verificarSilencios(): Promise<void> {
   check('el editor abrio la grabacion',
     await esperarA(client, '!!document.querySelector("canvas")', 'editor'));
   check('detecta que hay narracion',
-    await ev<boolean>(client, 'document.body.textContent.includes("Narracion grabada")'));
+    await ev<boolean>(client, 'document.body.textContent.includes("Narración grabada")'));
 
   await ev(client,
-    '[...document.querySelectorAll("button")].find(b => b.textContent.includes("Cortar silencios")).click()');
+    '[...document.querySelectorAll("button")].find(b => b.textContent.includes("Quitar los silencios")).click()');
   check('la deteccion termina',
     await esperarA(client, '!document.body.textContent.includes("Buscando silencios")',
       'fin de la deteccion', 30_000));
