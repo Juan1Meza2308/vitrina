@@ -66,6 +66,9 @@ export function App() {
   /** Stream de previsualizacion: verse ANTES de grabar evita descubrir al
    *  terminar que la tapa estaba puesta o que se sale medio hombro. */
   const [camPreview, setCamPreview] = useState<MediaStream | null>(null);
+  const [pausado, setPausado] = useState(false);
+  /** Atajos que el sistema no dejo registrar, para poder avisar. */
+  const [atajosFallidos, setAtajosFallidos] = useState<string[]>([]);
   const [nivel, setNivel] = useState(0);
   const mic = useRef<MicHandle | null>(null);
   const cam = useRef<CamHandle | null>(null);
@@ -220,7 +223,9 @@ export function App() {
       void window.vitrina.guardarAjustes({
         url, presetName, orientacion, micOn, micDeviceId, tapar, camOn, camDeviceId,
       });
-      await window.vitrina.startRecording(url, presetName, orientacion, tapar);
+      const r = await window.vitrina.startRecording(url, presetName, orientacion, tapar);
+      setAtajosFallidos(r?.atajosFallidos ?? []);
+      setPausado(false);
       setStats({ frames: 0, elapsedMs: 0 });
       setFase('grabando');
     } catch (e) {
@@ -232,6 +237,14 @@ export function App() {
       setFase('inicio');
     }
   }, [url, presetName, orientacion, micOn, micDeviceId, tapar, camOn, camDeviceId, camPreview]);
+
+  // El atajo global de parar pasa por aqui y no por el proceso principal: el
+  // microfono lo lleva el renderer y hay que cerrarlo antes de que se escriba
+  // el manifest.
+  useEffect(() => window.vitrina.onAtajoGrabacion((que) => {
+    if (que === 'parar') void pararRef.current?.();
+  }), []);
+  useEffect(() => window.vitrina.onPausaCambiada(setPausado), []);
 
   const parar = useCallback(async () => {
     try {
@@ -250,6 +263,11 @@ export function App() {
       setFase('inicio');
     }
   }, []);
+
+  // `parar` se crea despues del efecto que escucha el atajo, asi que va por
+  // referencia: capturarla directamente dejaria la version del primer render.
+  const pararRef = useRef<(() => Promise<void>) | null>(null);
+  pararRef.current = parar;
 
   const abrirDir = useCallback(async (dir: string) => {
     try {
@@ -331,7 +349,33 @@ export function App() {
           {/* Si el microfono fallo hay que decirlo AQUI. Enterarse al reproducir
               significa repetir la demo entera. */}
           {error && <p className="error" style={{ maxWidth: 460 }}>{error}</p>}
-          <button className="primario" onClick={() => void parar()}>Parar y editar</button>
+          {pausado && (
+            <p className="sutil" style={{ color: 'var(--acc)' }}>
+              En pausa · el trozo pausado no saldrá en el vídeo
+            </p>
+          )}
+          <div className="fila" style={{ gap: 10 }}>
+            <button onClick={() => void window.vitrina.pausarGrabacion()}>
+              {pausado ? 'Reanudar' : 'Pausar'}
+            </button>
+            <button onClick={() => void window.vitrina.marcarMomento()} disabled={pausado}
+                    title="Deja una chincheta en este instante para encontrarlo luego">
+              Señalar momento
+            </button>
+            <button className="primario" onClick={() => void parar()}>Parar y editar</button>
+          </div>
+          {/* Los atajos se dicen aqui porque su gracia es usarlos con esta
+              ventana detras: leerlos en el README no sirve de nada. */}
+          <p className="sutil" style={{ maxWidth: 460, textAlign: 'center' }}>
+            Sin volver aquí: <b>Ctrl+Mayús+S</b> para parar, <b>Ctrl+Mayús+P</b>{' '}
+            para pausar y <b>Ctrl+Mayús+M</b> para señalar un momento.
+          </p>
+          {atajosFallidos.length > 0 && (
+            <p className="sutil" style={{ maxWidth: 460, textAlign: 'center' }}>
+              Estos no los concedió el sistema, seguramente porque otra app los
+              usa: <b>{atajosFallidos.join(', ')}</b>. Los demás sí funcionan.
+            </p>
+          )}
         </div>
       </div>
     );

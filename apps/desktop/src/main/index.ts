@@ -10,7 +10,9 @@
  * y convertirlos a base64 para cruzar el puente los duplicaria de tamano y
  * bloquearia el hilo principal en cada movimiento del cursor.
  */
-import { app, BrowserWindow, dialog, ipcMain, net, protocol, screen, session, shell } from 'electron';
+import {
+  app, BrowserWindow, dialog, globalShortcut, ipcMain, net, protocol, screen, session, shell,
+} from 'electron';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
@@ -126,6 +128,51 @@ let recorder: Recorder | null = null;
  */
 let marcoPedido: { w: number; h: number } | null = null;
 let recordingDir = '';
+/**
+ * Atajos que funcionan con la ventana de Vitrina detras.
+ *
+ * Son la diferencia entre parar la grabacion y GRABARSE parando la grabacion:
+ * la demo pasa en otra ventana, asi que volver aqui a pulsar un boton sale en
+ * el video. Se registran solo mientras se graba y se liberan al parar: un atajo
+ * global que sobreviva a la grabacion se dispararia dentro de otra app.
+ */
+const ATAJOS = {
+  parar: 'CommandOrControl+Shift+S',
+  pausa: 'CommandOrControl+Shift+P',
+  marca: 'CommandOrControl+Shift+M',
+} as const;
+
+/** Devuelve los que no se pudieron registrar, para poder DECIRLO. Un atajo mudo
+ *  es peor que no tenerlo: se pulsa y no pasa nada. */
+function registrarAtajos(): string[] {
+  const fallidos: string[] = [];
+  const reg = (combo: string, fn: () => void) => {
+    try {
+      if (!globalShortcut.register(combo, fn)) fallidos.push(combo);
+    } catch {
+      fallidos.push(combo);
+    }
+  };
+  // Parar pasa por el renderer y no por el grabador: el microfono lo lleva el
+  // renderer y hay que cerrarlo ANTES de que se escriba el manifest.
+  reg(ATAJOS.parar, () => win?.webContents.send('record:atajo', 'parar'));
+  reg(ATAJOS.pausa, () => void alternarPausa());
+  reg(ATAJOS.marca, () => recorder?.marcar());
+  return fallidos;
+}
+
+function liberarAtajos(): void {
+  globalShortcut.unregisterAll();
+}
+
+async function alternarPausa(): Promise<boolean> {
+  if (!recorder) return false;
+  if (recorder.pausada) await recorder.reanudar();
+  else await recorder.pausar();
+  win?.webContents.send('record:pausa', recorder.pausada);
+  return recorder.pausada;
+}
+
 /** Carpeta que sirve el protocolo `vitrina://`. */
 let servedDir = '';
 let exportController: AbortController | null = null;
@@ -244,6 +291,10 @@ app.whenReady().then(() => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });
 });
+
+// Un atajo global que sobreviva a la app se dispararia dentro de otra: Electron
+// los libera al salir, pero mas vale decirlo aqui que confiar en ello.
+app.on('will-quit', liberarAtajos);
 
 app.on('window-all-closed', () => {
   void recorder?.close().catch(() => {});
@@ -371,7 +422,7 @@ ipcMain.handle('record:start', async (
   marcoPedido = preset.capture;
   await recorder.launch();
   await recorder.start();
-  return { dir: recordingDir, preset };
+  return { dir: recordingDir, preset, atajos: ATAJOS, atajosFallidos: registrarAtajos() };
 });
 
 /**
@@ -472,14 +523,22 @@ ipcMain.handle('record:repeat', async (
     recordingDir = destino;
     return loadRecording(destino);
   } catch (e) {
+    liberarAtajos();
     await recorder?.close().catch(() => {});
     recorder = null;
     throw e;
   }
 });
 
+ipcMain.handle('record:pausa', () => alternarPausa());
+
+// El atajo global no siempre esta disponible —otra app puede tenerlo cogido— y
+// ademas hay quien prefiere un boton. La marca tiene que poder ponerse igual.
+ipcMain.handle('record:marcar', () => { recorder?.marcar(); });
+
 ipcMain.handle('record:stop', async () => {
   if (!recorder) throw new Error('No hay grabacion en curso');
+  liberarAtajos();
   recorder.setAudioTrack(audioTrack);
   recorder.setCamTrack(camTrack);
   audioTrack = null;

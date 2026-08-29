@@ -112,9 +112,21 @@ const api = {
     orientacion: Orientacion,
     /** Selectores CSS a difuminar, tal y como se escribieron en el campo. */
     tapar?: string,
-  ): Promise<{ dir: string; preset: CapturePreset }> =>
+  ): Promise<{
+    dir: string; preset: CapturePreset;
+    atajos: Record<string, string>;
+    /** Los que el sistema no dejo registrar. Hay que decirlo: un atajo mudo es
+     *  peor que no tenerlo. */
+    atajosFallidos: string[];
+  }> =>
     ipcRenderer.invoke('record:start', { url, presetName, orientacion, tapar }),
   stopRecording: (): Promise<RecordingData> => ipcRenderer.invoke('record:stop'),
+  /** Pausa o reanuda. Devuelve si quedo pausada. */
+  pausarGrabacion: (): Promise<boolean> => ipcRenderer.invoke('record:pausa'),
+  marcarMomento: (): Promise<void> => ipcRenderer.invoke('record:marcar'),
+  /** Atajos globales pulsados con la ventana detras. */
+  onAtajoGrabacion: (cb: (que: string) => void) => subscribe<string>('record:atajo', cb),
+  onPausaCambiada: (cb: (pausada: boolean) => void) => subscribe<boolean>('record:pausa', cb),
   repetirGrabacion: (dir: string, presetName?: string, texto?: string): Promise<RecordingData> =>
     ipcRenderer.invoke('record:repeat', { dir, presetName, texto }),
   onRecordProgress: (cb: (p: RecordProgress) => void) => subscribe('record:progress', cb),

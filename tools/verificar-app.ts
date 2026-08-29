@@ -801,6 +801,127 @@ async function verificarGrabacion(): Promise<void> {
 }
 
 /**
+ * Verifica la pausa y las marcas, de punta a punta.
+ *
+ * Lo que se comprueba es el RESULTADO, no que la app diga que pauso: que la
+ * carpeta sale con un corte de la duracion de la pausa y que la marca aparece
+ * como chincheta en la regla del timeline. Preguntarle a la interfaz si esta
+ * pausada solo probaria que sabe pintar un boton.
+ */
+async function verificarPausa(): Promise<void> {
+  const fixture = pathToFileURL(path.resolve('spikes/stress.html')).href;
+  const salidas = path.join(os.homedir(), 'Videos', 'Vitrina');
+  const antes = new Set(await listar(salidas));
+  const PAUSA_MS = 1500;
+
+  console.log(`  grabando con pausa   ${fixture}\n`);
+  const child = spawn(ELECTRON, [
+    APP,
+    `--remote-debugging-port=${PORT}`,
+    '--use-fake-device-for-media-stream',
+    '--use-fake-ui-for-media-stream',
+  ], { stdio: ['ignore', 'ignore', 'inherit'] });
+  const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+  await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+  await sleep(2000);
+
+  await ev(client, `
+    (() => {
+      const i = document.querySelector('#url');
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set
+        .call(i, ${JSON.stringify(fixture)});
+      i.dispatchEvent(new Event('input', { bubbles: true }));
+      [...document.querySelectorAll('button')].find(b => b.textContent === 'Grabar').click();
+    })()
+  `);
+  check('la app entro en modo grabacion',
+    await esperarA(client, '!!document.querySelector(".pulso")', 'estado grabando'));
+
+  await interactuarConLoGrabado();
+  await sleep(600);
+
+  // Una marca en mitad de la grabacion, por el boton: el atajo global es de
+  // teclado del sistema y no se puede inyectar desde aqui.
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Señalar momento')?.click()
+  `);
+  await sleep(400);
+
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Pausar')?.click()
+  `);
+  check('la app dice que esta en pausa',
+    await esperarA(client, 'document.body.textContent.includes("En pausa")', 'aviso de pausa'));
+  await sleep(PAUSA_MS);
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Reanudar')?.click()
+  `);
+  check('y vuelve a grabar',
+    await esperarA(client, '!document.body.textContent.includes("En pausa")', 'sin aviso'));
+  await sleep(1200);
+
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Parar y editar')?.click()
+  `);
+  check('parar lleva al editor',
+    await esperarA(client, '!!document.querySelector("canvas")', 'editor abierto'));
+
+  const nuevas = (await listar(salidas)).filter((n) => !antes.has(n));
+  const carpeta = nuevas[0] ? path.join(salidas, nuevas[0]) : null;
+  if (!carpeta) {
+    check('se creo la carpeta de grabacion', false);
+  } else {
+    const project = JSON.parse(
+      await fsp.readFile(path.join(carpeta, 'project.json'), 'utf8'),
+    ) as { cuts?: { startMs: number; endMs: number }[] };
+    const cortes = project.cuts ?? [];
+    check('la pausa quedo como un corte', cortes.length === 1, `${cortes.length} cortes`);
+
+    if (cortes[0]) {
+      const dura = cortes[0].endMs - cortes[0].startMs;
+      check('el corte mide lo que duro la pausa',
+        dura > PAUSA_MS - 500 && dura < PAUSA_MS + 900, `${dura} ms`);
+    }
+
+    const manifest = JSON.parse(
+      await fsp.readFile(path.join(carpeta, 'manifest.json'), 'utf8'),
+    ) as { startedAt: number; frames: { t: number }[] };
+    if (cortes[0]) {
+      // Lo que de verdad importa: durante la pausa no se capturo nada.
+      const dentro = manifest.frames.filter((f) => {
+        const off = f.t * 1000 - manifest.startedAt;
+        return off > cortes[0]!.startMs + 300 && off < cortes[0]!.endMs - 300;
+      });
+      check('durante la pausa no llegaron frames', dentro.length === 0, `${dentro.length} frames`);
+    }
+
+    const eventos = JSON.parse(
+      await fsp.readFile(path.join(carpeta, 'events.json'), 'utf8'),
+    ) as { type: string }[];
+    check('la marca quedo en el log',
+      eventos.filter((e) => e.type === 'mark').length === 1);
+  }
+
+  check('la chincheta aparece en la regla',
+    await ev<number>(client, 'document.querySelectorAll(".hito").length') === 1);
+
+  await capturar(client, 'apps/desktop/captura-pausa.png');
+  await client.close();
+  child.kill();
+  await sleep(800);
+
+  for (const nombre of await listar(salidas)) {
+    if (antes.has(nombre)) continue;
+    await fsp.rm(path.join(salidas, nombre), { recursive: true, force: true }).catch(() => {});
+    console.log(`  limpiado   ${nombre}`);
+  }
+
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}`);
+  console.log('  captura: apps/desktop/captura-pausa.png\n');
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
  * Verifica la camara web de punta a punta.
  *
  * La maquina de desarrollo no tiene camara, asi que se usa el dispositivo falso
@@ -1356,6 +1477,7 @@ async function verificarSilencios(): Promise<void> {
 
 const flujo = process.argv.includes('--silencios') ? verificarSilencios
   : process.argv.includes('--vertical') ? verificarVertical
+  : process.argv.includes('--pausa') ? verificarPausa
   : process.argv.includes('--camara') ? verificarCamara
   : process.argv.includes('--grabar') ? verificarGrabacion : main;
 flujo().catch((e: unknown) => {
