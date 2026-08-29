@@ -1,9 +1,29 @@
 {
   "name": "vitrina",
   "private": true,
-  "version": "0.1.0-dev",
+  "version": "0.1.0",
   "type": "module",
   "description": "Grabador open source para demos de apps web: zoom automatico en los clicks y fondo cinematografico",
+  "keywords": [
+    "screen-recorder",
+    "screencast",
+    "demo",
+    "devtools-protocol",
+    "electron",
+    "screen-studio-alternative",
+    "product-demo",
+    "zoom",
+    "ffmpeg",
+    "typescript"
+  ],
+  "homepage": "https://github.com/Juan1Meza2308/vitrina#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Juan1Meza2308/vitrina.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Juan1Meza2308/vitrina/issues"
+  },
   "license": "MIT",
   "engines": {
     "node": ">=22.18"

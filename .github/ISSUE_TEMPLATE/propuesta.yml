@@ -1,0 +1,25 @@
+name: Feature request
+description: Something Vitrina could do
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Vitrina records **web pages** through the DevTools Protocol — it does not
+        capture the desktop, and that constraint is where most of its advantages
+        come from. Ideas that fit inside it tend to go further.
+
+  - type: textarea
+    id: problema
+    attributes:
+      label: What are you trying to do?
+      description: |
+        The problem, not the solution. "My demos of a checkout flow are 4 minutes
+        long and nobody watches past the first one" says more than "add chapters".
+    validations: { required: true }
+
+  - type: textarea
+    id: idea
+    attributes:
+      label: What did you have in mind?
+      description: Optional. If you have seen it done well elsewhere, say where.

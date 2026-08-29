@@ -35,6 +35,10 @@ publish:
   provider: github
   owner: Juan1Meza2308
   repo: vitrina
+  # Publicada, no borrador. Una Release en borrador no la ve nadie —ni las apps
+  # instaladas, que es lo que dispara el aviso de version nueva—, asi que
+  # quedaria una publicacion que parece hecha y que no llega a nadie.
+  releaseType: release
 
 files:
   - out/**/*

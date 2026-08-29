@@ -1,0 +1,37 @@
+name: CI
+
+# En cada push y en cada pull request. Es la red mínima: tipos y batería de
+# tests. Lo que NO está aquí es `verificar-app`, que conduce la aplicación de
+# verdad por CDP: necesita pantalla, navegador y varios minutos, y un CI que
+# tarda diez minutos deja de leerse. Esa verificación se corre a mano antes de
+# publicar, y está explicada en docs/desarrollo.md.
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      # ffprobe, que ffmpeg-static no trae: lo usan los tests del exportador
+      # para MEDIR el vídeo que acaban de producir (dimensiones, duración,
+      # pistas). La app no lo necesita para nada.
+      - name: Instalar ffprobe
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - run: npm ci
+
+      - run: npm run typecheck
+
+      # Entre ellos, el que comprueba que el ffmpeg empaquetado trae prores_ks
+      # y libopus: si un día deja de traerlos, esto se pone rojo antes de que
+      # nadie descargue un instalador que no sabe exportar.
+      - run: npm test
