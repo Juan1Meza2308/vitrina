@@ -191,3 +191,36 @@ lo que se está variando, lo que falla es el banco de pruebas.
 
 Consecuencia práctica: 1.5 abarata toda la escalera apaisada. Sin ella, el
 escalón más barato con maquetación normal costaba 3.69 MP; con ella, 2.07.
+
+## M10 · La CSP de la página anula un `<style>` inyectado, y no avisa
+
+Para tapar datos sensibles hay que meter una hoja de estilos en la página
+grabada antes de que se pinte. El script se inyecta por CDP en el *main world*,
+que la CSP no filtra —eso ya estaba comprobado—, y de ahí venía el error: que el
+script corra no significa que lo que hace aplique.
+
+`node spikes/m10-csp-estilo.mjs`:
+
+| Página | `<style>` creado por script | `new CSSStyleSheet` + `adoptedStyleSheets` |
+|---|---|---|
+| sin CSP | aplica | aplica |
+| `style-src 'self'` | **no aplica** (`filter: none`) | aplica |
+
+Con CSP el elemento **sí entra en el DOM** —`getElementById` lo encuentra— y
+`getComputedStyle` devuelve `none`. No hay excepción que capturar. Es el mismo
+síntoma que el otro fallo de esta función: el script corre, nada falla, y el dato
+sale entero en el vídeo.
+
+Y no es un caso raro: la app que enseña un saldo o un correo en pantalla es justo
+la que trae CSP estricta.
+
+**Consecuencia:** el tapado va por hoja construida, que no pasa por esa
+comprobación, y el `<style>` se queda de respaldo para un motor que no tenga
+`adoptedStyleSheets`. La regresión la fija un test que graba
+[`sensible-csp.html`](sensible-csp.html) y mide el contraste del frame: quitando
+la hoja construida, la fila tapada pasa de 0,3 a 25 —el mismo valor que la fila
+sin tapar—.
+
+**La lección, otra vez, es del método.** Las dos comprobaciones baratas —¿se
+genera el script?, ¿se ejecuta?— dieron verde en los dos fallos. La única medida
+que los distingue es el píxel del frame guardado.
