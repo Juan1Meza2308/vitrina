@@ -16,7 +16,9 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import CDP from 'chrome-remote-interface';
-import { Recorder, ventanaPara, guionDe, reproducir } from '@vitrina/capture-cdp';
+import {
+  Recorder, ventanaPara, guionDe, reproducir, listaDeSelectores,
+} from '@vitrina/capture-cdp';
 import {
   CAPTURE_PRESETS, CAMERA_PRESETS, cameraConfigForBudget, computeQualityBudget,
   defaultProject, hostFromUrl, planSegments, parseSilenceReport, silenceFilter,
@@ -276,7 +278,7 @@ ipcMain.handle('audio:stop', async () => {
 
 ipcMain.handle('record:start', async (
   _e,
-  opts: { url: string; presetName: string; orientacion?: Orientacion },
+  opts: { url: string; presetName: string; orientacion?: Orientacion; tapar?: string },
 ) => {
   if (recorder) throw new Error('Ya hay una grabacion en curso');
 
@@ -293,6 +295,7 @@ ipcMain.handle('record:start', async (
   // La ventana la decide quien conoce la pantalla. El grabador tiene un
   // respaldo razonable, pero en un portatil bajo o con un viewport vertical
   // ese respaldo se sale del area util y la demo se graba a ciegas.
+  const selectores = listaDeSelectores(opts.tapar ?? '');
   const hueco = screen.getPrimaryDisplay().workAreaSize;
   recorder = new Recorder({
     url: opts.url,
@@ -305,6 +308,10 @@ ipcMain.handle('record:start', async (
       height: Math.round(hueco.height * 0.92),
     }),
     outDir: recordingDir,
+    // Lo que no debe salir se difumina AL GRABAR: el frame que se escribe en
+    // disco ya va tapado, asi que el dato en claro no llega a existir. Taparlo
+    // en el editor dejaria la carpeta `.vitrina` con el dato entero dentro.
+    tapado: selectores.length ? { selectores } : null,
     onProgress: (p) => win?.webContents.send('record:progress', p),
   });
 

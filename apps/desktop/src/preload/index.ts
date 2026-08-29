@@ -26,6 +26,7 @@ export interface Ajustes {
   orientacion: Orientacion;
   micOn: boolean;
   micDeviceId: string;
+  tapar: string;
   looks: Look[];
   lookPorDefecto: string | null;
 }
@@ -85,8 +86,10 @@ const api = {
     url: string,
     presetName: string,
     orientacion: Orientacion,
+    /** Selectores CSS a difuminar, tal y como se escribieron en el campo. */
+    tapar?: string,
   ): Promise<{ dir: string; preset: CapturePreset }> =>
-    ipcRenderer.invoke('record:start', { url, presetName, orientacion }),
+    ipcRenderer.invoke('record:start', { url, presetName, orientacion, tapar }),
   stopRecording: (): Promise<RecordingData> => ipcRenderer.invoke('record:stop'),
   repetirGrabacion: (dir: string, presetName?: string, texto?: string): Promise<RecordingData> =>
     ipcRenderer.invoke('record:repeat', { dir, presetName, texto }),

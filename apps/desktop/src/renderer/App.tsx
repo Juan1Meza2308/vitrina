@@ -49,6 +49,7 @@ export function App() {
   const [micOn, setMicOn] = useState(true);
   const [micDevices, setMicDevices] = useState<DispositivoAudio[]>([]);
   const [micDeviceId, setMicDeviceId] = useState('');
+  const [tapar, setTapar] = useState('');
   const [nivel, setNivel] = useState(0);
   const mic = useRef<MicHandle | null>(null);
 
@@ -65,6 +66,7 @@ export function App() {
       setOrientacion(a.orientacion);
       setMicOn(a.micOn);
       setMicDeviceId(a.micDeviceId);
+      setTapar(a.tapar);
     });
   }, []);
 
@@ -139,8 +141,10 @@ export function App() {
       }
       // Se guardan al grabar y no al teclear: escribir media URL y cerrar no
       // deberia dejarla puesta para la proxima vez.
-      void window.vitrina.guardarAjustes({ url, presetName, orientacion, micOn, micDeviceId });
-      await window.vitrina.startRecording(url, presetName, orientacion);
+      void window.vitrina.guardarAjustes({
+        url, presetName, orientacion, micOn, micDeviceId, tapar,
+      });
+      await window.vitrina.startRecording(url, presetName, orientacion, tapar);
       setStats({ frames: 0, elapsedMs: 0 });
       setFase('grabando');
     } catch (e) {
@@ -149,7 +153,7 @@ export function App() {
       setError(e instanceof Error ? e.message : String(e));
       setFase('inicio');
     }
-  }, [url, presetName, orientacion, micOn, micDeviceId]);
+  }, [url, presetName, orientacion, micOn, micDeviceId, tapar]);
 
   const parar = useCallback(async () => {
     try {
@@ -306,6 +310,23 @@ export function App() {
               ))}
             </select>
           )}
+        </div>
+
+        <div className="campo">
+          <label htmlFor="tapar">Tapar datos sensibles</label>
+          <input id="tapar" type="text" value={tapar} spellCheck={false}
+                 onChange={(e) => setTapar(e.target.value)}
+                 placeholder="#saldo, .email, [data-privado]  (opcional)" />
+          <p className="nota-formato">
+            Selectores CSS que se difuminan <b>al grabar</b>. El frame que se
+            guarda ya va tapado, asi que el dato en claro no llega a existir en
+            la carpeta: taparlo despues, en el editor, lo dejaria dentro de cada
+            JPEG. El texto de esos elementos tampoco se guarda en el log.
+            <br />
+            Se difumina en vez de ocultar para no mover la maqueta: un
+            <code> display:none </code> cambiaria de sitio los botones y el zoom
+            automatico encuadraria otra cosa.
+          </p>
         </div>
 
         {presupuestoInicial && (
