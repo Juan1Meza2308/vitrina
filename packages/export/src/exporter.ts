@@ -357,7 +357,15 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
    * memoria (cada imagen decodificada son unos 7 MB).
    */
   const enVuelo = new Map<string, Promise<Awaited<ReturnType<typeof loadImage>>>>();
-  const ADELANTO = 4;
+  /**
+   * `VITRINA_SIN_SOLAPE=1` vuelve al bucle de antes —esperar cada envio y
+   * decodificar justo cuando hace falta— para comparar A/B en la misma maquina
+   * y el mismo rato, como `data-cristal` en el editor. Hace falta: este
+   * contenedor da 46 s o 60 s para el mismo export segun lo ocupado que este, y
+   * comparar contra una medida de hace media hora no compara nada.
+   */
+  const solapa = !process.env['VITRINA_SIN_SOLAPE'];
+  const ADELANTO = solapa ? 4 : 0;
   const reparto = { decode: 0, componer: 0, leer: 0, tubo: 0 };
   const ahora = () => (midiendo ? performance.now() : 0);
   const sumar = (campo: keyof typeof reparto, desde: number) => {
@@ -441,12 +449,16 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
       const tTubo = ahora();
       if (enElTubo) await enElTubo;
       sumar('tubo', tTubo);
-      const envio = encoder.write(datos);
-      // Si el envio falla mas tarde, el `await` de la vuelta siguiente lo
-      // recoge; este `catch` esta solo para que un fallo despues de abortar no
-      // quede como rechazo sin dueno.
-      envio.catch(() => {});
-      enElTubo = envio;
+      if (solapa) {
+        const envio = encoder.write(datos);
+        // Si el envio falla mas tarde, el `await` de la vuelta siguiente lo
+        // recoge; este `catch` esta solo para que un fallo despues de abortar no
+        // quede como rechazo sin dueno.
+        envio.catch(() => {});
+        enElTubo = envio;
+      } else {
+        await encoder.write(datos);
+      }
 
       if (opts.onProgress && (i % 10 === 0 || i === totalFrames - 1)) {
         const elapsed = Date.now() - t0;

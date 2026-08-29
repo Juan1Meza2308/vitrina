@@ -15,6 +15,7 @@
 import CDP from 'chrome-remote-interface';
 import { spawn } from 'node:child_process';
 import fsp from 'node:fs/promises';
+import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
 import { pathToFileURL } from 'node:url';
@@ -42,6 +43,41 @@ const ELECTRON = path.resolve(process.platform === 'darwin'
   : 'node_modules/electron/dist/electron.exe');
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+/**
+ * Aviso si lo compilado es mas viejo que el codigo.
+ *
+ * Esta comprobacion existe porque paso dos veces: media tarde midiendo cambios
+ * que no estaban dentro de la app, y sacando conclusiones —"esto no mejora
+ * nada"— de un binario de hacia trece horas. Verificar por pixeles no sirve de
+ * nada si los pixeles son de otra version.
+ *
+ * Se avisa y se sigue, no se compila solo: compilar desde aqui escondería el
+ * problema en vez de ensenarlo, y quien mide tiene que saber que esta midiendo.
+ */
+function avisarSiRancio(): void {
+  const masNuevo = (dir: string): number => {
+    let max = 0;
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
+      const p = path.join(dir, e.name);
+      max = Math.max(max, e.isDirectory() ? masNuevo(p) : fs.statSync(p).mtimeMs);
+    }
+    return max;
+  };
+  const salida = path.resolve('apps/desktop/out');
+  if (!fs.existsSync(salida)) {
+    console.log('\n  AVISO: no hay nada compilado. Ejecuta: npm run app:build\n');
+    return;
+  }
+  const fuentes = ['apps/desktop/src', 'packages'].map((d) => masNuevo(path.resolve(d)));
+  if (Math.max(...fuentes) > masNuevo(salida)) {
+    console.log('\n  AVISO: hay codigo mas nuevo que lo compilado.'
+      + ' Lo que sigue mide la version ANTERIOR.\n         Ejecuta: npm run app:build\n');
+  }
+}
+
+avisarSiRancio();
 
 interface Cliente {
   Emulation: {
@@ -1053,9 +1089,14 @@ async function verificarRendimiento(): Promise<void> {
   // Umbrales HOLGADOS, a la mitad de lo medido: cazan un desplome sin fallar
   // porque la maquina este ocupada. Un test que falla segun la carga ensena a
   // ignorar los fallos, y eso ya paso una vez con el recuento de frames en M0.
-  check('la reproduccion no se desploma', reproduciendo.fps > 8,
+  // Umbrales a la MITAD de lo medido hoy (27 y 43 fps), que ademas es mas o
+  // menos lo que daba la app antes de todo esto. Cazan un desplome sin fallar
+  // porque la maquina este ocupada: este mismo contenedor da 43 o 27 fps para
+  // el mismo codigo segun el rato, y un test que falla por eso ensena a ignorar
+  // los fallos.
+  check('la reproduccion no se desploma', reproduciendo.fps > 13,
     `${reproduciendo.fps.toFixed(1)} fps`);
-  check('arrastrar la aguja responde', arrastre.fps > 8, `${arrastre.fps.toFixed(1)} fps`);
+  check('arrastrar la aguja responde', arrastre.fps > 20, `${arrastre.fps.toFixed(1)} fps`);
   // La comparacion, no el numero absoluto: en una maquina sin GPU el valor
   // suelto no dice nada, pero que no esperar al decode gane a esperarlo tiene
   // que cumplirse siempre.
