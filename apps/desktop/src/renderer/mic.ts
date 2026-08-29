@@ -28,6 +28,25 @@ export interface DispositivoAudio {
   label: string;
 }
 
+/**
+ * A donde van los trozos.
+ *
+ * El mismo micro sirve para la narracion en vivo y para doblar despues, y lo
+ * unico que cambia es el fichero. Parametrizarlo evita un segundo `mic.ts`
+ * copiado, que es donde se quedan los arreglos sin aplicar.
+ */
+export interface DestinoAudio {
+  start(startedAt: number, mimeType: string): Promise<unknown>;
+  chunk(bytes: Uint8Array): void;
+  stop(): Promise<unknown>;
+}
+
+const DESTINO_GRABACION: DestinoAudio = {
+  start: (startedAt, mimeType) => window.vitrina.audioStart(startedAt, mimeType),
+  chunk: (bytes) => window.vitrina.audioChunk(bytes),
+  stop: () => window.vitrina.audioStop(),
+};
+
 export async function listarMicrofonos(): Promise<DispositivoAudio[]> {
   try {
     const todos = await navigator.mediaDevices.enumerateDevices();
@@ -63,7 +82,10 @@ async function pedirMicrofono(deviceId?: string): Promise<MediaStream> {
   }
 }
 
-export async function grabarMicrofono(deviceId?: string): Promise<MicHandle> {
+export async function grabarMicrofono(
+  deviceId?: string,
+  destino: DestinoAudio = DESTINO_GRABACION,
+): Promise<MicHandle> {
   const stream = await pedirMicrofono(deviceId);
 
   if (!MediaRecorder.isTypeSupported(MIME)) {
@@ -86,7 +108,7 @@ export async function grabarMicrofono(deviceId?: string): Promise<MicHandle> {
   rec.ondataavailable = (e: BlobEvent) => {
     if (e.data.size === 0) return;
     enVuelo.push(
-      e.data.arrayBuffer().then((b) => window.vitrina.audioChunk(new Uint8Array(b))),
+      e.data.arrayBuffer().then((b) => destino.chunk(new Uint8Array(b))),
     );
   };
 
@@ -99,7 +121,7 @@ export async function grabarMicrofono(deviceId?: string): Promise<MicHandle> {
 
   rec.start(TROZO_MS);
   await arrancado;
-  await window.vitrina.audioStart(startedAt, MIME);
+  await destino.start(startedAt, MIME);
 
   return {
     startedAt,
@@ -123,7 +145,7 @@ export async function grabarMicrofono(deviceId?: string): Promise<MicHandle> {
       await Promise.all(enVuelo);
       stream.getTracks().forEach((t) => t.stop());
       await ctx.close().catch(() => {});
-      await window.vitrina.audioStop();
+      await destino.stop();
     },
   };
 }

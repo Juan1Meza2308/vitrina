@@ -18,7 +18,10 @@ import {
   IconoGrabacion, IconoAjustes, IconoRepetir, IconoImagen, IconoReproducir,
   IconoPausa, IconoInicio, IconoSonido, IconoSilencio, IconoAnadir, IconoBorrar,
 } from './Iconos.tsx';
-import { grabarMicrofono, listarMicrofonos, type MicHandle, type DispositivoAudio } from './mic.ts';
+import {
+  grabarMicrofono, listarMicrofonos,
+  type MicHandle, type DispositivoAudio, type DestinoAudio,
+} from './mic.ts';
 import {
   grabarCamara, listarCamaras, abrirCamara,
   type CamHandle, type DispositivoVideo,
@@ -630,6 +633,9 @@ function Editor(
    * entra desvaneciendose y sale de golpe se lee como un fallo.
    */
   const [mudo, setMudo] = useState(false);
+  const [doblando, setDoblando] = useState(false);
+  const voz = useRef<MicHandle | null>(null);
+  const desfaseVoz = useRef(0);
   const [atajos, setAtajos] = useState<'oculto' | 'abierto' | 'cerrando'>('oculto');
   const cerrarAtajos = useCallback(() => {
     setAtajos((v) => (v === 'abierto' ? 'cerrando' : v));
@@ -1113,6 +1119,64 @@ function Editor(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tMs, audioUrl, reproduciendo]);
 
+  /**
+   * Doblar: grabar la voz viendo el video ya montado.
+   *
+   * El orden importa. Primero arranca el micro y DESPUES la reproduccion: asi
+   * el desfase es la ventaja que le saco el fichero al video, un numero que se
+   * mide en vez de estimarse. Y se silencia la narracion original antes de
+   * nada, o el micro la volveria a grabar por los altavoces.
+   */
+  const doblar = useCallback(async () => {
+    if (doblando) return;
+    setErrorRepeticion('');
+    setMudo(true);
+    setReproduciendo(false);
+    setTMs(0);
+    try {
+      const destino: DestinoAudio = {
+        start: () => window.vitrina.vozStart(datos.dir),
+        chunk: (b) => window.vitrina.vozChunk(b),
+        stop: () => window.vitrina.vozStop(),
+      };
+      const h = await grabarMicrofono(undefined, destino);
+      voz.current = h;
+      // Negativo a proposito: el fichero empezo ANTES que el video, asi que al
+      // montarlo hay que saltar dentro de el.
+      desfaseVoz.current = h.startedAt - Date.now();
+      setDoblando(true);
+      setReproduciendo(true);
+    } catch (e) {
+      setMudo(false);
+      setErrorRepeticion(`Sin voz: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }, [doblando, datos.dir]);
+
+  const pararDoblaje = useCallback(async () => {
+    const h = voz.current;
+    voz.current = null;
+    setDoblando(false);
+    setReproduciendo(false);
+    if (!h) return;
+    await h.detener().catch(() => {});
+    setProject((p) => ({
+      ...p,
+      voz: { file: 'voz.webm', desfaseMs: Math.round(desfaseVoz.current) },
+      pista: 'voz',
+    }));
+    setMudo(false);
+  }, []);
+
+  // Llegar al final para el doblaje solo: seguir grabando sobre un video parado
+  // solo anade silencio al fichero.
+  useEffect(() => {
+    if (doblando && !reproduciendo) void pararDoblaje();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reproduciendo]);
+
+  /** Que se oye: sin marcar nada manda la voz doblada si la hay. */
+  const pistaElegida = project.pista ?? (project.voz ? 'voz' : 'micro');
+
   const sel = seleccion !== null ? zooms[seleccion] : undefined;
 
   // Reencuadrar solo tiene sentido si se esta VIENDO el tramo que se edita: con
@@ -1577,6 +1641,41 @@ function Editor(
             )}
           </div>
         )}
+
+        <div className="grupo">
+          <h3>Doblar la voz</h3>
+          <p className="sutil">
+            Graba tu voz viendo el vídeo ya montado, en vez de narrar mientras
+            operas. La narración original se silencia mientras doblas.
+          </p>
+          <button className={doblando ? 'peligro' : ''}
+                  onClick={() => void (doblando ? pararDoblaje() : doblar())}>
+            {doblando ? 'Parar y guardar la voz' : 'Grabar mi voz'}
+          </button>
+          {doblando && (
+            <p className="sutil" style={{ color: 'var(--acc)' }}>
+              Grabando tu voz · el vídeo se está reproduciendo
+            </p>
+          )}
+          {project.voz && !doblando && (
+            <>
+              <p className="sutil">Qué se oye en el vídeo:</p>
+              <div className="fila">
+                {([
+                  ['micro', 'Narración'],
+                  ['voz', 'Tu voz'],
+                  ['ninguna', 'Nada'],
+                ] as const).map(([v, texto]) => (
+                  <button key={v} className={pistaElegida === v ? 'on' : ''}
+                          disabled={v === 'micro' && !pista}
+                          onClick={() => setProject((p) => ({ ...p, pista: v }))}>
+                    {texto}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
+        </div>
 
         <div className="grupo">
           <h3>Cursor</h3>

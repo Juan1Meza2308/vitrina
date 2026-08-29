@@ -106,6 +106,12 @@ const api = {
   camChunk: (chunk: Uint8Array): void => ipcRenderer.send('cam:chunk', chunk),
   camStop: (): Promise<unknown> => ipcRenderer.invoke('cam:stop'),
 
+  // La voz doblada: el mismo camino que la narracion, con la carpeta explicita
+  // porque doblar pasa en el editor y mucho despues de grabar.
+  vozStart: (dir: string): Promise<void> => ipcRenderer.invoke('voz:start', dir),
+  vozChunk: (chunk: Uint8Array): void => ipcRenderer.send('voz:chunk', chunk),
+  vozStop: (): Promise<unknown> => ipcRenderer.invoke('voz:stop'),
+
   startRecording: (
     url: string,
     presetName: string,

@@ -55,6 +55,7 @@ todavía no.
 | Tema claro y hoja de atajos | hecho |
 | Pausa, atajos globales y marcas | hecho |
 | La demo se documenta sola | hecho |
+| Doblar la narración | hecho |
 | macOS y Windows | hecho (sin probar en Mac) |
 | Grabación vertical (9:16) | hecho |
 
@@ -484,6 +485,30 @@ estar cogido.
 Los momentos señalados salen como **chinchetas** en la regla de la línea de
 tiempo —se pinchan y la aguja va ahí— y son los que mandan al generar los
 capítulos: quien graba sabe mejor que nadie dónde empieza cada parte.
+
+## Doblar la narración
+
+Narrar mientras operas es donde se estropea la mayoría de las demos: o la voz va
+a trompicones, o el ratón espera a la voz. En el panel **Doblar la voz** se graba
+la voz **viendo el vídeo ya montado** —con sus cortes, sus aceleraciones y sus
+zooms—, y después se elige qué se oye: la narración original, tu voz o nada.
+
+> **La voz no pasa por el mapa de tiempo, y es lo que la hace barata.** Se grabó
+> contra el vídeo ya cortado y acelerado, así que esos cortes ya están dentro de
+> ella: es un solo tramo de principio a fin. Trocearla otra vez por los tramos
+> del material la cortaría dos veces y sonaría a saltos.
+
+Dos detalles que se cuidan solos:
+
+- **La narración original se silencia mientras doblas**, o el micrófono la
+  volvería a grabar por los altavoces.
+- **El desfase se mide, no se estima.** El micrófono arranca antes que la
+  reproducción y se anota la ventaja que le sacó —unos milisegundos—, igual que
+  ya se hace con la narración en vivo. Un doblaje corrido dos segundos suena
+  perfecto en el editor y mal en el vídeo.
+
+Si se pide la voz y el fichero no está, se avisa y se cae a la narración:
+quedarse mudo por un fichero perdido sería peor que sonar distinto.
 
 ## El editor
 

@@ -31,7 +31,11 @@ const ejecutar = promisify(execFile);
 
 const PORT = 9500;
 const APP = path.resolve('apps/desktop');
-const grabacion = path.resolve(process.argv[2] ?? 'grabaciones/demo.vitrina');
+// El primer argumento QUE NO SEA UNA BANDERA. Con `argv[2]` a secas, invocar
+// `--doblar grabaciones/x` tomaba "--doblar" por carpeta y fallaba diciendo que
+// no existe project.json, que no es lo que estaba mal.
+const grabacion = path.resolve(
+  process.argv.slice(2).find((a) => !a.startsWith('--')) ?? 'grabaciones/demo.vitrina');
 /** En macOS el ejecutable vive dentro del bundle; lanzar el .app no vale. */
 const ELECTRON = path.resolve(process.platform === 'darwin'
   ? 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron'
@@ -817,6 +821,79 @@ async function verificarGrabacion(): Promise<void> {
 }
 
 /**
+ * Verifica el doblaje de la voz.
+ *
+ * Se comprueba lo que queda en disco —el fichero de voz con contenido y el
+ * proyecto apuntando a el— y, sobre todo, el DESFASE: es lo unico que puede
+ * salir mal sin dar la cara, porque un doblaje corrido dos segundos suena
+ * perfecto en el editor y mal en el video.
+ */
+async function verificarDoblaje(): Promise<void> {
+  console.log(`  doblando   ${grabacion}\n`);
+  await fsp.rm(path.join(grabacion, 'voz.webm'), { force: true }).catch(() => {});
+
+  const child = spawn(ELECTRON, [
+    APP, grabacion,
+    `--remote-debugging-port=${PORT}`,
+    '--use-fake-device-for-media-stream',
+    '--use-fake-ui-for-media-stream',
+  ], { stdio: ['ignore', 'ignore', 'inherit'] });
+  const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+  await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+  await sleep(2500);
+
+  check('el editor ofrece doblar la voz',
+    await ev<boolean>(client, 'document.body.textContent.includes("Doblar la voz")'));
+
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Grabar mi voz')?.click()
+  `);
+  check('empieza a doblar y el video se reproduce',
+    await esperarA(client, 'document.body.textContent.includes("Grabando tu voz")', 'doblando'));
+  await sleep(3000);
+
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Parar y guardar la voz')?.click()
+  `);
+  check('para de doblar',
+    await esperarA(client,
+      '[...document.querySelectorAll("button")].some(b => b.textContent === "Grabar mi voz")',
+      'doblaje parado', 10_000));
+
+  // El guardado del proyecto va con retardo: se espera a que aparezca en disco.
+  let proyecto: { voz?: { file: string; desfaseMs: number } | null; pista?: string } = {};
+  const limite = Date.now() + 15_000;
+  while (Date.now() < limite && !proyecto.voz) {
+    await sleep(700);
+    proyecto = JSON.parse(await fsp.readFile(path.join(grabacion, 'project.json'), 'utf8')) as typeof proyecto;
+  }
+
+  check('el proyecto apunta a la voz', proyecto.voz?.file === 'voz.webm');
+  check('y la elige para el video', proyecto.pista === 'voz', String(proyecto.pista));
+
+  const webm = await fsp.stat(path.join(grabacion, 'voz.webm')).catch(() => null);
+  check('voz.webm tiene contenido', (webm?.size ?? 0) > 1000, `${webm?.size ?? 0} bytes`);
+
+  // El desfase tiene que ser NEGATIVO y pequeno: el micro arranca antes que la
+  // reproduccion, y por poco. Positivo significaria que el video empezo antes y
+  // la voz entraria tarde.
+  const desfase = proyecto.voz?.desfaseMs ?? 1;
+  check('el desfase es negativo y pequeno', desfase <= 0 && desfase > -2000, `${desfase} ms`);
+
+  check('el editor deja elegir que se oye',
+    await ev<boolean>(client, 'document.body.textContent.includes("Qué se oye en el vídeo")'));
+
+  await capturar(client, 'apps/desktop/captura-doblaje.png');
+  await client.close();
+  child.kill();
+  await sleep(800);
+
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}`);
+  console.log('  captura: apps/desktop/captura-doblaje.png\n');
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
  * Verifica la pausa y las marcas, de punta a punta.
  *
  * Lo que se comprueba es el RESULTADO, no que la app diga que pauso: que la
@@ -1493,6 +1570,7 @@ async function verificarSilencios(): Promise<void> {
 
 const flujo = process.argv.includes('--silencios') ? verificarSilencios
   : process.argv.includes('--vertical') ? verificarVertical
+  : process.argv.includes('--doblar') ? verificarDoblaje
   : process.argv.includes('--pausa') ? verificarPausa
   : process.argv.includes('--camara') ? verificarCamara
   : process.argv.includes('--grabar') ? verificarGrabacion : main;

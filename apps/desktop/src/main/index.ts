@@ -182,6 +182,8 @@ let exportController: AbortController | null = null;
 let audioStream: fs.WriteStream | null = null;
 let audioTrack: AudioTrack | null = null;
 let camStream: fs.WriteStream | null = null;
+/** Escritura en curso de la voz doblada. */
+let vozStream: fs.WriteStream | null = null;
 let camTrack: CamTrack | null = null;
 
 /**
@@ -530,6 +532,29 @@ ipcMain.handle('record:repeat', async (
     recorder = null;
     throw e;
   }
+});
+
+/*
+ * La voz doblada: mismo camino que la narracion, otro fichero.
+ *
+ * Se escribe en la carpeta de la grabacion ABIERTA, que llega como parametro:
+ * doblar pasa en el editor, mucho despues de grabar, y `recordingDir` puede
+ * apuntar a otra cosa o a nada.
+ */
+ipcMain.handle('voz:start', async (_e, dir: string) => {
+  const carpeta = path.resolve(dir);
+  await fsp.access(path.join(carpeta, 'manifest.json'));   // que sea una grabacion
+  vozStream = fs.createWriteStream(path.join(carpeta, 'voz.webm'));
+});
+
+ipcMain.on('voz:chunk', (_e, chunk: Uint8Array) => {
+  vozStream?.write(Buffer.from(chunk));
+});
+
+ipcMain.handle('voz:stop', async () => {
+  const stream = vozStream;
+  vozStream = null;
+  if (stream) await new Promise<void>((resolve) => stream.end(resolve));
 });
 
 ipcMain.handle('record:pausa', () => alternarPausa());
