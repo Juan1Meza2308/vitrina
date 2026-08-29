@@ -15,6 +15,7 @@ import type {
 import { Preview, makeTrack } from './preview.ts';
 import { Timeline } from './Timeline.tsx';
 import { Recientes } from './Recientes.tsx';
+import { instalarReflejo } from './reflejo.ts';
 import {
   IconoGrabacion, IconoAjustes, IconoRepetir, IconoImagen, IconoReproducir,
   IconoPausa, IconoInicio, IconoSonido, IconoSilencio, IconoAnadir, IconoBorrar,
@@ -151,6 +152,10 @@ export function App() {
       { fill: 0.8, chrome: orientacion === 'vertical' ? 'phone' : 'macos' },
     );
   }, [preset?.capture.w, preset?.capture.h, salidaInicial?.w, salidaInicial?.h, orientacion]);
+
+  // La luz que sigue al cursor sobre el cristal. Un solo oyente para toda la
+  // app, montado una vez.
+  useEffect(instalarReflejo, []);
 
   // El tema se aplica a la raiz y se guarda al cambiarlo, no al grabar: es un
   // ajuste de la ventana, no de la demo.
