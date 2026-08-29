@@ -362,6 +362,9 @@ ipcMain.handle('record:repeat', async (
       { width: Math.round(hueco.width * 0.92), height: Math.round(hueco.height * 0.92) },
     ),
     outDir: destino,
+    // Se repite tambien lo que se tapo: una repeticion sin esto publicaria en
+    // la segunda toma el dato que se tapo en la primera, y sin avisar.
+    tapado: manifest.tapado ?? null,
     onProgress: (p) => win?.webContents.send('record:progress', p),
   });
 

@@ -53,7 +53,8 @@ console.log(`\n  origen   ${path.relative(process.cwd(), origen)}`);
 console.log(`  destino  ${path.relative(process.cwd(), destino)}`);
 console.log(`  guion    ${guion.length} acciones, ${(duracionDeGuion(guion) / 1000).toFixed(1)}s`);
 console.log(`  captura  ${preset ? `${preset.capture.w}x${preset.capture.h} (${nombre})`
-  : 'la misma que el original'}\n`);
+  : 'la misma que el original'}`);
+console.log(`  tapado   ${manifest.tapado?.selectores.join(', ') ?? 'nada'}\n`);
 
 await fsp.rm(destino, { recursive: true, force: true });
 
@@ -63,6 +64,9 @@ const rec = new Recorder({
   deviceScaleFactor: preset?.dsf ?? (preset ? 1 : manifest.deviceScaleFactor ?? 1),
   outDir: destino,
   port: PORT,
+  // Se repite tambien lo que se tapo. Una repeticion sin esto publicaria en la
+  // segunda toma justo el dato que se tapo en la primera, y sin avisar.
+  tapado: manifest.tapado ?? null,
 });
 
 await rec.launch();
