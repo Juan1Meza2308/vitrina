@@ -62,9 +62,18 @@ mac:
   extraResources:
     - from: ../../node_modules/ffmpeg-static/ffmpeg
       to: ffmpeg
+  # Las dos arquitecturas. `macos-latest` es Apple Silicon, asi que sin decirlo
+  # solo sale el .dmg de arm64 y un Mac Intel se queda mirando un fichero que no
+  # puede abrir —silenciosamente, ademas: la Release parece completa—. Se
+  # publican dos ficheros en vez de uno universal porque un universal pesa lo que
+  # los dos juntos y todo el mundo se descarga la mitad que no usa.
+  #
+  # El .zip no es un duplicado del .dmg: es lo que necesita el actualizador.
   target:
-    - dmg
-    - zip
+    - target: dmg
+      arch: [arm64, x64]
+    - target: zip
+      arch: [arm64, x64]
   # Sin firma: no hace falta cuenta de Apple Developer. La contrapartida es que
   # la primera apertura pide clic derecho -> Abrir, o quitar la cuarentena con
   # `xattr -dr com.apple.quarantine /Applications/Vitrina.app`.
