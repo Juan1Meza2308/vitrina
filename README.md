@@ -446,12 +446,22 @@ Tres decisiones que no son evidentes:
   contenido, no la geometría, y un click sobre un dato tapado sigue generando su
   zoom.
 
-> **El detalle que costó encontrar.** El estilo se inyecta antes de que el parser
-> construya el documento —tiene que estar puesto antes de la primera pintura—, y
-> a esa altura el documento está vacío: el parser lo reemplaza después y se lleva
-> por delante el `<style>`. El script corría, no fallaba, y no tapaba nada. Por
-> eso la hoja se **repone**: un `MutationObserver` la devuelve en cuanto aparece
-> el documento, en la misma microtarea, sin un frame con el dato al aire.
+> **Dos detalles que costó encontrar**, y los dos fallan igual de callados: el
+> script corre, no lanza, y el dato sale entero.
+>
+> **El parser.** El estilo se inyecta antes de que el parser construya el
+> documento —tiene que estar puesto antes de la primera pintura—, y a esa altura
+> el documento está vacío: el parser lo reemplaza después y se lleva por delante
+> lo que hubiera. Por eso la hoja se **repone**: un `MutationObserver` la
+> devuelve en cuanto aparece el documento, en la misma microtarea, sin un frame
+> con el dato al aire.
+>
+> **La CSP.** Medido: con `style-src 'self'`, un `<style>` inyectado por script
+> entra en el DOM y no aplica nada —`getComputedStyle` devuelve `filter: none`—
+> sin excepción ni aviso. Y la app que tiene datos sensibles es justo la que trae
+> CSP estricta. Así que el tapado va por **hoja construida** (`new CSSStyleSheet`
+> + `adoptedStyleSheets`), que no pasa por esa comprobación; el `<style>` se
+> queda de respaldo para un motor que no las tenga.
 
 Dos límites, dichos claros:
 
@@ -463,8 +473,12 @@ Dos límites, dichos claros:
 
 Lo fija un test que graba [`spikes/sensible.html`](spikes/sensible.html) —dos
 filas idénticas, una tapada y otra no— y **mide el contraste del frame guardado**
-comparándolas. Es la única comprobación que habría cazado el fallo del párrafo de
-arriba: el script se generaba, se ejecutaba, y el dato salía igual.
+comparándolas. Y lo graba **dos veces**, con y sin
+[CSP estricta](spikes/sensible-csp.html), porque ese es el caso que de verdad
+importa. Es la única comprobación que habría cazado los dos fallos de arriba: el
+script se generaba, se ejecutaba, el estilo estaba puesto, y el dato salía igual.
+Comprobado quitando la hoja construida: la variante con CSP pasa de 0,3 a 25 de
+contraste, el mismo valor que la fila sin tapar.
 
 ## Repetir la grabación
 

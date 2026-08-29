@@ -2,11 +2,16 @@
  * Test de integracion del tapado: graba de verdad una pagina con un dato
  * sensible y comprueba EL FRAME QUE QUEDA EN DISCO.
  *
- * Se mide por pixeles y no por `getComputedStyle` a proposito. El fallo que
- * motivo este fichero pasaba las dos comprobaciones baratas —el script se
- * generaba y se ejecutaba— y aun asi el dato salia entero: el `<style>` se
- * inyecta antes del parseo y el parser reemplaza el documento con lo que
- * hubiera dentro. Lo unico que delata eso es el pixel.
+ * Se mide por pixeles y no por `getComputedStyle` a proposito. Los dos fallos
+ * que motivan este fichero pasan las comprobaciones baratas —el script se
+ * genera, se ejecuta, y el estilo esta puesto— y aun asi el dato sale entero:
+ * el parser reemplaza el documento y se lleva la hoja, y la CSP de la pagina
+ * anula un `<style>` inyectado sin decir nada. Lo unico que delata las dos
+ * cosas es el pixel.
+ *
+ * Por eso se graba dos veces, con CSP y sin ella: la variante con
+ * `style-src 'self'` es la que de verdad importa, porque una app con datos
+ * sensibles suele traer CSP estricta.
  *
  * El umbral no se inventa: el fixture trae dos filas identicas, una tapada y
  * otra no, y se comparan entre si. Un umbral absoluto mediria la fuente del
@@ -21,9 +26,8 @@ import os from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { Recorder, type RecordingResult } from './recorder.ts';
 
-const PORT = 9412;
-const FIXTURE = pathToFileURL(
-  path.resolve(import.meta.dirname, '../../../spikes/sensible.html'),
+const fixture = (nombre: string) => pathToFileURL(
+  path.resolve(import.meta.dirname, '../../../spikes', nombre),
 ).href;
 
 /** Las cajas del fixture, en px CSS. Van fijas porque su maqueta lo es. */
@@ -70,21 +74,28 @@ async function contraste(
   return n === 0 ? 0 : suma / n;
 }
 
-let outDir = '';
+const sucias: string[] = [];
 
 afterAll(async () => {
-  if (outDir) await fsp.rm(outDir, { recursive: true, force: true }).catch(() => {});
+  for (const d of sucias) await fsp.rm(d, { recursive: true, force: true }).catch(() => {});
 });
 
-describe('tapado', () => {
+// La variante con CSP no es un extra: es el caso que de verdad importa. Se
+// comprueba entera, no solo los pixeles, porque el log tambien tiene que callar.
+describe.each([
+  ['sin CSP', 'sensible.html', 9412],
+  ['con CSP estricta', 'sensible-csp.html', 9413],
+])('tapado %s', (_nombre, fichero, PORT) => {
   let result: RecordingResult;
+  let outDir = '';
 
   it(
     'graba la pagina con el dato ya difuminado',
     async () => {
       outDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'vitrina-tapado-'));
+      sucias.push(outDir);
       const rec = new Recorder({
-        url: FIXTURE,
+        url: fixture(fichero),
         viewport: { w: 1200, h: 700 },
         quality: 92,
         outDir,
@@ -99,7 +110,7 @@ describe('tapado', () => {
       // comprobacion del log, mas abajo.
       const objetivos = (await (await fetch(`http://127.0.0.1:${PORT}/json/list`)).json()) as
         { type: string; id: string; url: string }[];
-      const pagina = objetivos.find((t) => t.type === 'page' && t.url.includes('sensible.html'))
+      const pagina = objetivos.find((t) => t.type === 'page' && t.url.includes(fichero))
         ?? objetivos.find((t) => t.type === 'page');
       const input = (await CDP({
         port: PORT, target: pagina?.id, local: true,

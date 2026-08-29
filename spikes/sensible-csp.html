@@ -1,7 +1,16 @@
 <!doctype html>
 <meta charset="utf-8">
-<title>Vitrina · fixture de datos sensibles</title>
+<title>Vitrina · fixture de datos sensibles con CSP</title>
+<meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'; script-src 'self'">
 <!--
+  El mismo fixture con CSP estricta, que es el caso que de verdad importa: una
+  app con datos sensibles suele traerla.
+
+  Medido: con `style-src 'self'` un <style> inyectado por script entra en el DOM
+  y no aplica NADA, sin excepcion ni aviso —el mismo sintoma que el fallo del
+  parser—. Por eso el tapado va por hoja construida (`adoptedStyleSheets`), que
+  la CSP no mira, y este fichero es lo que lo fija.
+
   Fixture para comprobar el TAPADO por pixeles.
 
   Dos filas con el MISMO texto, la misma fuente y el mismo ancho: una se tapa y

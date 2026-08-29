@@ -90,6 +90,17 @@ describe('fuenteDeTapado', () => {
     expect(fuente).toContain('readystatechange');
   });
 
+  it('no depende de un <style>, que la CSP de la pagina anula', () => {
+    // Medido: con `style-src 'self'` el elemento entra en el DOM y no aplica
+    // nada, sin excepcion. La hoja construida no pasa por esa comprobacion, y
+    // es justo la app con datos sensibles la que trae CSP estricta. El <style>
+    // se queda de respaldo para un motor sin hojas construidas.
+    const fuente = fuenteDeTapado({ selectores: ['#saldo'] });
+    expect(fuente).toContain('CSSStyleSheet');
+    expect(fuente).toContain('adoptedStyleSheets');
+    expect(fuente).toContain("createElement('style')");
+  });
+
   it('publica los selectores para el log de entrada', () => {
     // Tapar los pixeles y dejar el texto del elemento en events.json seria
     // tapar solo lo que se ve.

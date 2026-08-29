@@ -106,14 +106,15 @@ export function cssDeTapado(tapado: Tapado | null | undefined): string {
 /**
  * El script que instala la hoja y la REPONE.
  *
- * Aqui esta lo unico verdaderamente delicado del fichero. Este script corre por
- * `Page.addScriptToEvaluateOnNewDocument`, es decir ANTES de que el parser
- * construya el documento —que es justo lo que hace falta para que el dato no se
- * pinte nunca sin tapar—, y a esa altura el documento todavia esta vacio: el
- * `<style>` que se anada ahi se lo lleva por delante el parser al crear el
- * documento de verdad. El script corre, no falla, y no tapa nada.
+ * Aqui estan las dos trampas del fichero, y las dos fallan igual: el script
+ * corre, no lanza, y el dato sale entero.
  *
- * Por eso no basta con instalar una vez:
+ * **1. El parser se lleva el `<style>` por delante.** El script corre por
+ * `Page.addScriptToEvaluateOnNewDocument`, o sea ANTES de que el parser
+ * construya el documento —que es justo lo que hace falta para que el dato no se
+ * pinte nunca sin tapar—, y a esa altura el documento esta vacio. Lo que se
+ * anada ahi desaparece al construirse el documento de verdad. Por eso la hoja se
+ * repone:
  *
  *  - Un `MutationObserver` sobre `document` avisa en cuanto aparece
  *    `documentElement`, y su callback es una microtarea: la hoja vuelve antes
@@ -122,6 +123,16 @@ export function cssDeTapado(tapado: Tapado | null | undefined): string {
  *    subarbol— para sobrevivir a una app que reemplace la cabecera al hidratar.
  *    Es barato: el callback compara un nodo y termina.
  *  - `readystatechange` cubre el caso raro en que el observer no llegue.
+ *
+ * **2. La CSP de la pagina bloquea el `<style>`.** Medido: con
+ * `style-src 'self'` el elemento entra en el DOM y no aplica nada
+ * —`getComputedStyle` devuelve `filter: none`— sin excepcion ni aviso. Y una app
+ * con datos sensibles es justo la que trae CSP estricta. La hoja construida
+ * (`new CSSStyleSheet` + `adoptedStyleSheets`) no pasa por esa comprobacion y si
+ * aplica, asi que es el mecanismo principal.
+ *
+ * El `<style>` se pone igualmente, de respaldo: cuesta nada, cubre un motor sin
+ * hojas construidas, y si la CSP lo anula solo queda un nodo inerte.
  */
 export function fuenteDeTapado(tapado: Tapado | null | undefined): string {
   const css = cssDeTapado(tapado);
@@ -134,12 +145,24 @@ export function fuenteDeTapado(tapado: Tapado | null | undefined): string {
   const ob = new MutationObserver(() => instalar());
   const observar = (n) => { if (n) { try { ob.observe(n, { childList: true }); } catch (e) {} } };
 
+  let hoja = null;
   let estilo = null;
-  const instalar = () => {
+
+  // Principal: la CSP de la pagina no la mira.
+  const porHojaAdoptada = () => {
+    try {
+      if (typeof CSSStyleSheet !== 'function' || !('adoptedStyleSheets' in document)) return;
+      if (!hoja) { hoja = new CSSStyleSheet(); hoja.replaceSync(CSS); }
+      if (document.adoptedStyleSheets.indexOf(hoja) === -1) {
+        document.adoptedStyleSheets = [...document.adoptedStyleSheets, hoja];
+      }
+    } catch (e) { hoja = null; }
+  };
+
+  // Respaldo: un motor sin hojas construidas. Si la CSP lo anula, queda inerte.
+  const porElemento = () => {
     const raiz = document.head || document.documentElement;
     if (!raiz) return;                       // documento aun vacio: ya volvera
-    observar(document.documentElement);
-    observar(document.head);
     if (!estilo) {
       estilo = document.createElement('style');
       estilo.id = ${JSON.stringify(ESTILO_ID)};
@@ -149,6 +172,13 @@ export function fuenteDeTapado(tapado: Tapado | null | undefined): string {
     // mueve el nodo, y moverlo en cada mutacion de la cabecera seria un bucle
     // de trabajo durante toda la grabacion.
     if (estilo.parentNode !== raiz || !estilo.isConnected) raiz.appendChild(estilo);
+  };
+
+  const instalar = () => {
+    observar(document.documentElement);
+    observar(document.head);
+    porHojaAdoptada();
+    porElemento();
   };
 
   observar(document);
