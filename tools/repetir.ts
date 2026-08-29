@@ -97,9 +97,12 @@ try {
   const viejo = JSON.parse(await fsp.readFile(path.join(origen, 'project.json'), 'utf8')) as Project;
   const fuenteVieja = manifest.capture ?? manifest.viewport;
   const fuenteNueva = resultado.manifest.capture ?? resultado.manifest.viewport;
+  // Sin `camara`: la repeticion no vuelve a grabar a la persona, y un estilo de
+  // burbuja sin pista seria un ajuste que no dibuja nada.
   await fsp.writeFile(
     path.join(destino, 'project.json'),
-    JSON.stringify(reescalarProyecto(viejo, fuenteVieja, fuenteNueva), null, 2),
+    JSON.stringify(
+      { ...reescalarProyecto(viejo, fuenteVieja, fuenteNueva), camara: null }, null, 2),
   );
 } catch {
   console.log('  (el original no tenia project.json)');

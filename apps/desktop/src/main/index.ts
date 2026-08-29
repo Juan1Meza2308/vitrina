@@ -427,9 +427,13 @@ ipcMain.handle('record:repeat', async (
       const viejo = JSON.parse(
         await fsp.readFile(path.join(origen, 'project.json'), 'utf8')) as Project;
       const fuenteNueva = resultado.manifest.capture ?? resultado.manifest.viewport;
+      // La repeticion vuelve a ejecutar el guion en un navegador nuevo, pero no
+      // vuelve a grabar a la persona: sin pista, un estilo de burbuja copiado
+      // seria un ajuste que no dibuja nada y que nadie sabria por que esta.
+      const copiado = reescalarProyecto(viejo, fuenteVieja, fuenteNueva);
       await fsp.writeFile(
         path.join(destino, 'project.json'),
-        JSON.stringify(reescalarProyecto(viejo, fuenteVieja, fuenteNueva), null, 2),
+        JSON.stringify({ ...copiado, camara: null }, null, 2),
       );
     } catch {
       await planAndSave(destino, 'normal');

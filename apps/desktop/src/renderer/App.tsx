@@ -1081,6 +1081,7 @@ function Editor(
             Lo que se escribio no se puede reproducir: el log guarda que se pulso
             una tecla, nunca cual.
             {datos.manifest.tapado && ' La repeticion vuelve a tapar lo mismo.'}
+            {pistaCam && ' La camara no: se repite la demo, no a quien la cuenta.'}
           </p>
           {errorRepeticion && <p className="error">{errorRepeticion}</p>}
         </div>
