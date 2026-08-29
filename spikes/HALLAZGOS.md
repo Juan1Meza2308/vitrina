@@ -286,3 +286,99 @@ de algo».
 Los números absolutos son de este contenedor, sin GPU: en una máquina con
 aceleración la composición del filtro es mucho más barata. Lo que no cambia con
 el hardware es que desenfocar un color plano no dibuja nada.
+
+---
+
+## M13 · Un recorrido de rendimiento del editor, y cuatro sospechosos equivocados
+
+**Pregunta:** la app había crecido mucho —cristal, tarjetas con previsualización,
+doblaje, guía, cámara— y nadie había medido el editor. ¿Dónde duele?
+
+`node tools/verificar-app.ts --rendimiento` mide sobre la app de verdad y la
+misma grabación: arranque, fps quieto, reproduciendo y arrastrando, tareas
+largas, y el export. La línea base decía esto:
+
+| | antes |
+|---|---|
+| arranque | 916 ms |
+| quieto | 60.3 fps |
+| reproducción | 43.0 fps |
+| **arrastre de la aguja** | **20.0 fps · 279 ms bloqueados** |
+| export | 46.7 s para 19.5 s de vídeo |
+
+Quieto a 60 y arrastrando a 20. Ahí estaba.
+
+### Lo que el repaso de código dijo, y la medida desmintió
+
+Del repaso salieron dos culpables «con nombre y apellidos»: la forma de onda,
+que eran 900 `<span>` rehechos en cada tick, y la falta de `React.memo` en la
+línea de tiempo. El perfilador de muestreo durante un arrastre repartió así el
+tiempo: **51.5 % `(program)`** —pintado, fuera de JS—, 37.5 % inactivo y **~1 %
+React**. Los dos sospechosos juntos valían un uno por ciento.
+
+Luego cayeron dos más, y por el mismo método: **no esperar al decode** para
+componer con el fotograma anterior salió *peor* (35.8 fps frente a 39.2), porque
+con la aguja ya fuera de React esperar no retrasa la respuesta y no esperar
+obliga a componer dos veces por movimiento; y **el tamaño del lienzo** no movía
+la aguja en absoluto.
+
+### Lo que sí era
+
+Aislando por casos con `data-cristal` y sondas inyectadas:
+
+| | hover sobre el panel |
+|---|---|
+| La luz del cristal como capa de fondo | 30.8 fps |
+| La luz como caja que se mueve con `transform` | **61.7 fps** |
+
+**La luz que sigue al cursor repintaba el panel entero en cada movimiento del
+ratón.** Un degradado en `background-image` posicionado con variables CSS obliga
+a repintar toda la superficie; una caja con `transform` la recoloca el
+compositor sin repintar nada. El efecto es el mismo, el precio es la mitad.
+
+En el export, `VITRINA_MEDIR=1` repartió el tiempo de cada fotograma:
+
+| | antes | después |
+|---|---|---|
+| decodificar el JPEG | 15.2 s (27 %) | 0.0 s |
+| componer | 1.5 s (3 %) | 1.1 s |
+| sacar los píxeles del lienzo | *(escondido)* | 34.4 s (87 %) |
+| tubo a ffmpeg | 39.1 s (70 %) | 3.2 s |
+| **total** | **56.0 s** | **39.7 s** |
+
+El bucle escribía un fotograma y esperaba a que ffmpeg lo tragara, con el
+siguiente sin decodificar; y `loadImage` es asíncrona y va en hilos nativos,
+pero se la esperaba justo cuando hacía falta —treinta a la vez rinden 4.8 ms
+cada una frente a 17.8 ms una detrás de otra—. Solapando ambas cosas, el mp4
+sale **idéntico bit a bit** (mismo md5) en un 29 % menos de tiempo.
+
+La primera medida juntaba «componer» con «sacar los píxeles» y respondía que
+componer costaba el 69 %. Separadas, componer cuesta el 3 %: lo caro es
+`canvas.data()`, 23-37 ms por fotograma para sacar 3.7 MB de Skia. Ese es el
+suelo de hoy, y no lo arreglan ni un lienzo opaco ni `willReadFrequently`
+—probados—.
+
+| | antes | después |
+|---|---|---|
+| arrastre | 20.0 fps · 279 ms bloqueados | 43-50 fps · 0 ms |
+| suelo del banco (mover sin arrastrar) | 47.5 fps | 61.7 fps |
+| export (en la app) | 60.2 s | 44.8 s |
+| export (aislado, A/B seguido) | 54.7 s | 39.7 s |
+
+### Dos lecciones, y una vergüenza
+
+**El repaso de código señala lo que se lee, no lo que cuesta.** Los cuatro
+sospechosos eran razonables y ninguno era el problema. El perfilador tardó dos
+minutos en decir que React no pintaba nada en esta película.
+
+**Y el banco tiene que demostrar que mide lo que dice medir.** Dos veces saqué
+conclusiones de un binario viejo —media tarde diciendo «esto no mejora nada»
+sobre un bundle de trece horas antes, y otra vez con el exportador, que el
+proceso principal empaqueta al compilar—. Ahora `verificar-app` compara la fecha
+de lo compilado con la del código y avisa antes de medir. Es la misma lección de
+M8 y M11, por tercera vez: **la primera medida hay que hacérsela al banco**.
+
+Por eso los interruptores: `data-cristal`, `data-preview`, `data-medir`,
+`VITRINA_SIN_SOLAPE`, `VITRINA_MEDIR`. Este contenedor da 40 s o 60 s para el
+mismo export según el rato, así que un antes/después que no sea en el mismo
+minuto no vale nada.
