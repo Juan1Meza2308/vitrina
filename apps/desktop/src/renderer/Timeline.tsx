@@ -298,6 +298,20 @@ function Onda({ picos }: { picos: Float32Array }) {
     cv.width = picos.length;
     cv.height = alto;
 
+    // La onda se dibuja NORMALIZADA, no con los valores absolutos.
+    //
+    // Una narracion normal de portatil tiene picos de 0.15, asi que a escala
+    // absoluta el carril entero se ve como una raya —comprobado en pixeles: el
+    // pico mas alto ocupaba el 15 % del alto—. Y para lo que sirve esta onda,
+    // que es ver DONDE se hablo, los decibelios absolutos no dicen nada; lo que
+    // dice algo es el relieve.
+    //
+    // La referencia es el percentil 95 y no el maximo: un golpe en la mesa no
+    // puede aplastar el resto de la grabacion.
+    const orden = [...picos].filter((v) => v > 0).sort((a, b) => a - b);
+    const p95 = orden[Math.floor(orden.length * 0.95)] ?? 0;
+    const escala = p95 > 0.02 ? 0.92 / p95 : 1;
+
     const pintar = () => {
       const ctx = cv.getContext('2d');
       if (!ctx) return;
@@ -306,7 +320,7 @@ function Onda({ picos }: { picos: Float32Array }) {
       for (let i = 0; i < picos.length; i++) {
         // Minimo de un pixel: una columna sin sonido tiene que seguir marcando
         // la linea, o el silencio pareceria un hueco en la pista.
-        const h = Math.max(1, (picos[i] ?? 0) * alto);
+        const h = Math.max(1, Math.min(1, (picos[i] ?? 0) * escala) * alto);
         ctx.fillRect(i, (alto - h) / 2, 1, h);
       }
     };

@@ -2226,8 +2226,41 @@ async function verificarSilencios(): Promise<void> {
     await esperarA(client, '!document.body.textContent.includes("Buscando silencios")',
       'fin de la deteccion', 30_000));
 
-  const bandas = await ev<number>(client, 'document.querySelectorAll(".recorte.corte").length');
+  // El selector es `.carril.ritmo .corte` y no `.recorte.corte`: los cortes se
+  // pintan en el carril de ritmo desde que la linea de tiempo tiene carriles, y
+  // esta comprobacion se quedo buscando la clase de antes —o sea, pasando por
+  // alto justo lo que venia a mirar—.
+  const bandas = await ev<number>(client, 'document.querySelectorAll(".carril.ritmo .corte").length');
   check('el silencio aparece en la linea de tiempo', bandas === 1, `${bandas} bandas`);
+
+  // La onda se pinta en un lienzo, asi que se comprueba en pixeles: cuanta
+  // altura alcanza y en que parte de las columnas hay algo. Un lienzo en blanco
+  // o una linea plana pasarian cualquier comprobacion que solo mirara el DOM,
+  // y en la pantalla se leerian como "esta grabacion no tiene sonido".
+  const onda = JSON.parse(await ev<string>(client, `
+    (() => {
+      const c = document.querySelector('canvas.onda');
+      if (!c) return JSON.stringify({ hay: false });
+      const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+      let conTinta = 0, alto = 0;
+      for (let x = 0; x < c.width; x++) {
+        let n = 0;
+        for (let y = 0; y < c.height; y++) if (d[(y * c.width + x) * 4 + 3] > 0) n++;
+        if (n > 1) conTinta++;
+        if (n > alto) alto = n;
+      }
+      return JSON.stringify({
+        hay: true, columnas: c.width, conTinta, alto: alto / c.height,
+      });
+    })()
+  `)) as { hay: boolean; columnas?: number; conTinta?: number; alto?: number };
+
+  check('la onda se dibuja en el lienzo', onda.hay === true);
+  check('y llega a verse, no es una linea plana', (onda.alto ?? 0) > 0.5,
+    `el pico mas alto ocupa el ${(((onda.alto ?? 0) * 100)).toFixed(0)}% del carril`);
+  check('con sonido en buena parte de la grabacion',
+    (onda.conTinta ?? 0) > (onda.columnas ?? 1) * 0.3,
+    `${onda.conTinta} de ${onda.columnas} columnas`);
 
   await sleep(900);   // guardado diferido
   const proyecto = JSON.parse(await fsp.readFile(path.join(root, 'project.json'), 'utf8')) as
