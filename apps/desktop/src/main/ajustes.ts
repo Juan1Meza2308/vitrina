@@ -38,6 +38,10 @@ export interface Ajustes {
    * normal es querer taparlos tambien en la siguiente.
    */
   tapar: string;
+  /** Grabar la camara web. Como el microfono: es una preferencia tuya, no de
+   *  una demo concreta. */
+  camOn: boolean;
+  camDeviceId: string;
   looks: Look[];
   /** Nombre del look que se aplica solo a las grabaciones nuevas. */
   lookPorDefecto: string | null;
@@ -50,6 +54,8 @@ export const AJUSTES_POR_DEFECTO: Ajustes = {
   micOn: true,
   micDeviceId: '',
   tapar: '',
+  camOn: false,
+  camDeviceId: '',
   looks: [],
   lookPorDefecto: null,
 };
@@ -66,6 +72,9 @@ export function normalizarAjustes(crudo: unknown): Ajustes {
     micDeviceId: typeof o.micDeviceId === 'string'
       ? o.micDeviceId : AJUSTES_POR_DEFECTO.micDeviceId,
     tapar: typeof o.tapar === 'string' ? o.tapar : AJUSTES_POR_DEFECTO.tapar,
+    camOn: typeof o.camOn === 'boolean' ? o.camOn : AJUSTES_POR_DEFECTO.camOn,
+    camDeviceId: typeof o.camDeviceId === 'string'
+      ? o.camDeviceId : AJUSTES_POR_DEFECTO.camDeviceId,
     looks: Array.isArray(o.looks) ? o.looks.filter(esLook) : [],
     lookPorDefecto: typeof o.lookPorDefecto === 'string' ? o.lookPorDefecto : null,
   };

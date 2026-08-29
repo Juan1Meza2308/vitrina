@@ -338,6 +338,15 @@ export class Recorder {
       // `capture` decide la forma de la salida y el tipo de marco: una grabacion
       // vertical tiene que abrirse ya en 9:16 y con marco de movil.
       const project = defaultProject({ host: hostFromUrl(this.opts.url), capture: viewport });
+      // Si se grabo camara, la burbuja viene puesta. Grabarse la cara y abrir el
+      // editor sin verla se leeria como que no funciono; quitarla es un click y
+      // no obliga a volver a grabar.
+      if (this.camara) {
+        project.camara = {
+          esquina: 'se', tamano: 0.22, forma: 'circulo',
+          espejo: false, borde: 3, sombra: 24,
+        };
+      }
       const budget = computeQualityBudget(viewport, project.export, project.frame);
       project.zooms = planSegments({
         events: this.events,

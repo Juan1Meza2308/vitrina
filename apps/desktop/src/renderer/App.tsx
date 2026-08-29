@@ -13,6 +13,10 @@ import type { RecordingData, ExportProgressMsg, ExportPresetInfo, GrabacionRecie
 import { Preview, makeTrack } from './preview.ts';
 import { Timeline } from './Timeline.tsx';
 import { grabarMicrofono, listarMicrofonos, type MicHandle, type DispositivoAudio } from './mic.ts';
+import {
+  grabarCamara, listarCamaras, abrirCamara,
+  type CamHandle, type DispositivoVideo,
+} from './camara.ts';
 import { picos } from './timeline-calc.ts';
 import { inicial, empujar, deshacer, rehacer, puedeDeshacer, puedeRehacer }
   from './historial.ts';
@@ -50,8 +54,16 @@ export function App() {
   const [micDevices, setMicDevices] = useState<DispositivoAudio[]>([]);
   const [micDeviceId, setMicDeviceId] = useState('');
   const [tapar, setTapar] = useState('');
+  const [camOn, setCamOn] = useState(false);
+  const [camDevices, setCamDevices] = useState<DispositivoVideo[]>([]);
+  const [camDeviceId, setCamDeviceId] = useState('');
+  /** Stream de previsualizacion: verse ANTES de grabar evita descubrir al
+   *  terminar que la tapa estaba puesta o que se sale medio hombro. */
+  const [camPreview, setCamPreview] = useState<MediaStream | null>(null);
   const [nivel, setNivel] = useState(0);
   const mic = useRef<MicHandle | null>(null);
+  const cam = useRef<CamHandle | null>(null);
+  const videoPreview = useRef<HTMLVideoElement>(null);
 
   const [recientes, setRecientes] = useState<GrabacionReciente[]>([]);
 
@@ -67,6 +79,8 @@ export function App() {
       setMicOn(a.micOn);
       setMicDeviceId(a.micDeviceId);
       setTapar(a.tapar);
+      setCamOn(a.camOn);
+      setCamDeviceId(a.camDeviceId);
     });
   }, []);
 
@@ -118,6 +132,40 @@ export function App() {
     );
   }, [preset?.capture.w, preset?.capture.h, salidaInicial?.w, salidaInicial?.h, orientacion]);
 
+  // La lista de camaras solo trae etiquetas utiles con permiso concedido, igual
+  // que la de microfonos: se pide al encender la camara, no al arrancar la app.
+  useEffect(() => {
+    if (!camOn) {
+      camPreview?.getTracks().forEach((t) => t.stop());
+      setCamPreview(null);
+      return;
+    }
+    let vivo = true;
+    let abierto: MediaStream | null = null;
+    void (async () => {
+      try {
+        abierto = await abrirCamara(camDeviceId || undefined);
+        if (!vivo) { abierto.getTracks().forEach((t) => t.stop()); return; }
+        setCamPreview(abierto);
+        setCamDevices(await listarCamaras());
+      } catch (e) {
+        setError(`Sin camara: ${e instanceof Error ? e.message : String(e)}`);
+        setCamOn(false);
+      }
+    })();
+    return () => {
+      vivo = false;
+      abierto?.getTracks().forEach((t) => t.stop());
+    };
+    // `camPreview` no va en las dependencias a proposito: lo escribe este mismo
+    // efecto, y meterlo lo haria reabrir la camara en bucle.
+     
+  }, [camOn, camDeviceId]);
+
+  useEffect(() => {
+    if (videoPreview.current) videoPreview.current.srcObject = camPreview;
+  }, [camPreview]);
+
   const grabar = useCallback(async () => {
     setError('');
     setFase('cuenta');
@@ -139,10 +187,23 @@ export function App() {
           setError(`Sin audio: ${e instanceof Error ? e.message : String(e)}`);
         }
       }
+      if (camOn) {
+        try {
+          // La previsualizacion se cierra antes de grabar: dos capturas del
+          // mismo dispositivo a la vez es pedirle un problema a la camara.
+          camPreview?.getTracks().forEach((t) => t.stop());
+          setCamPreview(null);
+          cam.current = await grabarCamara(camDeviceId || undefined);
+        } catch (e) {
+          // Igual que con el microfono: perder la demo entera porque falle la
+          // camara seria peor que quedarse sin burbuja.
+          setError(`Sin camara: ${e instanceof Error ? e.message : String(e)}`);
+        }
+      }
       // Se guardan al grabar y no al teclear: escribir media URL y cerrar no
       // deberia dejarla puesta para la proxima vez.
       void window.vitrina.guardarAjustes({
-        url, presetName, orientacion, micOn, micDeviceId, tapar,
+        url, presetName, orientacion, micOn, micDeviceId, tapar, camOn, camDeviceId,
       });
       await window.vitrina.startRecording(url, presetName, orientacion, tapar);
       setStats({ frames: 0, elapsedMs: 0 });
@@ -150,10 +211,12 @@ export function App() {
     } catch (e) {
       await mic.current?.detener().catch(() => {});
       mic.current = null;
+      await cam.current?.detener().catch(() => {});
+      cam.current = null;
       setError(e instanceof Error ? e.message : String(e));
       setFase('inicio');
     }
-  }, [url, presetName, orientacion, micOn, micDeviceId, tapar]);
+  }, [url, presetName, orientacion, micOn, micDeviceId, tapar, camOn, camDeviceId, camPreview]);
 
   const parar = useCallback(async () => {
     try {
@@ -161,6 +224,10 @@ export function App() {
       // manifest y necesita que la pista ya este cerrada para anotarla.
       await mic.current?.detener().catch(() => {});
       mic.current = null;
+      // La camara tambien se cierra ANTES de parar el video, por lo mismo: el
+      // manifest se escribe en `record:stop` y necesita la pista ya cerrada.
+      await cam.current?.detener().catch(() => {});
+      cam.current = null;
       setDatos(await window.vitrina.stopRecording());
       setFase('editor');
     } catch (e) {
@@ -313,6 +380,40 @@ export function App() {
         </div>
 
         <div className="campo">
+          <label>Camara</label>
+          <div className="fila">
+            <button className={camOn ? 'on' : ''} onClick={() => setCamOn(true)}>
+              Con camara
+            </button>
+            <button className={!camOn ? 'on' : ''} onClick={() => setCamOn(false)}>
+              Sin camara
+            </button>
+          </div>
+          {camOn && (
+            <>
+              {camDevices.length > 1 && (
+                <select value={camDeviceId} onChange={(e) => setCamDeviceId(e.target.value)}>
+                  <option value="">Camara predeterminada</option>
+                  {camDevices.map((d) => (
+                    <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
+                  ))}
+                </select>
+              )}
+              {/* Redonda y del tamano de la burbuja: lo que se ve aqui es lo que
+                  va a salir, incluido el recorte. Un rectangulo mentiria sobre
+                  cuanto encuadre se pierde por los lados. */}
+              <video ref={videoPreview} className="camara-previa"
+                     autoPlay muted playsInline />
+              <p className="nota-formato">
+                Se graba en su propio fichero, aparte del video. En el editor se
+                elige esquina, tamano y forma, y se puede quitar sin volver a
+                grabar.
+              </p>
+            </>
+          )}
+        </div>
+
+        <div className="campo">
           <label htmlFor="tapar">Tapar datos sensibles</label>
           <input id="tapar" type="text" value={tapar} spellCheck={false}
                  onChange={(e) => setTapar(e.target.value)}
@@ -433,6 +534,7 @@ function Editor(
   const lienzo = useRef<HTMLCanvasElement>(null);
   const preview = useRef<Preview | null>(null);
   const audio = useRef<HTMLAudioElement>(null);
+  const camEl = useRef<HTMLVideoElement>(null);
   /** Ultima posicion del puntero mientras se reencuadra sobre el lienzo. */
   const arrastreLienzo = useRef<{ x: number; y: number } | null>(null);
 
@@ -594,6 +696,11 @@ function Editor(
         if (audio.current && audio.current.playbackRate !== rate) {
           audio.current.playbackRate = rate;
         }
+        // La burbuja se acelera con el video: si no, la cara iria a tiempo real
+        // sobre un tramo acelerado y se notaria al instante.
+        if (camEl.current && camEl.current.playbackRate !== rate) {
+          camEl.current.playbackRate = rate;
+        }
         if (siguiente >= duracion) {
           setReproduciendo(false);
           return duracion;
@@ -604,6 +711,9 @@ function Editor(
         const saltado = mapa.skip(siguiente);
         if (saltado !== siguiente && audio.current) {
           audio.current.currentTime = Math.max(0, tiempoAudio(saltado));
+        }
+        if (saltado !== siguiente && camEl.current) {
+          camEl.current.currentTime = Math.max(0, tiempoCam(saltado));
         }
         return saltado;
       });
@@ -715,6 +825,12 @@ function Editor(
   const tiempoAudio = (ms: number) =>
     (datos.manifest.startedAt - (pista?.startedAt ?? 0) + ms) / 1000;
 
+  // La camara tiene el mismo desfase que la narracion y se resuelve igual: se
+  // grabo en otro proceso y arranco antes que el video.
+  const pistaCam = datos.manifest.camara ?? null;
+  const tiempoCam = (ms: number) =>
+    (datos.manifest.startedAt - (pistaCam?.startedAt ?? 0) + ms) / 1000;
+
   // La narracion se descarga entera a un blob en vez de dejar que el elemento
   // la reproduzca en streaming. El WebM de MediaRecorder no lleva duracion ni
   // indices —es un flujo en vivo—, y pedirle al reproductor que busque dentro
@@ -722,6 +838,7 @@ function Editor(
   // y otras se quedaba en HAVE_NOTHING. Con el fichero completo en memoria el
   // seek del scrubbing es inmediato y fiable.
   const [audioUrl, setAudioUrl] = useState<string | null>(null);
+  const [camUrl, setCamUrl] = useState<string | null>(null);
   const [escalaTl, setEscalaTl] = useState(1);
   const [onda, setOnda] = useState<Float32Array | null>(null);
   useEffect(() => {
@@ -759,6 +876,72 @@ function Editor(
       setOnda(null);
     };
   }, [pista]);
+
+  // La camara se trae a un blob por la misma razon que la narracion: el WebM de
+  // MediaRecorder no lleva duracion ni indices, y buscar dentro de el a traves
+  // de un protocolo propio es fragil.
+  useEffect(() => {
+    if (!pistaCam) return;
+    let url: string | null = null;
+    let vivo = true;
+    void (async () => {
+      try {
+        const res = await fetch(`vitrina://${pistaCam.file}`);
+        const bytes = await res.arrayBuffer();
+        if (!vivo) return;
+        url = URL.createObjectURL(new Blob([bytes], { type: pistaCam.mimeType }));
+        setCamUrl(url);
+      } catch {
+        setCamUrl(null);
+      }
+    })();
+    return () => {
+      vivo = false;
+      if (url) URL.revokeObjectURL(url);
+      setCamUrl(null);
+    };
+  }, [pistaCam]);
+
+  // El compositor dibuja la burbuja desde este elemento: no se copia el frame a
+  // ningun sitio, se le pasa el <video> tal cual.
+  useEffect(() => {
+    preview.current?.setCam(camUrl ? camEl.current : null);
+    if (lienzo.current) void preview.current?.draw(lienzo.current, tMs, proyectoVivo);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [camUrl, datos]);
+
+  // Un <video> decodifica cuando puede, no cuando se le pide: al abrir el editor
+  // y despues de cada salto el frame llega DESPUES del ultimo repintado, asi que
+  // la burbuja se quedaria vacia o con la cara del instante anterior hasta que
+  // algo mas obligara a repintar. Lo caza la verificacion de camara por pixeles.
+  useEffect(() => {
+    const el = camEl.current;
+    if (!el || !camUrl) return;
+    const repintar = () => {
+      if (lienzo.current) void preview.current?.draw(lienzo.current, tMs, proyectoVivo);
+    };
+    el.addEventListener('loadeddata', repintar);
+    el.addEventListener('seeked', repintar);
+    return () => {
+      el.removeEventListener('loadeddata', repintar);
+      el.removeEventListener('seeked', repintar);
+    };
+  }, [camUrl, tMs, proyectoVivo]);
+
+  useEffect(() => {
+    const el = camEl.current;
+    if (!el || !camUrl) return;
+    if (reproduciendo) {
+      el.currentTime = Math.max(0, tiempoCam(tMs));
+      void el.play().catch(() => {});
+    } else {
+      el.pause();
+      // Parado hay que recolocarlo a mano, o la burbuja ensenaria el ultimo
+      // frame reproducido mientras la aguja esta en otro sitio.
+      el.currentTime = Math.max(0, tiempoCam(tMs));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [reproduciendo, camUrl, tMs]);
 
   useEffect(() => {
     const el = audio.current;
@@ -989,6 +1172,13 @@ function Editor(
           />
         </div>
         {audioUrl && <audio ref={audio} src={audioUrl} preload="auto" />}
+        {/* Fuera de la vista pero NO con display:none: un elemento oculto asi
+            puede dejar de decodificar, y el compositor se quedaria dibujando el
+            ultimo frame. */}
+        {camUrl && (
+          <video ref={camEl} src={camUrl} muted playsInline preload="auto"
+                 style={{ position: 'absolute', width: 1, height: 1, opacity: 0 }} />
+        )}
 
         <div className="transporte">
           <button className="primario" onClick={() => setReproduciendo((r) => !r)}
@@ -1124,6 +1314,80 @@ function Editor(
             </>
           )}
         </div>
+
+        {pistaCam && (
+          <div className="grupo">
+            <h3>Camara web</h3>
+            {project.camara ? (
+              <>
+                {/* Flechas y no texto: el inspector es estrecho y "Arriba
+                    izquierda" se cortaba a la mitad, dejando dos botones que
+                    ponian lo mismo. El nombre entero va en el tooltip. */}
+                <div className="fila esquinas">
+                  {([
+                    ['no', '↖', 'Arriba a la izquierda'],
+                    ['ne', '↗', 'Arriba a la derecha'],
+                    ['so', '↙', 'Abajo a la izquierda'],
+                    ['se', '↘', 'Abajo a la derecha'],
+                  ] as const).map(([e, flecha, titulo]) => (
+                    <button key={e} title={titulo}
+                            className={project.camara?.esquina === e ? 'on' : ''}
+                            onClick={() => setProject((p) => (p.camara
+                              ? { ...p, camara: { ...p.camara, esquina: e } } : p))}>
+                      {flecha}
+                    </button>
+                  ))}
+                </div>
+                <div className="deslizador">
+                  <label>Tamano <b>{Math.round(project.camara.tamano * 100)}%</b></label>
+                  <input type="range" min={6} max={45} value={Math.round(project.camara.tamano * 100)}
+                         onChange={(ev) => setProject((p) => (p.camara
+                           ? { ...p, camara: { ...p.camara, tamano: Number(ev.target.value) / 100 } }
+                           : p))} />
+                </div>
+                <div className="fila">
+                  <button className={project.camara.forma === 'circulo' ? 'on' : ''}
+                          onClick={() => setProject((p) => (p.camara
+                            ? { ...p, camara: { ...p.camara, forma: 'circulo' } } : p))}>
+                    Circulo
+                  </button>
+                  <button className={project.camara.forma === 'redondeada' ? 'on' : ''}
+                          onClick={() => setProject((p) => (p.camara
+                            ? { ...p, camara: { ...p.camara, forma: 'redondeada' } } : p))}>
+                    Redondeada
+                  </button>
+                </div>
+                <button className={project.camara.espejo ? 'on' : ''}
+                        onClick={() => setProject((p) => (p.camara
+                          ? { ...p, camara: { ...p.camara, espejo: !p.camara.espejo } } : p))}>
+                  Espejo
+                </button>
+                <p className="sutil">
+                  Sin espejo el texto de tu camiseta se lee al derecho, que es lo
+                  que espera quien mira el video. Con espejo te ves como en un
+                  espejo, que es lo que esperas tu.
+                </p>
+                <button className="peligro"
+                        onClick={() => setProject((p) => ({ ...p, camara: null }))}>
+                  Quitar la burbuja
+                </button>
+              </>
+            ) : (
+              <>
+                <p className="sutil">La grabacion trae camara, pero no se dibuja.</p>
+                <button onClick={() => setProject((p) => ({
+                  ...p,
+                  camara: {
+                    esquina: 'se', tamano: 0.22, forma: 'circulo',
+                    espejo: false, borde: 3, sombra: 24,
+                  },
+                }))}>
+                  Poner la burbuja
+                </button>
+              </>
+            )}
+          </div>
+        )}
 
         <div className="grupo">
           <h3>Cursor</h3>

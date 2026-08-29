@@ -27,6 +27,8 @@ export interface Ajustes {
   micOn: boolean;
   micDeviceId: string;
   tapar: string;
+  camOn: boolean;
+  camDeviceId: string;
   looks: Look[];
   lookPorDefecto: string | null;
 }
