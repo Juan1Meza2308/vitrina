@@ -55,6 +55,10 @@ npm run app
 
 Needs Node 22.18+ and a Chromium browser (Edge is already there on Windows).
 
+This also works on **Linux** — there is no Linux installer yet, but recording and
+exporting run there: CI records a real demo with a real browser on every push. If
+your browser lives somewhere unusual, point `VITRINA_BROWSER` at it.
+
 </details>
 
 ## Your first demo

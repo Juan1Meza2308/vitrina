@@ -57,6 +57,11 @@ npm run app
 
 Hace falta Node 22.18+ y un navegador Chromium (en Windows, Edge ya está).
 
+Esto también funciona en **Linux**: no hay instalador todavía, pero grabar y
+exportar sí van —la integración continua graba una demo de verdad, con un
+navegador de verdad, en cada push—. Si tu navegador está en una ruta poco
+habitual, apunta `VITRINA_BROWSER` a él.
+
 </details>
 
 ## Tu primera demo
