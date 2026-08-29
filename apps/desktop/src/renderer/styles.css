@@ -56,10 +56,10 @@
   --filo-alto: inset 0 1px 0 rgba(255, 255, 255, .10);
   --filo-bajo: inset 0 -1px 0 rgba(0, 0, 0, .30);
 
-  /* Brillo fijo del material y reflejo que sigue al cursor (`reflejo.ts`). */
+  /* Brillo fijo del material, y color de la luz que sigue al cursor
+     (`reflejo.ts` la mueve; la forma esta en `.cristal > .luz`). */
   --brillo: linear-gradient(150deg, rgba(255, 255, 255, .07), transparent 45%);
-  --reflejo: radial-gradient(220px circle at var(--mx, 50%) var(--my, 0%),
-                             rgba(255, 255, 255, .08), transparent 62%);
+  --reflejo: rgba(255, 255, 255, .10);
 
   /*
    * Superficies SOLIDAS: todo lo que va DENTRO de un cristal.
@@ -149,8 +149,9 @@
   --filo-alto: inset 0 1px 0 rgba(255, 255, 255, .9);
   --filo-bajo: inset 0 -1px 0 rgba(16, 24, 40, .06);
   --brillo: linear-gradient(150deg, rgba(255, 255, 255, .5), transparent 45%);
-  --reflejo: radial-gradient(220px circle at var(--mx, 50%) var(--my, 0%),
-                             rgba(255, 255, 255, .55), transparent 62%);
+  /* En claro la luz es MUCHO mas fuerte: sobre un material casi blanco, un
+     reflejo tenue no se ve. */
+  --reflejo: rgba(255, 255, 255, .55);
   --capa: #ffffff;
   --capa-hundida: #eef1f5;
   --tinta-video: linear-gradient(180deg, #8fce3a, #6fb32c);
@@ -180,14 +181,13 @@
  * caen justo donde tienen que caer —sobre el color, debajo del contenido— y
  * ademas no crean dos cajas mas por panel.
  *
- * La opacidad del reflejo se anima con `@property`: una capa de fondo no se
- * puede desvanecer, pero una variable tipada si.
+ * La LUZ que sigue al cursor es la excepcion, y por rendimiento: como capa de
+ * fondo obligaba a repintar el panel entero en cada movimiento del raton, y eso
+ * medido costaba dos tercios de los fotogramas (M13: arrastrar la aguja a 20 fps
+ * en vez de 60). Ahora es una caja propia que se mueve con `transform`, que el
+ * compositor resuelve sin repintar nada. La crea `reflejo.ts` la primera vez que
+ * el cursor entra, asi que un panel que nadie toca no paga ni el nodo.
  */
-@property --luz {
-  syntax: "<number>";
-  initial-value: 0;
-  inherits: false;
-}
 
 /*
  * EL DESENFOQUE SOLO SE PONE DONDE SE LO GANA: encima de algo.
@@ -205,22 +205,35 @@
  * atajos, los avisos— si desenfoca: ahi detras hay video.
  */
 .cristal {
-  --luz: 0;
   position: relative;
+  /* Crea contexto de apilamiento para que la luz, con z negativo, caiga DONDE
+     TIENE QUE CAER: sobre el fondo del panel y debajo de su contenido. Sin esto
+     un z negativo se va detras del propio fondo y no se ve —ya paso—. */
+  isolation: isolate;
   background-color: var(--vidrio-1);
-  background-image:
-    radial-gradient(220px circle at var(--mx, 50%) var(--my, 0%),
-                    rgba(255, 255, 255, calc(.09 * var(--luz))), transparent 62%),
-    var(--brillo),
-    var(--tinte);
+  background-image: var(--brillo), var(--tinte);
   border: 1px solid var(--linea);
   border-radius: var(--radio-l);
   box-shadow: var(--filo-alto), var(--filo-bajo), var(--sombra-2);
-  transition: --luz .3s var(--curva);
 }
-/* El reflejo solo con el cursor encima: una superficie que brilla sola no se
-   lee como luz, se lee como un degradado. */
-.cristal:hover { --luz: 1; }
+
+/* La luz solo con el cursor encima: una superficie que brilla sola no se lee
+   como luz, se lee como un degradado. */
+.cristal > .luz {
+  position: absolute; inset: 0; z-index: -1;
+  overflow: hidden; border-radius: inherit; pointer-events: none;
+  opacity: 0; transition: opacity .3s var(--curva);
+}
+.cristal:hover > .luz { opacity: 1; }
+.cristal > .luz > i {
+  position: absolute; left: 0; top: 0;
+  width: 440px; height: 440px; margin: -220px 0 0 -220px;
+  border-radius: 50%;
+  background: radial-gradient(circle closest-side, var(--reflejo), transparent);
+  /* La promesa que hace barato el efecto: el navegador le da su propia capa y
+     moverla no repinta el panel. */
+  will-change: transform;
+}
 
 .cristal.flota {
   background-color: var(--vidrio-2);
@@ -243,6 +256,7 @@
   background-color: var(--capa);
   background-image: none;
 }
+:root[data-cristal="no"] .cristal > .luz { display: none; }
 
 /*
  * Tipografia.
@@ -910,8 +924,9 @@ select:focus {
 @media (prefers-reduced-motion: reduce) {
   button:active:not(:disabled) { transform: none; background: var(--acc-suave); }
   .atajos, .atajos .hoja, .aviso-flotante, .app.soltando::after { animation: none; }
-  /* Sin luz que persiga al cursor: el reflejo ni se registra (`reflejo.ts`). */
-  .cristal, .cristal:hover { --luz: 0; transition: none; }
+  /* Sin luz que persiga al cursor: el reflejo ni se registra (`reflejo.ts`),
+     y si algo la hubiera creado antes, aqui no se enciende. */
+  .cristal > .luz, .cristal:hover > .luz { opacity: 0; transition: none; }
   .pulso { animation: none; opacity: .85; }
   .barra-progreso > div { transition: none; }
 }
@@ -937,6 +952,7 @@ select:focus {
     background-image: none;
     backdrop-filter: none;
   }
+  .cristal > .luz { display: none; }
   .atajos { backdrop-filter: none; }
   /* Sin translucidez, el desvanecido de los bordes tampoco tiene sentido: la
      linea vuelve a ser el separador. */
@@ -949,6 +965,7 @@ select:focus {
   /* El filo deja de ser una insinuacion y pasa a borde definido, y el tinte se
      apaga: con mas contraste, un velo de color juega en contra. */
   .cristal { border-color: var(--fg); box-shadow: var(--sombra-2); background-image: none; }
+  .cristal > .luz { display: none; }
   .sutil, .nota-formato, .campo > label, .grupo > h3 { color: var(--fg); }
 }
 
