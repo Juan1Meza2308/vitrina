@@ -36,6 +36,11 @@ import {
 } from '@vitrina/export';
 import { findBrowser, comoInstalarNavegador } from '@vitrina/capture-cdp';
 import { normalizarAjustes, aplicarLook, type Ajustes } from './ajustes.ts';
+import { esMasNueva, puedeActualizarSolo } from './version.ts';
+// CommonJS con `require` dinamico dentro: importacion por defecto, y externo en
+// la configuracion de electron-vite. Con importacion nombrada, el bundle
+// compila y falla al arrancar.
+import electronUpdater from 'electron-updater';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
@@ -105,6 +110,76 @@ async function estadoDelSistema(): Promise<EstadoSistema> {
 }
 
 ipcMain.handle('sistema:estado', () => estadoDelSistema());
+
+/* -------------------------------------------------------------------------
+ * Actualizaciones
+ *
+ * La app pregunta por la ultima Release al arrancar y, si hay una mas nueva,
+ * AVISA. No se descarga sola ni se instala por su cuenta: quien esta grabando
+ * una demo no puede encontrarse con que la aplicacion se reinicia.
+ *
+ * El aviso solo aparece en la app instalada. Ejecutandola desde el codigo no
+ * tiene sentido —ahi se actualiza con git— y electron-updater directamente se
+ * niega a mirar.
+ * ---------------------------------------------------------------------- */
+
+const { autoUpdater } = electronUpdater;
+autoUpdater.autoDownload = false;
+autoUpdater.autoInstallOnAppQuit = false;
+
+/** Ultima version vista, para poder responder a quien pregunte mas tarde. */
+let nuevaVersion: string | null = null;
+
+function avisarDeVersion(version: string): void {
+  if (!esMasNueva(version, app.getVersion())) return;
+  nuevaVersion = version;
+  for (const w of BrowserWindow.getAllWindows()) {
+    w.webContents.send('update:disponible', version);
+  }
+}
+
+function mirarSiHayVersionNueva(): void {
+  // Modo de prueba: sin publicar nada se puede ver el aviso tal y como lo vera
+  // el usuario. Es el mismo recurso que `data-cristal` para el desenfoque, y
+  // sirve para que `verificar-app --actualizacion` compruebe la barra de
+  // verdad, en la app de verdad.
+  const fingida = process.env['VITRINA_FINGIR_ACTUALIZACION'];
+  if (fingida) {
+    setTimeout(() => avisarDeVersion(fingida), 800);
+    return;
+  }
+  if (!app.isPackaged) return;
+
+  autoUpdater.on('update-available', (info: { version: string }) => avisarDeVersion(info.version));
+  autoUpdater.on('download-progress', (p: { percent: number }) => {
+    for (const w of BrowserWindow.getAllWindows()) {
+      w.webContents.send('update:progreso', Math.round(p.percent));
+    }
+  });
+  autoUpdater.on('update-downloaded', () => autoUpdater.quitAndInstall());
+  // Un fallo aqui no es asunto del usuario: si GitHub no responde o no hay red,
+  // la app funciona igual. Se traga y se reintentara en el proximo arranque.
+  autoUpdater.on('error', () => {});
+  void autoUpdater.checkForUpdates().catch(() => {});
+}
+
+ipcMain.handle('update:pendiente', () => nuevaVersion);
+
+/**
+ * Instalar la version nueva.
+ *
+ * En Windows se descarga y la app se reinicia sola. En macOS no: Squirrel exige
+ * que la app este firmada y Vitrina no lo esta, asi que se abre la pagina de
+ * descargas en vez de prometer algo que no va a ocurrir.
+ */
+ipcMain.handle('update:instalar', async () => {
+  if (!puedeActualizarSolo() || !app.isPackaged) {
+    await shell.openExternal('https://github.com/Juan1Meza2308/vitrina/releases/latest');
+    return 'pagina';
+  }
+  void autoUpdater.downloadUpdate().catch(() => {});
+  return 'descargando';
+});
 
 /**
  * Abrir un enlace en el navegador del sistema.
@@ -474,6 +549,7 @@ app.whenReady().then(() => {
   });
 
   createWindow();
+  mirarSiHayVersionNueva();
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
   });

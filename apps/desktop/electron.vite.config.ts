@@ -12,8 +12,13 @@ import react from '@vitejs/plugin-react';
  * o `capture-cdp` arrastraria estas dependencias de Node al navegador y el
  * build fallaria; ese fallo temprano es deseable, no lo "arregles" anadiendo
  * externals al renderer.
+ *
+ * `electron-updater` va con ellas por lo mismo: es CommonJS y resuelve modulos
+ * en tiempo de ejecucion, asi que empaquetarlo compila pero revienta al abrir.
  */
-const NATIVAS = { include: ['@napi-rs/canvas', 'chrome-remote-interface'] };
+const NATIVAS = {
+  include: ['@napi-rs/canvas', 'chrome-remote-interface', 'electron-updater'],
+};
 
 export default defineConfig({
   main: {

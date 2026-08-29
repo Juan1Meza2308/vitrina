@@ -950,6 +950,82 @@ async function verificarGrabacion(): Promise<void> {
 }
 
 /**
+ * Verifica el aviso de version nueva, con una version fingida.
+ *
+ * Sin esto solo se podria comprobar publicando una Release de verdad, es decir,
+ * nunca: la primera vez que alguien viera esta barra seria un usuario. Con
+ * `VITRINA_FINGIR_ACTUALIZACION` el proceso principal manda el mismo aviso que
+ * mandaria GitHub, y lo que se comprueba —la barra, el texto, el boton de
+ * cerrar, y que no aparece grabando— es exactamente lo que se va a ver.
+ */
+async function verificarActualizacion(): Promise<void> {
+  console.log('  aviso de version nueva\n');
+  const abrir = async () => {
+    const child = spawn(ELECTRON, [
+      APP,
+      `--remote-debugging-port=${PORT}`,
+      '--use-fake-device-for-media-stream',
+      '--use-fake-ui-for-media-stream',
+    ], {
+      stdio: ['ignore', 'ignore', 'inherit'],
+      env: { ...process.env, VITRINA_FINGIR_ACTUALIZACION: '9.9.9' },
+    });
+    const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+    await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+    return { child, client };
+  };
+
+  let { child, client } = await abrir();
+  check('aparece el aviso de version nueva',
+    await esperarA(client, '!!document.querySelector(".aviso-version")', 'aviso', 15_000));
+  const texto = await ev<string>(client,
+    'document.querySelector(".aviso-version")?.textContent ?? ""');
+  check('dice que version es', texto.includes('9.9.9'), texto.trim());
+
+  // La barra flota: no puede tapar lo que se usa para empezar a grabar.
+  const solapa = await ev<boolean>(client, `
+    (() => {
+      const a = document.querySelector('.aviso-version').getBoundingClientRect();
+      const b = [...document.querySelectorAll('button')]
+        .find(x => x.textContent === 'Grabar')?.getBoundingClientRect();
+      if (!b) return true;
+      return !(a.bottom < b.top || a.top > b.bottom || a.right < b.left || a.left > b.right);
+    })()
+  `);
+  check('y no tapa el boton de Grabar', !solapa);
+
+  await capturar(client, path.join(APP, 'captura-actualizacion.png'));
+
+  await ev(client, `[...document.querySelectorAll('.aviso-version button')].find(b => b.textContent === 'Ahora no').click()`);
+  await sleep(400);
+  check('se puede cerrar',
+    !(await ev<boolean>(client, '!!document.querySelector(".aviso-version")')));
+
+  // Grabando no aparece: la cuenta atras ya es "en marcha".
+  await ev(client, `[...document.querySelectorAll('button')].find(b => b.textContent === 'Grabar').click()`);
+  await sleep(900);
+  const enCuenta = await ev<boolean>(client, '!!document.querySelector(".cuenta")');
+  check('la cuenta atras ha empezado', enCuenta);
+  check('y ahi no se ensena ningun aviso',
+    !(await ev<boolean>(client, '!!document.querySelector(".aviso-version")')));
+
+  await client.close();
+  child.kill();
+  await sleep(1500);
+
+  // Al reabrir vuelve: cerrarlo es "ahora no", no "nunca".
+  ({ child, client } = await abrir());
+  check('al reabrir la app vuelve a avisar',
+    await esperarA(client, '!!document.querySelector(".aviso-version")', 'aviso', 15_000));
+
+  await client.close();
+  child.kill();
+  await sleep(800);
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}\n`);
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
  * Verifica la bienvenida: la pantalla que se ve la primera vez.
  *
  * Se comprueban las dos mitades del trato, y la segunda es la que se olvida:
@@ -2416,6 +2492,7 @@ async function verificarSilencios(): Promise<void> {
 const flujo = process.argv.includes('--silencios') ? verificarSilencios
   : process.argv.includes('--vertical') ? verificarVertical
   : process.argv.includes('--bienvenida') ? verificarBienvenida   // se encarga el flujo
+  : process.argv.includes('--actualizacion') ? verificarActualizacion
   : process.argv.includes('--rendimiento') ? verificarRendimiento
   : process.argv.includes('--cristal') ? verificarCristal
   : process.argv.includes('--inicio') ? verificarInicio

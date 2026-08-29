@@ -184,6 +184,28 @@ const api = {
   /** Abre uno de los enlaces conocidos en el navegador del sistema. */
   abrirEnlace: (clave: 'navegador' | 'ffmpeg' | 'guia'): Promise<void> =>
     ipcRenderer.invoke('sistema:abrir', clave),
+
+  /**
+   * Version nueva, si la hay.
+   *
+   * Se ofrecen las dos vias a proposito: el evento para cuando la respuesta de
+   * GitHub llega despues de que la ventana este abierta —lo normal—, y la
+   * pregunta para cuando llega antes y el aviso se habria perdido.
+   */
+  versionPendiente: (): Promise<string | null> => ipcRenderer.invoke('update:pendiente'),
+  alHaberVersion: (f: (version: string) => void): (() => void) => {
+    const h = (_e: unknown, v: string) => f(v);
+    ipcRenderer.on('update:disponible', h);
+    return () => { ipcRenderer.off('update:disponible', h); };
+  },
+  alProgresarDescarga: (f: (pct: number) => void): (() => void) => {
+    const h = (_e: unknown, p: number) => f(p);
+    ipcRenderer.on('update:progreso', h);
+    return () => { ipcRenderer.off('update:progreso', h); };
+  },
+  /** Descarga y reinicia (Windows) o abre la pagina de descargas (macOS). */
+  instalarVersion: (): Promise<'descargando' | 'pagina'> =>
+    ipcRenderer.invoke('update:instalar'),
   loadRecording: (dir: string): Promise<RecordingData> => ipcRenderer.invoke('recording:load', dir),
   saveProject: (dir: string, project: Project): Promise<void> =>
     ipcRenderer.invoke('recording:saveProject', dir, project),

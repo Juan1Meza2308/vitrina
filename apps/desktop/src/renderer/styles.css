@@ -1129,3 +1129,31 @@ button.enlace:hover:not(:disabled) { filter: brightness(1.15); background: none;
   padding-top: 4px;
 }
 .bienvenida footer .primario { padding: 10px 22px; font-size: 14px; }
+
+
+/*
+ * Aviso de version nueva: una barra fina arriba del todo.
+ *
+ * Flota sobre el contenido en vez de empujarlo: si empujara, la interfaz daria
+ * un salto al llegar la respuesta de GitHub —que llega cuando llega— y el
+ * puntero acabaria sobre otro boton distinto del que se iba a pulsar.
+ */
+.aviso-version {
+  position: fixed; z-index: 65;
+  top: 12px; left: 50%; transform: translateX(-50%);
+  display: flex; align-items: center; gap: 12px;
+  padding: 9px 12px 9px 14px;
+  border-radius: 999px;
+  font-size: 13px;
+  max-width: calc(100vw - 24px);
+  animation: aviso-version-entra .3s var(--curva) both;
+}
+@keyframes aviso-version-entra {
+  from { opacity: 0; transform: translate(-50%, -12px); }
+  to { opacity: 1; transform: translate(-50%, 0); }
+}
+.aviso-version .punto {
+  width: 8px; height: 8px; border-radius: 50%; background: var(--acc);
+  flex: none;
+}
+.aviso-version button { padding: 5px 12px; font-size: 12.5px; }

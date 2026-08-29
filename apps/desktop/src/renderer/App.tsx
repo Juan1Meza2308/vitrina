@@ -17,6 +17,7 @@ import { Preview, makeTrack } from './preview.ts';
 import { Timeline } from './Timeline.tsx';
 import { Recientes } from './Recientes.tsx';
 import { Bienvenida } from './Bienvenida.tsx';
+import { AvisoActualizacion } from './Actualizacion.tsx';
 import { instalarReflejo } from './reflejo.ts';
 import {
   IconoGrabacion, IconoAjustes, IconoRepetir, IconoImagen, IconoReproducir,
@@ -377,15 +378,24 @@ export function App() {
     );
   }
 
+  // El aviso de version nueva acompana a las pantallas donde se puede atender
+  // —inicio y editor— y NO a la cuenta atras ni a la grabacion: ahi la demo esta
+  // corriendo y cualquier cosa que aparezca sale en el video o distrae a quien
+  // esta narrando.
+  const avisoVersion = fase === 'inicio' || fase === 'editor' ? <AvisoActualizacion /> : null;
+
   if (fase === 'editor' && datos) {
     return (
-      <Editor
-        key={datos.dir}
-        datos={datos}
-        onSalir={() => { setDatos(null); setFase('inicio'); }}
-        onAbrir={setDatos}
-        onRegrabar={(dir, desdeMs, conMicro) => void regrabar(dir, desdeMs, conMicro)}
-      />
+      <>
+        {avisoVersion}
+        <Editor
+          key={datos.dir}
+          datos={datos}
+          onSalir={() => { setDatos(null); setFase('inicio'); }}
+          onAbrir={setDatos}
+          onRegrabar={(dir, desdeMs, conMicro) => void regrabar(dir, desdeMs, conMicro)}
+        />
+      </>
     );
   }
 
@@ -466,6 +476,7 @@ export function App() {
          onDragOver={(e) => { e.preventDefault(); setArrastrando(true); }}
          onDragLeave={() => setArrastrando(false)}
          onDrop={soltar}>
+      {avisoVersion}
       <div className="inicio">
         <div className="marca">
           <h1>Vitrina</h1>
