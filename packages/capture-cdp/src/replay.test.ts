@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { guionDe, duracionDeGuion } from './replay.ts';
+import { guionDe, guionHasta, duracionDeGuion } from './replay.ts';
 import type { InputEvent } from '@vitrina/core/types';
 
 const T0 = 1_700_000_000_000;
@@ -74,5 +74,30 @@ describe('guionDe', () => {
     ];
     const g = guionDe(log, T0);
     expect(g.map((a) => a.tipo)).toEqual(['mover', 'abajo', 'arriba']);
+  });
+});
+
+
+describe('guionHasta', () => {
+  const guion = guionDe([
+    ev(0, { type: 'down', x: 10, y: 10 }),
+    ev(2000, { type: 'down', x: 20, y: 20 }),
+    ev(4000, { type: 'down', x: 30, y: 30 }),
+  ], T0);
+
+  it('deja fuera el instante pedido y lo que venga despues', () => {
+    // El corte es ABIERTO por arriba: lo que pasa justo en tA ya es cola, y
+    // ejecutarlo dejaria la app un click por delante de donde toca.
+    expect(guionHasta(guion, 2000).map((a) => a.tMs)).toEqual([0]);
+    expect(guionHasta(guion, 4000).map((a) => a.tMs)).toEqual([0, 2000]);
+  });
+
+  it('en cero no ejecuta nada, y eso es valido', () => {
+    // Regrabar desde el principio es regrabar entero: la cabeza esta vacia.
+    expect(guionHasta(guion, 0)).toEqual([]);
+  });
+
+  it('mas alla del final devuelve el guion entero', () => {
+    expect(guionHasta(guion, 99_999)).toHaveLength(guion.length);
   });
 });
