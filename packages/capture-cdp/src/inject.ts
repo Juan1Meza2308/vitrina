@@ -19,7 +19,13 @@
  *
  * Va como texto plano porque se pasa a `Page.addScriptToEvaluateOnNewDocument`,
  * que lo ejecuta en el main world y no lo bloquea la CSP de la pagina.
+ *
+ * Comparte mundo con el script de tapado (`tapar.ts`) y lee su global para no
+ * guardar la etiqueta de un elemento tapado: difuminar el pixel y escribir el
+ * texto en `events.json` seria tapar solo lo que se ve.
  */
+import { GLOBAL_TAPADO } from './tapar.ts';
+
 export const INJECT_SOURCE = String.raw`
 (() => {
   if (window.__vitrinaInstalled) return;
@@ -47,8 +53,20 @@ export const INJECT_SOURCE = String.raw`
     return el.closest('button, a, input, select, textarea, [role="button"], [role="tab"], label') || el;
   };
 
+  // Lo que esta tapado tampoco deja su texto en el log.
+  //
+  // El tapado difumina los pixeles, pero la etiqueta del elemento pulsado se
+  // guarda en events.json: sin esto, tapar el saldo del cliente lo dejaria
+  // escrito en claro dentro de la propia carpeta de la grabacion. La lista de
+  // selectores la publica el script de tapado en esta global.
+  const tapado = (el) => {
+    const sel = window.${GLOBAL_TAPADO};
+    if (!sel || !el || !el.closest) return false;
+    try { return !!el.closest(sel); } catch (e) { return false; }
+  };
+
   const label = (el) => {
-    if (!el) return null;
+    if (!el || tapado(el)) return null;
     const a = el.getAttribute ? (el.getAttribute('aria-label') || el.getAttribute('placeholder') || el.getAttribute('title')) : null;
     const t = a || el.textContent || '';
     return t.replace(/\s+/g, ' ').trim().slice(0, 60) || null;
