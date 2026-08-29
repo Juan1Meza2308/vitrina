@@ -575,7 +575,24 @@ function Editor(
   // mano, recalcularlos en cada render borraria el trabajo del usuario. Viven
   // dentro del historial, arriba, junto al proyecto.
   const [seleccion, setSeleccion] = useState<number | null>(null);
-  const [atajos, setAtajos] = useState(false);
+  /**
+   * La hoja de atajos tiene tres estados y no dos.
+   *
+   * Hace falta el de salida para que se cierre por el mismo camino por el que
+   * entro: quitarla del arbol de golpe la hace desaparecer, y una cosa que
+   * entra desvaneciendose y sale de golpe se lee como un fallo.
+   */
+  const [atajos, setAtajos] = useState<'oculto' | 'abierto' | 'cerrando'>('oculto');
+  const cerrarAtajos = useCallback(() => {
+    setAtajos((v) => (v === 'abierto' ? 'cerrando' : v));
+    // Lo mismo que dura la animacion de salida. Quitarla antes la cortaria a
+    // media transicion; dejarla mas tiempo la congelaria invisible.
+    window.setTimeout(() => setAtajos((v) => (v === 'cerrando' ? 'oculto' : v)), 180);
+  }, []);
+  // El manejador de teclas vive en un efecto con sus propias dependencias: sin
+  // esta referencia leeria el estado del render en que se registro.
+  const atajosRef = useRef(atajos);
+  useEffect(() => { atajosRef.current = atajos; }, [atajos]);
   const [looks, setLooks] = useState<Look[]>([]);
   const [repitiendo, setRepitiendo] = useState(false);
   const [calidadRepeticion, setCalidadRepeticion] = useState('');
@@ -831,12 +848,15 @@ function Editor(
       if (e.key === 'End') { setReproduciendo(false); setTMs(duracion); }
       // Los atajos existian y no se veian en ninguna parte: quien no leyera el
       // README no sabia que estaban.
-      if (e.key === '?') setAtajos((v) => !v);
-      if (e.key === 'Escape') setAtajos(false);
+      if (e.key === '?') {
+        if (atajosRef.current === 'abierto') cerrarAtajos();
+        else setAtajos('abierto');
+      }
+      if (e.key === 'Escape') cerrarAtajos();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [borrarSeleccion, duracion]);
+  }, [borrarSeleccion, duracion, cerrarAtajos]);
 
   const anadirTramo = () => {
     // Se centra donde estaba el cursor en ese instante: es donde estaba pasando
@@ -1236,8 +1256,9 @@ function Editor(
             onPointerCancel={encuadreSoltar}
           />
         </div>
-        {atajos && (
-          <div className="atajos" onClick={() => setAtajos(false)}>
+        {atajos !== 'oculto' && (
+          <div className={`atajos${atajos === 'cerrando' ? ' saliendo' : ''}`}
+               onClick={cerrarAtajos}>
             <div className="hoja" onClick={(e) => e.stopPropagation()}>
               <h3>Atajos</h3>
               <dl>
@@ -1249,7 +1270,7 @@ function Editor(
                 <dt>Ctrl+Mayus+Z</dt><dd>rehacer</dd>
                 <dt>?</dt><dd>abrir y cerrar esta hoja</dd>
               </dl>
-              <button onClick={() => setAtajos(false)}>Cerrar</button>
+              <button onClick={cerrarAtajos}>Cerrar</button>
             </div>
           </div>
         )}
@@ -1637,7 +1658,9 @@ function Exportar(
 
       {activo ? (
         <>
-          <div className="barra"><div style={{ transform: `scaleX(${progreso.fraction})` }} /></div>
+          <div className="barra-progreso">
+            <div style={{ transform: `scaleX(${progreso.fraction})` }} />
+          </div>
           <div className="progreso-txt">
             <span>{(progreso.fraction * 100).toFixed(0)}% · {progreso.fps.toFixed(0)} fps</span>
             <span>faltan {Math.ceil(progreso.etaMs / 1000)}s</span>
