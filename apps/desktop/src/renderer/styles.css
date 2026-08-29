@@ -559,12 +559,13 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.12); }
   white-space: nowrap; pointer-events: none;
 }
 
+/* La onda es un lienzo estirado, no 900 elementos: se dibuja una vez al cargar
+   la narracion y el zoom de la linea de tiempo la escala. `color` esta aqui y
+   no en el JS para que el dibujo siga al tema. */
 .onda {
   position: absolute; left: 0; right: 0; top: 6px; bottom: 6px;
-  display: flex; align-items: center; gap: 0; pointer-events: none;
-}
-.onda span {
-  flex: 1; min-width: 0; background: var(--tinta-audio); border-radius: 1px;
+  width: 100%; height: calc(100% - 12px); pointer-events: none;
+  color: var(--tinta-audio);
 }
 .sin-audio {
   position: absolute; left: 8px; top: 50%; transform: translateY(-50%);
@@ -664,8 +665,11 @@ button.redondo {
 
 /* La aguja lleva cabeza: una linea de 2 px sola se pierde sobre los carriles,
    y la cabeza dice donde agarrarla aunque el gesto sea sobre toda la pista. */
+/* La posicion viene de una variable que escribe el editor sin re-render: mover
+   la aguja es una escritura de estilo, no un ciclo de React. */
 .aguja {
   position: absolute; top: 0; bottom: 0; width: 2px;
+  left: calc(var(--aguja, 0%) - 1px);
   background: var(--fg); border-radius: 1px; pointer-events: none;
   box-shadow: 0 0 0 1px rgba(0, 0, 0, .35);
 }

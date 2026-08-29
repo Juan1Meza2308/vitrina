@@ -31,6 +31,7 @@ import {
   type CamHandle, type DispositivoVideo,
 } from './camara.ts';
 import { picos } from './timeline-calc.ts';
+import { Reloj } from './reloj.ts';
 import { inicial, empujar, deshacer, rehacer, puedeDeshacer, puedeRehacer }
   from './historial.ts';
 
@@ -695,6 +696,15 @@ function Editor(
   }, []);
   const [camara, setCamara] = useState<CameraPresetName>('normal');
   const [tMs, setTMs] = useState(0);
+  /**
+   * El mismo instante, por un canal que no pasa por React. La linea de tiempo
+   * esta memorizada y mueve su aguja escuchando esto; el estado de arriba sigue
+   * sirviendo a lo que necesita re-render (el reloj en texto, si la aguja cae
+   * dentro de un tramo). Un solo efecto los mantiene en sintonia, en vez de
+   * tener que acordarse en cada sitio que mueve el tiempo.
+   */
+  const reloj = useMemo(() => new Reloj(), []);
+  useEffect(() => { reloj.set(tMs); }, [reloj, tMs]);
   const [reproduciendo, setReproduciendo] = useState(false);
 
   // Los tramos son ESTADO, no un valor derivado. En cuanto se pueden editar a
@@ -713,6 +723,17 @@ function Editor(
   const voz = useRef<MicHandle | null>(null);
   const desfaseVoz = useRef(0);
   const [atajos, setAtajos] = useState<'oculto' | 'abierto' | 'cerrando'>('oculto');
+  const recortar = useCallback(
+    (t: { trimStartMs: number; trimEndMs: number | null }) => setProject((p) => ({ ...p, ...t })),
+    [setProject],
+  );
+
+  /** Llevar la aguja a un punto para. Estable, para no romper el memo. */
+  const irA = useCallback((ms: number) => {
+    setReproduciendo(false);
+    setTMs(ms);
+  }, []);
+
   const cerrarAtajos = useCallback(() => {
     setAtajos((v) => (v === 'abierto' ? 'cerrando' : v));
     // Lo mismo que dura la animacion de salida. Quitarla antes la cortaria a
@@ -1001,7 +1022,9 @@ function Editor(
     setSeleccion(nuevos.findIndex((z) => z.startMs <= tMs && z.endMs > tMs));
   };
 
-  const cortes = project.cuts ?? [];
+  // Memorizado porque viaja a la linea de tiempo memorizada: `?? []` en el
+  // render crearia un array nuevo cada vez y el memo no serviria de nada.
+  const cortes = useMemo(() => project.cuts ?? [], [project.cuts]);
   const [buscando, setBuscando] = useState(false);
   const [sinSilencios, setSinSilencios] = useState(false);
 
@@ -1870,8 +1893,8 @@ function Editor(
 
         <Timeline
           durationMs={duracion}
-          tMs={tMs}
-          onSeek={(ms) => { setReproduciendo(false); setTMs(ms); }}
+          reloj={reloj}
+          onSeek={irA}
           zooms={zooms}
           onZoomsChange={setZooms}
           seleccion={seleccion}
@@ -1879,11 +1902,11 @@ function Editor(
           trimStartMs={project.trimStartMs}
           trimEndMs={project.trimEndMs}
           cuts={cortes}
-          speeds={project.speeds ?? []}
+          speeds={project.speeds}
           escala={escalaTl}
           onda={onda}
           hitos={hitos}
-          onTrim={(t) => setProject((p) => ({ ...p, ...t }))}
+          onTrim={recortar}
         />
       </div>
     </div>
