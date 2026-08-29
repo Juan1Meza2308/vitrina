@@ -82,6 +82,14 @@ const api = {
   audioChunk: (chunk: Uint8Array): void => ipcRenderer.send('audio:chunk', chunk),
   audioStop: (): Promise<unknown> => ipcRenderer.invoke('audio:stop'),
 
+  // La camara sigue el mismo camino que el microfono: trozos segun llegan, y
+  // por `send` y no `invoke` porque nadie espera respuesta y una promesa por
+  // trozo solo anadiria latencia a lo que compite con el screencast.
+  camStart: (startedAt: number, mimeType: string, w: number, h: number): Promise<void> =>
+    ipcRenderer.invoke('cam:start', startedAt, mimeType, w, h),
+  camChunk: (chunk: Uint8Array): void => ipcRenderer.send('cam:chunk', chunk),
+  camStop: (): Promise<unknown> => ipcRenderer.invoke('cam:stop'),
+
   startRecording: (
     url: string,
     presetName: string,

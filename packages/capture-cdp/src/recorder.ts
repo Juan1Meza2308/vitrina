@@ -25,7 +25,9 @@ import { spawn, type ChildProcess } from 'node:child_process';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
-import type { AudioTrack, CaptureSize, Frame, InputEvent, Manifest, Tapado } from '@vitrina/core/types';
+import type {
+  AudioTrack, CamTrack, CaptureSize, Frame, InputEvent, Manifest, Tapado,
+} from '@vitrina/core/types';
 import {
   defaultProject, hostFromUrl, planSegments, computeQualityBudget,
   cameraConfigForBudget, CAMERA_PRESETS,
@@ -124,6 +126,7 @@ export class Recorder {
   private sizeMismatches = 0;
   private recording = false;
   private audio: AudioTrack | null = null;
+  private camara: CamTrack | null = null;
 
   constructor(options: RecorderOptions) {
     this.opts = { quality: 92, port: 9222, ...options };
@@ -226,6 +229,16 @@ export class Recorder {
     this.audio = track;
   }
 
+  /**
+   * Registra la pista de camara web en el manifest.
+   *
+   * Mismo reparto que el audio: la captura el renderer de Electron, que es
+   * quien tiene acceso a `getUserMedia`, y el manifest lo escribe el grabador.
+   */
+  setCamTrack(track: CamTrack | null): void {
+    this.camara = track;
+  }
+
   /** Empieza a recibir frames. Todo lo anterior no se graba. */
   async start(): Promise<void> {
     if (!this.client) throw new Error('launch() antes de start()');
@@ -301,6 +314,7 @@ export class Recorder {
       durationMs,
       frames: this.frames,
       audio: this.audio,
+      camara: this.camara,
       tapado: this.tapadoAplicado(),
     };
 

@@ -24,7 +24,9 @@ import {
   defaultProject, hostFromUrl, planSegments, parseSilenceReport, silenceFilter,
   paraOrientacion, reescalarProyecto,
 } from '@vitrina/core';
-import type { AudioTrack, CameraPresetName, Cut, InputEvent, Manifest, Orientacion, Project } from '@vitrina/core';
+import type {
+  AudioTrack, CamTrack, CameraPresetName, Cut, InputEvent, Manifest, Orientacion, Project,
+} from '@vitrina/core';
 import { exportRecording, EXPORT_PRESETS, ExportAbortedError, findFfmpeg } from '@vitrina/export';
 import { normalizarAjustes, aplicarLook, type Ajustes } from './ajustes.ts';
 import { execFile } from 'node:child_process';
@@ -100,6 +102,8 @@ let exportController: AbortController | null = null;
 /** Escritura en curso de la pista de microfono. */
 let audioStream: fs.WriteStream | null = null;
 let audioTrack: AudioTrack | null = null;
+let camStream: fs.WriteStream | null = null;
+let camTrack: CamTrack | null = null;
 
 /**
  * Dos esquemas propios, y los dos hacen falta.
@@ -276,6 +280,24 @@ ipcMain.handle('audio:stop', async () => {
   return audioTrack;
 });
 
+// La camara, igual que el audio y en la misma carpeta reservada de antemano.
+ipcMain.handle('cam:start', (_e, startedAt: number, mimeType: string, w: number, h: number) => {
+  if (!recordingDir) throw new Error('No hay carpeta de grabacion preparada');
+  camTrack = { file: 'camara.webm', startedAt, mimeType, w, h };
+  camStream = fs.createWriteStream(path.join(recordingDir, 'camara.webm'));
+});
+
+ipcMain.on('cam:chunk', (_e, chunk: Uint8Array) => {
+  camStream?.write(Buffer.from(chunk));
+});
+
+ipcMain.handle('cam:stop', async () => {
+  const stream = camStream;
+  camStream = null;
+  if (stream) await new Promise<void>((resolve) => stream.end(resolve));
+  return camTrack;
+});
+
 ipcMain.handle('record:start', async (
   _e,
   opts: { url: string; presetName: string; orientacion?: Orientacion; tapar?: string },
@@ -425,7 +447,9 @@ ipcMain.handle('record:repeat', async (
 ipcMain.handle('record:stop', async () => {
   if (!recorder) throw new Error('No hay grabacion en curso');
   recorder.setAudioTrack(audioTrack);
+  recorder.setCamTrack(camTrack);
   audioTrack = null;
+  camTrack = null;
   const result = await recorder.stop();
   await recorder.close();
   recorder = null;
