@@ -24,7 +24,7 @@ import {
 } from '@vitrina/capture-cdp';
 import {
   CAPTURE_PRESETS, CAMERA_PRESETS, cameraConfigForBudget, computeQualityBudget,
-  defaultProject, hostFromUrl, planSegments, parseSilenceReport, silenceFilter,
+  defaultProject, FrameIndex, hostFromUrl, planSegments, parseSilenceReport, silenceFilter,
   paraOrientacion, reescalarProyecto,
 } from '@vitrina/core';
 import type {
@@ -67,30 +67,100 @@ ipcMain.handle('settings:set', async (_e, parcial: Partial<Ajustes>) => {
  * borra una carpeta, una lista guardada ofreceria abrir algo que ya no existe.
  */
 /**
- * Miniatura de una grabacion, como data URL.
+ * Fotogramas de una grabacion, escalados y en data URL.
  *
- * Se elige un frame al 25 % y no el primero: al arrancar, la pagina grabada
- * suele estar en blanco o a medio cargar, y una lista de rectangulos vacios no
- * distingue una demo de otra —que es justo para lo que sirve la miniatura—.
- *
- * Va reescalada a 160 px y no en crudo: los frames pesan cientos de kilobytes y
- * mandar cinco enteros por IPC en cada arranque seria pagar megas para pintar
- * un sello.
+ * Van como data URL y no por el protocolo `vitrina://`, que solo sirve la
+ * grabacion ABIERTA: aqui hay varias carpetas a la vez. Reescalados a 320 px
+ * porque un frame pesa cientos de kilobytes y esto es para pintar una tarjeta.
  */
-async function miniaturaDe(dir: string, m: Manifest): Promise<string | null> {
-  const f = m.frames[Math.floor(m.frames.length * 0.25)] ?? m.frames[0];
-  if (!f) return null;
+async function fotogramas(
+  dir: string, m: Manifest, instantes: number[], ancho = 320,
+): Promise<string[]> {
+  const index = new FrameIndex(m);
+  const salida: string[] = [];
+  for (const ms of instantes) {
+    const file = index.at(ms);
+    if (!file) continue;
+    try {
+      const img = await loadImage(path.join(dir, 'frames', file));
+      const h = Math.max(1, Math.round(ancho * (img.height / img.width)));
+      const c = createCanvas(ancho, h);
+      c.getContext('2d').drawImage(img, 0, 0, ancho, h);
+      salida.push(c.toDataURL('image/jpeg', 0.62));
+    } catch {
+      // Un frame ilegible no tumba la tarjeta: se queda con los que salgan.
+    }
+  }
+  return salida;
+}
+
+/**
+ * Como se llama una grabacion en la lista.
+ *
+ * El host de la app grabada, que es lo que distingue una demo de otra. Con un
+ * fichero local no hay host —`hostFromUrl` devuelve "localhost" para todo— y se
+ * usa el nombre del fichero: tres demos de tres fixtures distintos se llamarian
+ * igual, que es justo lo que la lista venia a arreglar.
+ */
+function tituloDeGrabacion(url: string): string {
   try {
-    const img = await loadImage(path.join(dir, 'frames', f.file));
-    const w = 160;
-    const h = Math.max(1, Math.round(w * (img.height / img.width)));
-    const c = createCanvas(w, h);
-    c.getContext('2d').drawImage(img, 0, 0, w, h);
-    return c.toDataURL('image/jpeg', 0.7);
+    const u = new URL(url);
+    if (u.protocol === 'file:') return decodeURIComponent(u.pathname.split('/').pop() ?? '') || 'archivo';
+    return u.host || hostFromUrl(url);
   } catch {
-    return null;      // frame ilegible: la fila sigue valiendo sin sello
+    return hostFromUrl(url);
   }
 }
+
+/**
+ * Instante de la portada: el del PRIMER CLICK.
+ *
+ * Al arrancar, la pagina grabada suele estar en blanco o a medio cargar, y una
+ * lista de rectangulos vacios no distingue una demo de otra —que es justo para
+ * lo que sirve la portada—. El primer click es el momento en que ya hay algo
+ * que ver y ademas es lo que la demo venia a ensenar.
+ */
+async function instanteDePortada(dir: string, m: Manifest): Promise<number> {
+  try {
+    const events = JSON.parse(
+      await fsp.readFile(path.join(dir, 'events.json'), 'utf8')) as InputEvent[];
+    const click = events.find((e) => e.type === 'down');
+    if (click) return click.t - m.startedAt;
+  } catch {
+    /* sin log: se cae al reparto de siempre */
+  }
+  return m.durationMs * 0.25;
+}
+
+/**
+ * Tira de fotogramas de una grabacion, para animar su tarjeta.
+ *
+ * Se pide al posar el cursor y se cachea: generarlas todas al arrancar
+ * decodificaria treinta frames grandes de golpe y la app tardaria en abrir.
+ * La cache vive lo que vive la app; la carpeta de la grabacion no se ensucia.
+ */
+const cachePrevia = new Map<string, string[]>();
+
+ipcMain.handle('recordings:preview', async (_e, dir: string): Promise<string[]> => {
+  const carpeta = path.resolve(dir);
+  const cacheada = cachePrevia.get(carpeta);
+  if (cacheada) return cacheada;
+
+  try {
+    const m = JSON.parse(
+      await fsp.readFile(path.join(carpeta, 'manifest.json'), 'utf8')) as Manifest;
+    // Repartidos entre el 8 % y el 88 %: los extremos de una demo son la pagina
+    // cargando y el cursor parado, y no cuentan nada.
+    const cuantos = 6;
+    const instantes = Array.from({ length: cuantos }, (_, i) =>
+      m.durationMs * (0.08 + (0.8 * i) / (cuantos - 1)));
+    const tira = await fotogramas(carpeta, m, instantes);
+    cachePrevia.set(carpeta, tira);
+    return tira;
+  } catch {
+    return [];
+  }
+});
 
 ipcMain.handle('recordings:recent', async (_e, limite = 5) => {
   try {
@@ -101,9 +171,15 @@ ipcMain.handle('recordings:recent', async (_e, limite = 5) => {
         const dir = path.join(RECORDINGS, nombre);
         try {
           const m = JSON.parse(await fsp.readFile(path.join(dir, 'manifest.json'), 'utf8')) as Manifest;
+          const [portada] = await fotogramas(dir, m, [await instanteDePortada(dir, m)]);
           return {
-            dir, nombre, durationMs: m.durationMs, startedAt: m.startedAt,
-            miniatura: await miniaturaDe(dir, m),
+            dir,
+            nombre,
+            // El host identifica la demo mucho mejor que la hora de la carpeta.
+            host: tituloDeGrabacion(m.url),
+            durationMs: m.durationMs,
+            startedAt: m.startedAt,
+            portada: portada ?? null,
           };
         } catch {
           return null;   // carpeta a medias: una grabacion interrumpida

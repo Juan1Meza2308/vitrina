@@ -105,3 +105,9 @@ export const IconoBorrar = ({ size = 16 }: Props) => (
     <path d="M12.2 4.4 11.7 13a1 1 0 0 1-1 .9H5.3a1 1 0 0 1-1-.9L3.8 4.4" />
   </svg>
 );
+
+export const IconoCarpeta = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <path d="M1.6 4.4a1.4 1.4 0 0 1 1.4-1.4h2.9l1.5 1.8h5.2a1.4 1.4 0 0 1 1.4 1.4v5.4a1.4 1.4 0 0 1-1.4 1.4H3a1.4 1.4 0 0 1-1.4-1.4z" />
+  </svg>
+);

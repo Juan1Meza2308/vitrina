@@ -728,6 +728,15 @@ async function verificarGrabacion(): Promise<void> {
   await Promise.all([client.Page.enable(), client.Runtime.enable()]);
   await sleep(2000);
 
+  // El microfono se enciende A PROPOSITO antes de grabar: los ajustes se
+  // guardan entre sesiones, asi que una verificacion anterior que lo dejara
+  // apagado hacia fallar las comprobaciones de audio de esta. Es el mismo
+  // cuidado que ya tiene el flujo vertical.
+  await ev(client, `
+    [...document.querySelectorAll('button')].find(b => b.textContent === 'Con micrófono')?.click()
+  `);
+  await sleep(300);
+
   await ev(client, `
     (() => {
       const i = document.querySelector('#url');
@@ -817,6 +826,99 @@ async function verificarGrabacion(): Promise<void> {
 
   console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}`);
   console.log('  captura: apps/desktop/captura-grabacion.png\n');
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
+ * Verifica la pantalla de antes de grabar.
+ *
+ * Las tres cosas que motivaron el redisenio, comprobadas por el RESULTADO:
+ * que las dos columnas esten una al lado de la otra, que el boton de Grabar se
+ * vea sin desplazar —el fallo que lo empezo todo— y que la preview de una
+ * grabacion reciente se mueva al posar el cursor.
+ */
+async function verificarInicio(): Promise<void> {
+  console.log('  pantalla de inicio\n');
+  const child = spawn(ELECTRON, [
+    APP,
+    `--remote-debugging-port=${PORT}`,
+    '--use-fake-device-for-media-stream',
+    '--use-fake-ui-for-media-stream',
+  ], { stdio: ['ignore', 'ignore', 'inherit'] });
+  const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+  await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+  await sleep(2500);
+
+  // --- dos columnas -------------------------------------------------------
+  const cajas = JSON.parse(await ev<string>(client, `
+    (() => {
+      const t = [...document.querySelectorAll('.inicio > .tarjeta, .inicio > .lado')]
+        .map(e => { const r = e.getBoundingClientRect(); return { x: Math.round(r.x), w: Math.round(r.width) }; });
+      return JSON.stringify(t);
+    })()
+  `)) as { x: number; w: number }[];
+  check('la pantalla tiene dos columnas', cajas.length === 2, `${cajas.length} bloques`);
+  if (cajas.length === 2) {
+    check('y estan una al lado de la otra',
+      cajas[1]!.x >= cajas[0]!.x + cajas[0]!.w - 2,
+      `${cajas[0]!.x}+${cajas[0]!.w} vs ${cajas[1]!.x}`);
+  }
+
+  // --- nada se sale de la ventana -----------------------------------------
+  // Es el fallo que motiva el redisenio: el boton quedaba debajo del pliegue y
+  // habia que desplazar para empezar a grabar.
+  const grabarVisible = await ev<boolean>(client, `
+    (() => {
+      const b = [...document.querySelectorAll('button')].find(x => x.textContent === 'Grabar');
+      if (!b) return false;
+      const r = b.getBoundingClientRect();
+      return r.bottom <= window.innerHeight + 1 && r.top >= 0;
+    })()
+  `);
+  check('el boton de Grabar se ve sin desplazar', grabarVisible);
+
+  check('la pantalla no desborda a lo ancho',
+    await ev<boolean>(client, 'document.documentElement.scrollWidth <= window.innerWidth + 1'));
+
+  // --- tarjetas de recientes ----------------------------------------------
+  const tarjetas = await ev<number>(client, 'document.querySelectorAll(".tarjeta-reciente").length');
+  check('hay tarjetas de grabaciones recientes', tarjetas > 1, `${tarjetas} tarjetas`);
+
+  check('la portada trae imagen de verdad',
+    await ev<boolean>(client, `
+      (() => {
+        const img = document.querySelector('.tarjeta-reciente img');
+        return !!img && img.naturalWidth > 50;
+      })()
+    `), 'no un rectangulo vacio');
+
+  // --- la preview se anima ------------------------------------------------
+  const antesSrc = await ev<string>(client,
+    '(document.querySelector(".tarjeta-reciente img")?.src ?? "").slice(-40)');
+  const caja = JSON.parse(await ev<string>(client, `
+    (() => { const r = document.querySelector('.tarjeta-reciente').getBoundingClientRect();
+      return JSON.stringify({ x: Math.round(r.x + r.width / 2), y: Math.round(r.y + 30) }); })()
+  `)) as { x: number; y: number };
+  await client.Input.dispatchMouseEvent({ type: 'mouseMoved', x: caja.x, y: caja.y });
+  await sleep(1500);
+  const durante = await ev<string>(client,
+    '(document.querySelector(".tarjeta-reciente img")?.src ?? "").slice(-40)');
+  check('la preview se mueve al posar el cursor', antesSrc !== durante && durante.length > 0);
+
+  // --- lo avanzado, plegado pero presente ---------------------------------
+  check('las opciones avanzadas estan plegadas',
+    await ev<boolean>(client, '!document.querySelector(".avanzado")?.open'));
+  check('y el campo de tapar sigue en el DOM',
+    await ev<boolean>(client, '!!document.querySelector("#tapar")'),
+    'plegado no es quitado');
+
+  await capturar(client, 'apps/desktop/captura-inicio.png');
+  await client.close();
+  child.kill();
+  await sleep(800);
+
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}`);
+  console.log('  captura: apps/desktop/captura-inicio.png\n');
   process.exit(fallos === 0 ? 0 : 1);
 }
 
@@ -1696,6 +1798,7 @@ async function verificarSilencios(): Promise<void> {
 
 const flujo = process.argv.includes('--silencios') ? verificarSilencios
   : process.argv.includes('--vertical') ? verificarVertical
+  : process.argv.includes('--inicio') ? verificarInicio
   : process.argv.includes('--regrabar') ? verificarRegrabar
   : process.argv.includes('--doblar') ? verificarDoblaje
   : process.argv.includes('--pausa') ? verificarPausa

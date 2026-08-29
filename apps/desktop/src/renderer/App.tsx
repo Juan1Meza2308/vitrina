@@ -14,9 +14,11 @@ import type {
 } from '../preload/index.ts';
 import { Preview, makeTrack } from './preview.ts';
 import { Timeline } from './Timeline.tsx';
+import { Recientes } from './Recientes.tsx';
 import {
   IconoGrabacion, IconoAjustes, IconoRepetir, IconoImagen, IconoReproducir,
   IconoPausa, IconoInicio, IconoSonido, IconoSilencio, IconoAnadir, IconoBorrar,
+  IconoCarpeta,
 } from './Iconos.tsx';
 import {
   grabarMicrofono, listarMicrofonos,
@@ -82,6 +84,7 @@ export function App() {
   const [recientes, setRecientes] = useState<GrabacionReciente[]>([]);
   const [arrastrando, setArrastrando] = useState(false);
   const [tema, setTema] = useState<'oscuro' | 'claro'>('oscuro');
+  const [detalleVertical, setDetalleVertical] = useState(false);
 
   useEffect(() => {
     void window.vitrina.capturePresets().then(setPresets);
@@ -188,6 +191,9 @@ export function App() {
   useEffect(() => {
     if (videoPreview.current) videoPreview.current.srcObject = camPreview;
   }, [camPreview]);
+
+  /** Cuantos selectores hay puestos, para decirlo en el resumen de avanzadas. */
+  const selectoresTapados = tapar.split(/[\n,]/).filter((t) => t.trim()).length;
 
   const grabar = useCallback(async () => {
     setError('');
@@ -445,131 +451,181 @@ export function App() {
           </button>
         </div>
 
-        <div className="campo">
-          <label htmlFor="url">Dirección de tu app</label>
-          <input id="url" type="text" value={url} onChange={(e) => setUrl(e.target.value)}
-                 placeholder="http://localhost:3000" spellCheck={false} />
-        </div>
+        {/* Columna izquierda: lo que hay que decidir para grabar, y el boton
+            DENTRO de la tarjeta. Antes vivia al final de la pagina, detras de
+            todo lo demas y fuera de la ventana en un portatil. */}
+        <section className="tarjeta">
+          <h2 className="titulo-panel"><IconoGrabacion /> Nueva grabación</h2>
 
-        <div className="campo">
-          <label>Formato</label>
-          <div className="fila">
-            <button className={orientacion === 'horizontal' ? 'on' : ''}
-                    onClick={() => setOrientacion('horizontal')}>
-              Horizontal <small>16:9</small>
-            </button>
-            <button className={orientacion === 'vertical' ? 'on' : ''}
-                    onClick={() => setOrientacion('vertical')}>
-              Vertical <small>9:16 · TikTok, Reels</small>
-            </button>
+          <div className="campo">
+            <label htmlFor="url">Dirección de tu app</label>
+            <input id="url" type="text" value={url} spellCheck={false}
+                   onChange={(e) => setUrl(e.target.value)}
+                   onKeyDown={(e) => { if (e.key === 'Enter') void grabar(); }}
+                   placeholder="http://localhost:3000" />
           </div>
-          {orientacion === 'vertical' && (
-            <p className="nota-formato">
-              La ventana se abre a <b>{preset?.css?.w ?? 430} px</b> como un móvil
-              de verdad, así que tu web enseña su diseño móvil. Se captura a
-              escala ×{preset?.dsf ?? 2}: sale nítida pese a la pantalla pequeña.
-              <br />
-              {/* Los fps de abajo son los medidos EN HORIZONTAL. Se dicen asi de
-                  claro porque todo el proyecto se apoya en no prometer numeros
-                  sin medir, y en vertical no se han medido. */}
-              Los fps de abajo están medidos en horizontal; en vertical pueden ser
-              menores. Para medirlo en tu equipo:{' '}
-              <code>node tools/calibrar.ts --vertical</code>.
-            </p>
-          )}
-        </div>
 
-        <div className="campo">
-          <label>Calidad de captura</label>
-          <div className="presets">
-            {presets.map((p) => {
-              const t = paraOrientacion(p, orientacion);
-              return (
-                <button key={p.name} className={`preset${p.name === presetName ? ' on' : ''}`}
-                        onClick={() => setPresetName(p.name)}>
-                  <b>{t.capture.w}×{t.capture.h}</b>
-                  {/* El ancho de maquetacion explica por que la UI se ve del
-                      tamano que se ve, y es lo que antes se inflaba hasta 2560
-                      para comprar margen de zoom. Ahora se compra con escala. */}
-                  <small>tu web a {t.css?.w ?? t.capture.w} px</small>
-                  <small>~{p.measuredFps} fps</small>
+          <div className="campo">
+            <label>Formato</label>
+            <div className="fila">
+              <button className={orientacion === 'horizontal' ? 'on' : ''}
+                      onClick={() => setOrientacion('horizontal')}>
+                Horizontal <small>16:9</small>
+              </button>
+              <button className={orientacion === 'vertical' ? 'on' : ''}
+                      onClick={() => setOrientacion('vertical')}>
+                Vertical <small>9:16 · TikTok, Reels</small>
+              </button>
+            </div>
+            {orientacion === 'vertical' && (
+              <p className="nota-formato">
+                La ventana se abre a <b>{preset?.css?.w ?? 430} px</b> como un
+                móvil de verdad, así que tu web enseña su diseño móvil.{' '}
+                <button className="mas" onClick={() => setDetalleVertical((v) => !v)}>
+                  {detalleVertical ? 'menos' : 'más'}
                 </button>
-              );
-            })}
+                {detalleVertical && (
+                  <>
+                    <br />
+                    Se captura a escala ×{preset?.dsf ?? 2}: sale nítida pese a la
+                    pantalla pequeña. Los fps de abajo están medidos en
+                    horizontal; en vertical pueden ser menores. Para medirlo en tu
+                    equipo: <code>node tools/calibrar.ts --vertical</code>.
+                  </>
+                )}
+              </p>
+            )}
           </div>
-        </div>
 
-        <div className="campo">
-          <label>Narración</label>
-          <div className="fila">
-            <button className={micOn ? 'on' : ''} onClick={() => setMicOn(true)}>Con micrófono</button>
-            <button className={!micOn ? 'on' : ''} onClick={() => setMicOn(false)}>Sin audio</button>
+          <div className="campo">
+            <label>Calidad de captura</label>
+            <div className="presets">
+              {presets.map((p) => {
+                const t = paraOrientacion(p, orientacion);
+                return (
+                  <button key={p.name} className={`preset${p.name === presetName ? ' on' : ''}`}
+                          onClick={() => setPresetName(p.name)}>
+                    <b>{t.capture.w}×{t.capture.h}</b>
+                    <small>tu web a {t.css?.w ?? t.capture.w} px</small>
+                    <small>~{p.measuredFps} fps</small>
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          {micOn && micDevices.length > 1 && (
-            <select value={micDeviceId} onChange={(e) => setMicDeviceId(e.target.value)}>
-              <option value="">Micrófono predeterminado</option>
-              {micDevices.map((d) => (
-                <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
-              ))}
-            </select>
+
+          {presupuestoInicial && (
+            <div className={`nota-calidad${presupuestoInicial.maxSharpZoom < 1.15 ? ' aviso' : ''}`}>
+              <span>Exportando a {salidaInicial?.w}×{salidaInicial?.h}:</span>
+              <b>{describeBudget(presupuestoInicial)}</b>
+            </div>
           )}
-        </div>
 
-        <div className="campo">
-          <label>Cámara</label>
-          <div className="fila">
-            <button className={camOn ? 'on' : ''} onClick={() => setCamOn(true)}>
-              Con cámara
-            </button>
-            <button className={!camOn ? 'on' : ''} onClick={() => setCamOn(false)}>
-              Sin cámara
-            </button>
-          </div>
-          {camOn && (
-            <>
-              {camDevices.length > 1 && (
-                <select value={camDeviceId} onChange={(e) => setCamDeviceId(e.target.value)}>
-                  <option value="">Cámara predeterminada</option>
-                  {camDevices.map((d) => (
+          {/* Lo avanzado se pliega, pero SIGUE EN EL DOM: `details` no quita el
+              campo, solo lo esconde. Y el resumen dice si hay algo puesto, o
+              nadie recordara que dejo un selector tapando media pantalla. */}
+          <details className="avanzado">
+            <summary>
+              Opciones avanzadas
+              {selectoresTapados > 0 && (
+                <span className="pastilla">
+                  {selectoresTapados} {selectoresTapados === 1 ? 'selector' : 'selectores'} tapados
+                </span>
+              )}
+            </summary>
+            <div className="campo">
+              <label htmlFor="tapar">Tapar datos sensibles</label>
+              <input id="tapar" type="text" value={tapar} spellCheck={false}
+                     onChange={(e) => setTapar(e.target.value)}
+                     placeholder="#saldo, .email, [data-privado]" />
+              <p className="nota-formato">
+                Selectores CSS de lo que no debe salir. Se difuminan{' '}
+                <b>mientras grabas</b>, así que el dato nunca llega al vídeo ni
+                queda en la carpeta. Se difuminan en vez de ocultarse para no
+                mover nada de sitio.
+              </p>
+            </div>
+          </details>
+
+          <button className="primario grabar" onClick={() => void grabar()}>Grabar</button>
+        </section>
+
+        {/* Columna derecha: de donde sale el material, y lo ya grabado. */}
+        <div className="lado">
+          <section className="tarjeta">
+            <h2 className="titulo-panel"><IconoSonido /> Micrófono y cámara</h2>
+
+            <div className="campo">
+              <label>Narración</label>
+              <div className="fila">
+                <button className={micOn ? 'on' : ''} onClick={() => setMicOn(true)}>
+                  Con micrófono
+                </button>
+                <button className={!micOn ? 'on' : ''} onClick={() => setMicOn(false)}>
+                  Sin audio
+                </button>
+              </div>
+              {micOn && micDevices.length > 1 && (
+                <select value={micDeviceId} onChange={(e) => setMicDeviceId(e.target.value)}>
+                  <option value="">Micrófono predeterminado</option>
+                  {micDevices.map((d) => (
                     <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
                   ))}
                 </select>
               )}
-              {/* Redonda y del tamano de la burbuja: lo que se ve aqui es lo que
-                  va a salir, incluido el recorte. Un rectangulo mentiria sobre
-                  cuanto encuadre se pierde por los lados. */}
-              <video ref={videoPreview} className="camara-previa"
-                     autoPlay muted playsInline />
+            </div>
+
+            <div className="campo">
+              <label>Cámara</label>
+              <div className="fila">
+                <button className={camOn ? 'on' : ''} onClick={() => setCamOn(true)}>
+                  Con cámara
+                </button>
+                <button className={!camOn ? 'on' : ''} onClick={() => setCamOn(false)}>
+                  Sin cámara
+                </button>
+              </div>
+              {camOn && (
+                <>
+                  {camDevices.length > 1 && (
+                    <select value={camDeviceId} onChange={(e) => setCamDeviceId(e.target.value)}>
+                      <option value="">Cámara predeterminada</option>
+                      {camDevices.map((d) => (
+                        <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
+                      ))}
+                    </select>
+                  )}
+                  {/* Redonda y del tamano de la burbuja: lo que se ve aqui es lo
+                      que va a salir, recorte incluido. */}
+                  <div className="fila-camara">
+                    <video ref={videoPreview} className="camara-previa"
+                           autoPlay muted playsInline />
+                    <p className="nota-formato">
+                      Se graba aparte del vídeo: luego puedes moverla, cambiar su
+                      tamaño o quitarla sin volver a grabar.
+                    </p>
+                  </div>
+                </>
+              )}
+            </div>
+          </section>
+
+          <section className="tarjeta">
+            <h2 className="titulo-panel"><IconoCarpeta /> Recientes</h2>
+            {recientes.length > 0 ? (
+              <Recientes
+                items={recientes}
+                onAbrir={(dir) => void abrirDir(dir)}
+                onAbrirOtra={() => void abrir()}
+              />
+            ) : (
               <p className="nota-formato">
-                Se graba aparte del vídeo, así que luego puedes moverla, cambiar
-                su tamaño o quitarla sin volver a grabar.
+                Aquí aparecerán tus grabaciones, con su imagen. También puedes
+                arrastrar una carpeta <code>.vitrina</code> hasta esta ventana.
               </p>
-            </>
-          )}
+            )}
+          </section>
         </div>
-
-        <div className="campo">
-          <label htmlFor="tapar">Tapar datos sensibles</label>
-          <input id="tapar" type="text" value={tapar} spellCheck={false}
-                 onChange={(e) => setTapar(e.target.value)}
-                 placeholder="#saldo, .email, [data-privado]" />
-          <p className="nota-formato">
-            Escribe qué partes de tu web no deben salir, con el selector CSS de
-            cada una. Se difuminan <b>mientras grabas</b>, así que el dato nunca
-            llega al vídeo ni queda en la carpeta.
-            <br />
-            Se difuminan en vez de ocultarse para no mover nada de sitio: si
-            desaparecieran, los botones cambiarían de sitio y el zoom acabaría
-            encuadrando otra cosa.
-          </p>
-        </div>
-
-        {presupuestoInicial && (
-          <div className={`nota-calidad${presupuestoInicial.maxSharpZoom < 1.15 ? ' aviso' : ''}`}>
-            <span>Exportando a {salidaInicial?.w}×{salidaInicial?.h}:</span>
-            <b>{describeBudget(presupuestoInicial)}</b>
-          </div>
-        )}
 
         {/* Flotante y no en la columna: apareciendo entre los campos empujaba
             todo hacia abajo y el boton de Grabar se movia debajo del cursor. */}
@@ -579,36 +635,6 @@ export function App() {
             <span>Toca para cerrar</span>
           </div>
         )}
-
-        <div className="acciones">
-          <button className="primario" onClick={() => void grabar()}>Grabar</button>
-          <button onClick={() => void abrir()}>Abrir grabación</button>
-        </div>
-
-        <div className="campo">
-          <label>Recientes</label>
-          {recientes.length > 0 ? (
-            <div className="recientes">
-              {recientes.map((r) => (
-                <button key={r.dir} className="reciente" title={r.dir}
-                        onClick={() => void abrirDir(r.dir)}>
-                  {/* El sello dice cual es cual mucho antes que la fecha: una
-                      lista de horas no distingue dos demos del mismo dia. */}
-                  {r.miniatura
-                    ? <img src={r.miniatura} alt="" />
-                    : <span className="sello-vacio" />}
-                  <b>{new Date(r.startedAt).toLocaleString()}</b>
-                  <small>{(r.durationMs / 1000).toFixed(1)}s</small>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <p className="nota-formato">
-              Aquí aparecerán tus grabaciones. También puedes arrastrar una
-              carpeta <code>.vitrina</code> hasta esta ventana para abrirla.
-            </p>
-          )}
-        </div>
 
       </div>
     </div>

@@ -212,22 +212,47 @@ input[type="range"]:active::-webkit-slider-thumb { transform: scale(1.12); }
 /* ---------- pantalla de inicio ---------- */
 
 /*
- * La pantalla de inicio se centra cuando cabe y SE DEJA DESPLAZAR cuando no.
+ * La pantalla de inicio, en dos columnas.
  *
- * `margin: auto` dentro de un flex la centra, pero si el contenido crece mas
- * que la ventana el desbordamiento se va hacia arriba y no hay forma de llegar
- * a el: con `overflow: hidden` en el body, los primeros campos quedaban fuera
- * de la ventana y sin barra. Paso al anadir camara y tapado, que hicieron la
- * pantalla mas alta que un portatil de 768 px.
+ * En una sola no cabia: siete bloques apilados dejaban el boton de Grabar fuera
+ * de la ventana en un portatil, y habia que desplazar para empezar a grabar. A
+ * la izquierda lo que hay que decidir; a la derecha de donde sale el material y
+ * lo que ya esta grabado.
+ *
+ * Sigue pudiendose desplazar —`margin: auto` centra, pero si el contenido crece
+ * mas que la ventana el desbordamiento se va hacia arriba y sin barra no hay
+ * forma de llegar a el—.
  */
 .inicio {
   margin: auto;
-  padding: 24px 0;
-  width: 560px;
-  display: flex;
-  flex-direction: column;
-  gap: 22px;
+  padding: 20px;
+  width: min(1180px, 100%);
+  display: grid;
+  grid-template-columns: minmax(0, 560px) minmax(360px, 1fr);
+  align-items: start;
+  gap: 16px;
 }
+.inicio > .marca { grid-column: 1 / -1; }
+.lado { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+
+/* Una ventana estrecha vuelve a una columna. La app se abre a 1280 pero se
+   puede encoger, y a dos columnas los presets se aplastarian. */
+@media (max-width: 1040px) {
+  .inicio { grid-template-columns: minmax(0, 620px); justify-content: center; }
+}
+
+/* Tarjeta de la pantalla de inicio: el mismo material que los paneles del
+   editor, para que las dos pantallas se lean como la misma app. */
+.tarjeta {
+  display: flex; flex-direction: column; gap: 16px;
+  padding: 18px;
+  border: 1px solid var(--linea); border-radius: var(--radio-l);
+  background: var(--material); backdrop-filter: var(--desenfoque);
+  box-shadow: var(--filo), var(--sombra-2);
+  min-width: 0;
+}
+.tarjeta .grabar { margin-top: 2px; padding: 12px; font-size: 15px; }
+
 .app { overflow-y: auto; }
 .marca { display: flex; align-items: baseline; gap: 10px; }
 /* Interlineado apretado y tracking negativo: los dos van con el tamano. */
@@ -766,3 +791,91 @@ select:focus {
   button, input[type="text"], select, .nota-calidad, .muestra { border-color: var(--fg); }
   .sutil, .nota-formato, .campo > label, .grupo > h3 { color: var(--fg); }
 }
+
+/*
+ * Grabaciones recientes, en tarjetas.
+ *
+ * La imagen manda: una lista de fechas no distingue dos demos del mismo dia.
+ * `aspect-ratio` fija la caja antes de que llegue la portada, para que la
+ * rejilla no de un salto cuando entren las imagenes.
+ */
+.rejilla-recientes {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 10px;
+}
+.tarjeta-reciente {
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 8px; text-align: left;
+  border-radius: var(--radio);
+  min-width: 0;
+}
+.tarjeta-reciente .lienzo {
+  position: relative; display: block;
+  aspect-ratio: 16 / 9; width: 100%;
+  border-radius: var(--radio-s); overflow: hidden;
+  background: var(--panel-alto);
+  box-shadow: var(--filo);
+  margin-bottom: 6px;
+}
+.tarjeta-reciente img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tarjeta-reciente .sin-portada {
+  position: absolute; inset: 0;
+  display: grid; place-items: center;
+  color: var(--dim); font-size: 20px;
+}
+/* La duracion sobre la imagen, como en cualquier reproductor: ocupa cero sitio
+   en la maqueta y se lee siempre, sea clara u oscura la portada. */
+.tarjeta-reciente .duracion {
+  position: absolute; right: 5px; bottom: 5px;
+  padding: 1px 6px; border-radius: 999px;
+  background: rgba(0, 0, 0, .68); color: #fff;
+  font-size: 10.5px; font-variant-numeric: tabular-nums;
+}
+.tarjeta-reciente b {
+  font-size: 12.5px; font-weight: 600;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.tarjeta-reciente small { color: var(--dim); font-size: 11px; }
+.tarjeta-reciente:hover:not(:disabled) { border-color: var(--acc); }
+.tarjeta-reciente.abrir { border-style: dashed; }
+.tarjeta-reciente.abrir .sin-portada { font-size: 24px; }
+
+/* Camara: la previa redonda al lado de su explicacion, no debajo. */
+.fila-camara { display: flex; gap: 12px; align-items: flex-start; }
+.fila-camara .nota-formato { margin: 0; }
+.fila-camara .camara-previa { width: 104px; height: 104px; flex: none; }
+
+/*
+ * Opciones avanzadas.
+ *
+ * `details` nativo: accesible, sin JavaScript y —lo que importa aqui— el campo
+ * de dentro SIGUE en el DOM aunque este plegado, asi que lo que lo busca no se
+ * rompe.
+ */
+.avanzado { border-top: 1px solid var(--linea); padding-top: 12px; }
+.avanzado > summary {
+  display: flex; align-items: center; gap: 8px;
+  cursor: pointer; color: var(--dim); font-size: 12.5px;
+  list-style: none;
+}
+.avanzado > summary::-webkit-details-marker { display: none; }
+.avanzado > summary::before {
+  content: "›"; display: inline-block; transition: transform .15s var(--curva);
+  font-size: 15px;
+}
+.avanzado[open] > summary::before { transform: rotate(90deg); }
+.avanzado > summary:hover { color: var(--fg); }
+.avanzado .campo { margin-top: 12px; }
+.pastilla {
+  padding: 1px 8px; border-radius: 999px;
+  background: var(--acc-suave); color: var(--acc);
+  font-size: 11px;
+}
+
+/* "más"/"menos" dentro de una nota: es texto que se despliega, no un boton. */
+button.mas {
+  display: inline; padding: 0; border: none; background: none;
+  color: var(--acc); font-size: inherit; text-decoration: underline;
+}
+button.mas:hover:not(:disabled) { background: none; border: none; }

@@ -37,10 +37,12 @@ export interface Ajustes {
 export interface GrabacionReciente {
   dir: string;
   nombre: string;
+  /** Host de la app grabada: identifica la demo mejor que la hora. */
+  host: string;
   durationMs: number;
   startedAt: number;
-  /** Sello de un frame de la grabacion, como data URL. Null si no se pudo leer. */
-  miniatura: string | null;
+  /** Fotograma del primer click, como data URL. Null si no se pudo leer. */
+  portada: string | null;
 }
 
 export interface RecordProgress {
@@ -145,8 +147,16 @@ const api = {
   onRecordProgress: (cb: (p: RecordProgress) => void) => subscribe('record:progress', cb),
 
   openRecording: (): Promise<RecordingData | null> => ipcRenderer.invoke('recording:open'),
-  recientes: (limite = 5): Promise<GrabacionReciente[]> =>
+  recientes: (limite = 6): Promise<GrabacionReciente[]> =>
     ipcRenderer.invoke('recordings:recent', limite),
+  /**
+   * Tira de fotogramas de una grabacion, para animar su tarjeta.
+   *
+   * Se pide al posar el cursor: generarlas todas al arrancar decodificaria
+   * decenas de frames grandes de golpe.
+   */
+  previaDe: (dir: string): Promise<string[]> =>
+    ipcRenderer.invoke('recordings:preview', dir),
   /**
    * Ruta en disco de un fichero soltado sobre la ventana.
    *
