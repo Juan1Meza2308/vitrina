@@ -7,3 +7,8 @@ export { guionDe, duracionDeGuion, reproducir } from './replay.ts';
 export type { Accion, GuionOptions } from './replay.ts';
 export { jpegSize } from './jpeg.ts';
 export { INJECT_SOURCE, BINDING_NAME } from './inject.ts';
+export {
+  cssDeTapado, fuenteDeTapado, listaDeSelectores, selectoresValidos, selectorUnico,
+  desenfoqueValido, DESENFOQUE_POR_DEFECTO, ESTILO_ID, GLOBAL_TAPADO,
+} from './tapar.ts';
+export type { Tapado } from './tapar.ts';
