@@ -113,6 +113,24 @@ export class TimeMap {
   }
 
   /**
+   * Instante de la SALIDA que corresponde a uno del material.
+   *
+   * Es el inverso de `sourceAt`, y devuelve `null` cuando ese instante no llega
+   * al video —cae en un corte o fuera del recorte—. Distinguir "esta en el
+   * segundo 3" de "esto no sale" es justo lo que necesita quien enumera pasos
+   * o capitulos: saturar al borde mas cercano daria un numero plausible y
+   * falso, y el lector iria a un sitio donde no pasa nada.
+   */
+  outputAt(sourceMs: number): number | null {
+    for (let i = 0; i < this.keeps.length; i++) {
+      const k = this.keeps[i]!;
+      if (sourceMs < k.start) return null;
+      if (sourceMs <= k.end) return this.offsets[i]! + (sourceMs - k.start) / k.rate;
+    }
+    return null;
+  }
+
+  /**
    * Velocidad vigente en un instante del MATERIAL.
    *
    * La usa la reproduccion del preview, que avanza en tiempo de fuente: sin

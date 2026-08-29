@@ -9,6 +9,8 @@ export {
 } from './quality.ts';
 export type { QualityBudget, CapturePreset, Orientacion } from './quality.ts';
 export { FrameIndex } from './frames.ts';
+export { pasosDe, capitulosDe, srtDe, guiaMarkdown, reloj } from './guia.ts';
+export type { Paso, TipoPaso, Capitulo, OpcionesGuia } from './guia.ts';
 export { audioAlignment, audioTimeFor, supportsAudio } from './audio.ts';
 export { TimeMap } from './timemap.ts';
 export { parseSilenceReport, silenceFilter, UMBRAL_DB, MIN_SILENCIO_S, MARGEN_MS } from './silence.ts';
