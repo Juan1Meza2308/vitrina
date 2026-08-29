@@ -109,9 +109,19 @@ la línea de comandos:
 npm run app:build && npx electron apps/desktop grabaciones/mi-demo.vitrina
 ```
 
-Las grabaciones recientes salen con un **sello** —un frame del 25 %, no el
-primero, que suele estar en blanco—, y una carpeta `.vitrina` se puede **soltar
-sobre la ventana** para abrirla.
+La pantalla de inicio va en **dos columnas**: a la izquierda lo que hay que
+decidir para grabar —con el botón dentro de la tarjeta, no al final de la
+página—, y a la derecha el micrófono, la cámara y las grabaciones recientes. Bajo
+1040 px de ancho vuelve a una sola columna.
+
+Cada grabación reciente es una **tarjeta con imagen**: la portada es el fotograma
+del **primer click** —al arrancar, la página suele estar en blanco—, con la
+duración sobrepuesta y el nombre de la app grabada. Al posar el cursor, la
+tarjeta **pasa seis fotogramas** de la demo: es lo que la hace reconocible sin
+abrirla. La tira se pide en ese momento y se cachea; generarlas todas al arrancar
+serían decenas de frames grandes decodificados para algo que quizá nadie mire.
+
+Y una carpeta `.vitrina` se puede **soltar sobre la ventana** para abrirla.
 
 ### Calibrar (opcional, una vez)
 

@@ -44,6 +44,12 @@ const ELECTRON = path.resolve(process.platform === 'darwin'
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 interface Cliente {
+  Emulation: {
+    setDeviceMetricsOverride(p: {
+      width: number; height: number; deviceScaleFactor: number; mobile: boolean;
+    }): Promise<void>;
+    clearDeviceMetricsOverride(): Promise<void>;
+  };
   Page: {
     enable(): Promise<void>;
     captureScreenshot(p: { format?: string }): Promise<{ data: string }>;
@@ -879,6 +885,28 @@ async function verificarInicio(): Promise<void> {
 
   check('la pantalla no desborda a lo ancho',
     await ev<boolean>(client, 'document.documentElement.scrollWidth <= window.innerWidth + 1'));
+
+  // --- y en una ventana estrecha, una sola columna -------------------------
+  // Se comprueba en vez de mirarse: una rejilla que no cede es exactamente el
+  // fallo que ya se colo una vez en el editor, y a ojo no se ve hasta que
+  // alguien encoge la ventana.
+  await client.Emulation.setDeviceMetricsOverride({
+    width: 900, height: 800, deviceScaleFactor: 1, mobile: false,
+  });
+  await sleep(600);
+  const estrecha = JSON.parse(await ev<string>(client, `
+    (() => {
+      const t = [...document.querySelectorAll('.inicio > .tarjeta, .inicio > .lado')]
+        .map(e => Math.round(e.getBoundingClientRect().x));
+      return JSON.stringify(t);
+    })()
+  `)) as number[];
+  check('en una ventana estrecha se apilan en una columna',
+    estrecha.length === 2 && estrecha[0] === estrecha[1], estrecha.join(' vs '));
+  check('y sigue sin desbordar a lo ancho',
+    await ev<boolean>(client, 'document.documentElement.scrollWidth <= window.innerWidth + 1'));
+  await client.Emulation.clearDeviceMetricsOverride();
+  await sleep(400);
 
   // --- tarjetas de recientes ----------------------------------------------
   const tarjetas = await ev<number>(client, 'document.querySelectorAll(".tarjeta-reciente").length');
