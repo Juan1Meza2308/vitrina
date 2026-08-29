@@ -176,7 +176,7 @@ export function Timeline(props: TimelineProps) {
         >
           <div className="carril regla">
             {marcas.map((m) => (
-              <span key={m.ms} className="marca" style={{ left: `${m.f * 100}%` }}>
+              <span key={m.ms} className="tl-marca" style={{ left: `${m.f * 100}%` }}>
                 {m.etiqueta}
               </span>
             ))}

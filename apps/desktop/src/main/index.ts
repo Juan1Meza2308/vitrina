@@ -16,6 +16,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import CDP from 'chrome-remote-interface';
+import { createCanvas, loadImage } from '@napi-rs/canvas';
 import {
   Recorder, ventanaPara, guionDe, reproducir, listaDeSelectores,
 } from '@vitrina/capture-cdp';
@@ -61,6 +62,32 @@ ipcMain.handle('settings:set', async (_e, parcial: Partial<Ajustes>) => {
  * Se leen del disco cada vez en lugar de mantener una lista: si el usuario
  * borra una carpeta, una lista guardada ofreceria abrir algo que ya no existe.
  */
+/**
+ * Miniatura de una grabacion, como data URL.
+ *
+ * Se elige un frame al 25 % y no el primero: al arrancar, la pagina grabada
+ * suele estar en blanco o a medio cargar, y una lista de rectangulos vacios no
+ * distingue una demo de otra —que es justo para lo que sirve la miniatura—.
+ *
+ * Va reescalada a 160 px y no en crudo: los frames pesan cientos de kilobytes y
+ * mandar cinco enteros por IPC en cada arranque seria pagar megas para pintar
+ * un sello.
+ */
+async function miniaturaDe(dir: string, m: Manifest): Promise<string | null> {
+  const f = m.frames[Math.floor(m.frames.length * 0.25)] ?? m.frames[0];
+  if (!f) return null;
+  try {
+    const img = await loadImage(path.join(dir, 'frames', f.file));
+    const w = 160;
+    const h = Math.max(1, Math.round(w * (img.height / img.width)));
+    const c = createCanvas(w, h);
+    c.getContext('2d').drawImage(img, 0, 0, w, h);
+    return c.toDataURL('image/jpeg', 0.7);
+  } catch {
+    return null;      // frame ilegible: la fila sigue valiendo sin sello
+  }
+}
+
 ipcMain.handle('recordings:recent', async (_e, limite = 5) => {
   try {
     const nombres = await fsp.readdir(RECORDINGS);
@@ -70,7 +97,10 @@ ipcMain.handle('recordings:recent', async (_e, limite = 5) => {
         const dir = path.join(RECORDINGS, nombre);
         try {
           const m = JSON.parse(await fsp.readFile(path.join(dir, 'manifest.json'), 'utf8')) as Manifest;
-          return { dir, nombre, durationMs: m.durationMs, startedAt: m.startedAt };
+          return {
+            dir, nombre, durationMs: m.durationMs, startedAt: m.startedAt,
+            miniatura: await miniaturaDe(dir, m),
+          };
         } catch {
           return null;   // carpeta a medias: una grabacion interrumpida
         }

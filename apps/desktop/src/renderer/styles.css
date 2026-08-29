@@ -56,13 +56,24 @@ input[type="range"] { width: 100%; accent-color: var(--acc); }
 
 /* ---------- pantalla de inicio ---------- */
 
+/*
+ * La pantalla de inicio se centra cuando cabe y SE DEJA DESPLAZAR cuando no.
+ *
+ * `margin: auto` dentro de un flex la centra, pero si el contenido crece mas
+ * que la ventana el desbordamiento se va hacia arriba y no hay forma de llegar
+ * a el: con `overflow: hidden` en el body, los primeros campos quedaban fuera
+ * de la ventana y sin barra. Paso al anadir camara y tapado, que hicieron la
+ * pantalla mas alta que un portatil de 768 px.
+ */
 .inicio {
   margin: auto;
+  padding: 24px 0;
   width: 560px;
   display: flex;
   flex-direction: column;
   gap: 22px;
 }
+.app { overflow-y: auto; }
 .marca { display: flex; align-items: baseline; gap: 10px; }
 .marca h1 { font-size: 26px; letter-spacing: -.03em; font-weight: 650; }
 .marca span { color: var(--dim); font-size: 13px; }
@@ -167,7 +178,11 @@ input[type="range"] { width: 100%; accent-color: var(--acc); }
   position: absolute; left: 0; right: 0; top: 4px; bottom: 4px;
   background: var(--panel-alto); border-radius: 6px;
 }
-.marca {
+/* Marca de la regla del timeline. Se llama `tl-marca` y no `marca` porque ese
+   nombre ya era el del titulo de la pantalla de inicio: al compartirlo, esta
+   regla —que va despues— posicionaba el titulo en absoluto y lo dejaba encima
+   del primer campo. */
+.tl-marca {
   position: absolute; top: 2px; transform: translateX(-1px);
   padding-left: 4px; border-left: 1px solid var(--linea);
   color: var(--dim); font-size: 10px; font-variant-numeric: tabular-nums;
@@ -354,3 +369,34 @@ select:focus { outline: none; border-color: var(--acc); }
 
 /* Las cuatro esquinas de la burbuja, en una fila que cabe en el inspector. */
 .fila.esquinas button { flex: 1; min-width: 0; padding: 8px 0; font-size: 16px; }
+
+/* Sello de la grabacion reciente: dice cual es cual antes que la fecha. */
+.reciente img,
+.reciente .sello-vacio {
+  display: block;
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 6px;
+  margin-bottom: 6px;
+  background: #0d1116;
+  border: 1px solid var(--linea);
+}
+
+/* Soltar una carpeta encima: el borde entero se enciende, para que el gesto
+   tenga respuesta antes de soltar. */
+.app.soltando::after {
+  content: "Suelta la carpeta .vitrina para abrirla";
+  position: fixed;
+  inset: 10px;
+  border: 2px dashed var(--acc);
+  border-radius: 14px;
+  color: var(--acc);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding-bottom: 18px;
+  background: rgba(195, 245, 60, .05);
+  pointer-events: none;
+  z-index: 50;
+}

@@ -66,6 +66,7 @@ export function App() {
   const videoPreview = useRef<HTMLVideoElement>(null);
 
   const [recientes, setRecientes] = useState<GrabacionReciente[]>([]);
+  const [arrastrando, setArrastrando] = useState(false);
 
   useEffect(() => {
     void window.vitrina.capturePresets().then(setPresets);
@@ -245,6 +246,26 @@ export function App() {
     }
   }, []);
 
+  /**
+   * Soltar una carpeta `.vitrina` sobre la ventana la abre.
+   *
+   * Es el gesto que todo el mundo prueba antes de buscar el boton, y hasta
+   * ahora el navegador respondia navegando al fichero: la app desaparecia y
+   * habia que reabrirla.
+   */
+  const soltar = useCallback((e: React.DragEvent) => {
+    e.preventDefault();
+    setArrastrando(false);
+    const f = e.dataTransfer.files[0];
+    if (!f) return;
+    const ruta = window.vitrina.rutaDeFichero(f);
+    if (!ruta.endsWith('.vitrina')) {
+      setError('Eso no es una carpeta .vitrina. Suelta la carpeta entera, no un frame.');
+      return;
+    }
+    void abrirDir(ruta);
+  }, []);
+
   const abrir = useCallback(async () => {
     const d = await window.vitrina.openRecording();
     if (d) {
@@ -303,7 +324,10 @@ export function App() {
   }
 
   return (
-    <div className="app">
+    <div className={`app${arrastrando ? ' soltando' : ''}`}
+         onDragOver={(e) => { e.preventDefault(); setArrastrando(true); }}
+         onDragLeave={() => setArrastrando(false)}
+         onDrop={soltar}>
       <div className="inicio">
         <div className="marca">
           <h1>Vitrina</h1>
@@ -444,20 +468,30 @@ export function App() {
           <button onClick={() => void abrir()}>Abrir grabacion</button>
         </div>
 
-        {recientes.length > 0 && (
-          <div className="campo">
-            <label>Recientes</label>
+        <div className="campo">
+          <label>Recientes</label>
+          {recientes.length > 0 ? (
             <div className="recientes">
               {recientes.map((r) => (
                 <button key={r.dir} className="reciente" title={r.dir}
                         onClick={() => void abrirDir(r.dir)}>
+                  {/* El sello dice cual es cual mucho antes que la fecha: una
+                      lista de horas no distingue dos demos del mismo dia. */}
+                  {r.miniatura
+                    ? <img src={r.miniatura} alt="" />
+                    : <span className="sello-vacio" />}
                   <b>{new Date(r.startedAt).toLocaleString()}</b>
                   <small>{(r.durationMs / 1000).toFixed(1)}s</small>
                 </button>
               ))}
             </div>
-          </div>
-        )}
+          ) : (
+            <p className="nota-formato">
+              Aqui apareceran tus grabaciones. Tambien puedes soltar una carpeta
+              <code> .vitrina </code> sobre la ventana para abrirla.
+            </p>
+          )}
+        </div>
 
       </div>
     </div>

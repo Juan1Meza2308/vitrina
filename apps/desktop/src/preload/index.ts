@@ -5,7 +5,7 @@
  * renderer carga contenido que compone y dibuja, y no tiene por que poder
  * invocar cualquier canal.
  */
-import { contextBridge, ipcRenderer } from 'electron';
+import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type {
   CameraPresetName, CapturePreset, Cut, InputEvent, Manifest, Orientacion, Project,
 } from '@vitrina/core';
@@ -38,6 +38,8 @@ export interface GrabacionReciente {
   nombre: string;
   durationMs: number;
   startedAt: number;
+  /** Sello de un frame de la grabacion, como data URL. Null si no se pudo leer. */
+  miniatura: string | null;
 }
 
 export interface RecordProgress {
@@ -108,6 +110,14 @@ const api = {
   openRecording: (): Promise<RecordingData | null> => ipcRenderer.invoke('recording:open'),
   recientes: (limite = 5): Promise<GrabacionReciente[]> =>
     ipcRenderer.invoke('recordings:recent', limite),
+  /**
+   * Ruta en disco de un fichero soltado sobre la ventana.
+   *
+   * Desde Electron 32 `File.path` ya no existe: hay que pedirla por `webUtils`,
+   * que es una API del preload y no del renderer. Sin esto, soltar una carpeta
+   * solo da un nombre suelto y no se puede abrir nada.
+   */
+  rutaDeFichero: (f: File): string => webUtils.getPathForFile(f),
   ajustes: (): Promise<Ajustes> => ipcRenderer.invoke('settings:get'),
   elegirMarca: (dir: string): Promise<string | null> =>
     ipcRenderer.invoke('watermark:choose', dir),
