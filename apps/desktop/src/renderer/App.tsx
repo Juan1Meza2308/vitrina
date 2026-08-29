@@ -316,16 +316,16 @@ export function App() {
           <label htmlFor="tapar">Tapar datos sensibles</label>
           <input id="tapar" type="text" value={tapar} spellCheck={false}
                  onChange={(e) => setTapar(e.target.value)}
-                 placeholder="#saldo, .email, [data-privado]  (opcional)" />
+                 placeholder="#saldo, .email, [data-privado]" />
           <p className="nota-formato">
             Selectores CSS que se difuminan <b>al grabar</b>. El frame que se
             guarda ya va tapado, asi que el dato en claro no llega a existir en
             la carpeta: taparlo despues, en el editor, lo dejaria dentro de cada
             JPEG. El texto de esos elementos tampoco se guarda en el log.
             <br />
-            Se difumina en vez de ocultar para no mover la maqueta: un
-            <code> display:none </code> cambiaria de sitio los botones y el zoom
-            automatico encuadraria otra cosa.
+            Se difumina en vez de ocultar para no mover la maqueta: esconder el
+            elemento cambiaria de sitio los botones y el zoom automatico
+            encuadraria otra cosa.
           </p>
         </div>
 

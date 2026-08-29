@@ -292,10 +292,11 @@ ipcMain.handle('record:start', async (
   }
   await fsp.mkdir(recordingDir, { recursive: true });
 
+  const selectores = listaDeSelectores(opts.tapar ?? '');
+
   // La ventana la decide quien conoce la pantalla. El grabador tiene un
   // respaldo razonable, pero en un portatil bajo o con un viewport vertical
   // ese respaldo se sale del area util y la demo se graba a ciegas.
-  const selectores = listaDeSelectores(opts.tapar ?? '');
   const hueco = screen.getPrimaryDisplay().workAreaSize;
   recorder = new Recorder({
     url: opts.url,
