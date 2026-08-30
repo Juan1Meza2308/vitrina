@@ -603,6 +603,10 @@ function Contenido({ idioma, onIdioma }: { idioma: Idioma; onIdioma: (i: Idioma)
 
           <div className="campo">
             <label>{t('Calidad de captura')}</label>
+            <p className="sutil">
+              {t('Más resolución se ve mejor y ocupa más. Si dudas, deja el de '
+                + 'en medio: es el que aguanta los fps en la mayoría de equipos.')}
+            </p>
             <div className="presets">
               {presets.map((p) => {
                 // `po` y no `t`: `t` es la funcion de traduccion de todo el
@@ -648,7 +652,9 @@ function Contenido({ idioma, onIdioma }: { idioma: Idioma; onIdioma: (i: Idioma)
                      onChange={(e) => setTapar(e.target.value)}
                      placeholder="#saldo, .email, [data-privado]" />
               <p className="nota-formato">
-                {t('Selectores CSS de lo que no debe salir. Se difuminan')}{' '}
+                {t('Selectores CSS de lo que no debe salir —en tu app, clic '
+                  + 'derecho sobre el dato → Inspeccionar te dice su id o su '
+                  + 'clase—. Se difuminan')}{' '}
                 <b>{t('mientras grabas')}</b>
                 {t(', así que el dato nunca llega al vídeo ni queda en la carpeta. '
                   + 'Se difuminan en vez de ocultarse para no mover nada de sitio.')}
@@ -1585,12 +1591,10 @@ function Editor(
 
         <div className="grupo">
           <h3>{t('Looks')}</h3>
-          {looks.length === 0 && (
-            <p className="sutil">
-              {t('Guarda el fondo, el marco y la marca de agua con un nombre '
-                + 'para usarlos en la siguiente demo.')}
-            </p>
-          )}
+          <p className="sutil">
+            {t('Un look es el fondo, el marco y la marca de agua guardados con '
+              + 'un nombre, para dejar la siguiente demo igual de un clic.')}
+          </p>
           {looks.map((l) => (
             <div key={l.nombre} className="look">
               <button onClick={() => usarLook(l)} title={t('Aplicar este look a la grabación abierta')}>
@@ -1732,6 +1736,10 @@ function Editor(
         <h2 className="titulo-panel"><IconoAjustes /> {t('Configuración')}</h2>
         <div className="grupo">
           <h3>{t('Marco')}</h3>
+          <p className="sutil">
+            {t('Cómo se ve la ventana grabada dentro del vídeo: lo grande que '
+              + 'sale, sus esquinas y su sombra.')}
+          </p>
           <div className="deslizador">
             <label>{t('Tamaño')} <b>{Math.round(project.frame.fill * 100)}%</b></label>
             <input type="range" min={40} max={100} value={project.frame.fill * 100}
@@ -1760,6 +1768,10 @@ function Editor(
 
         <div className="grupo">
           <h3>{t('Movimiento del zoom')}</h3>
+          <p className="sutil">
+            {t('Cuánto se acerca la cámara sola en cada click. Los tramos que '
+              + 'planifica se editan uno a uno más abajo.')}
+          </p>
           <div className="fila">
             {/* El nombre del preset es una CLAVE —viaja en el proyecto y en la
                 linea de comandos—, asi que se traduce al ensenarlo y no se

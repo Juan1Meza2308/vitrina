@@ -102,8 +102,10 @@ export const TEXTOS_EN: Record<string, string> = {
   'tu web a {px} px': 'your site at {px} px',
   'Opciones avanzadas': 'Advanced options',
   'Tapar datos sensibles': 'Mask sensitive data',
-  'Selectores CSS de lo que no debe salir. Se difuminan':
-    'CSS selectors for whatever must not be shown. They are blurred',
+  ['Selectores CSS de lo que no debe salir —en tu app, clic derecho sobre el dato → '
+    + 'Inspeccionar te dice su id o su clase—. Se difuminan']:
+    'CSS selectors for whatever must not be shown — in your app, right-click the '
+    + 'data → Inspect tells you its id or class. They are blurred',
   'mientras grabas': 'while you record',
   [', así que el dato nunca llega al vídeo ni queda en la carpeta. Se difuminan en vez de '
   + 'ocultarse para no mover nada de sitio.']:
@@ -151,10 +153,22 @@ export const TEXTOS_EN: Record<string, string> = {
 
   // --- editor: looks y marca de agua ---------------------------------------
   'Looks': 'Looks',
-  ['Guarda el fondo, el marco y la marca de agua con un nombre para usarlos en la '
-  + 'siguiente demo.']:
-    'Saves the background, the frame and the watermark under a name, ready for '
-    + 'your next demo.',
+  ['Un look es el fondo, el marco y la marca de agua guardados con un nombre, para '
+    + 'dejar la siguiente demo igual de un clic.']:
+    'A look is the background, the frame and the watermark saved under a name, so '
+    + 'the next demo comes out the same in one click.',
+  ['Cómo se ve la ventana grabada dentro del vídeo: lo grande que sale, sus esquinas '
+    + 'y su sombra.']:
+    'How the recorded window looks inside the video: how big it is, its corners '
+    + 'and its shadow.',
+  ['Cuánto se acerca la cámara sola en cada click. Los tramos que planifica se editan '
+    + 'uno a uno más abajo.']:
+    'How far the camera zooms in on each click, on its own. The segments it plans '
+    + 'are edited one by one below.',
+  ['Más resolución se ve mejor y ocupa más. Si dudas, deja el de en medio: es el que '
+    + 'aguanta los fps en la mayoría de equipos.']:
+    'More resolution looks better and weighs more. When in doubt, keep the middle '
+    + 'one: it is the one that holds its frame rate on most machines.',
   'Aplicar este look a la grabación abierta': 'Apply this look to the open recording',
   'Usar este look en las grabaciones nuevas': 'Use this look for new recordings',
   'Guardar este look': 'Save this look',
