@@ -23,6 +23,7 @@
  */
 import type { InputEvent, Rect } from './types.ts';
 import type { TimeMap } from './timemap.ts';
+import { conIdioma, type Idioma, type T } from './idioma.ts';
 
 export type TipoPaso = 'click' | 'escritura' | 'tecla' | 'marca';
 
@@ -48,12 +49,22 @@ export interface OpcionesGuia {
    * Con menos, escribir despacio saldria como diez pasos.
    */
   huecoEscrituraMs?: number;
+  /**
+   * Idioma de los pasos. Por defecto espanol, que es el idioma del proyecto.
+   *
+   * La guia es un fichero que se comparte con terceros, asi que sale en el
+   * idioma en el que estabas trabajando: si tienes la app en ingles, quien la
+   * lea espera ingles.
+   */
+  idioma?: Idioma;
 }
 
 /** Teclas que valen como paso por si solas: confirman o cancelan algo. */
 const TECLAS_CON_SENTIDO = new Set(['Enter', 'Escape', 'Tab', 'Backspace', 'Delete']);
 
-const comillas = (t: string) => `«${t}»`;
+/** Comillas segun el idioma: las latinas en espanol, las dobles en ingles. */
+const comillas = (texto: string, idioma: Idioma) =>
+  (idioma === 'es' ? `«${texto}»` : `"${texto}"`);
 
 /**
  * Convierte el log en una lista de pasos.
@@ -62,6 +73,7 @@ const comillas = (t: string) => `«${t}»`;
  * hace. Un tutorial que dijera "mueve el raton a la derecha" seria ruido.
  */
 export function pasosDe(opts: OpcionesGuia): Paso[] {
+  const t = conIdioma(opts.idioma ?? 'es');
   const hueco = opts.huecoEscrituraMs ?? 1500;
   const eventos = [...opts.events].sort((a, b) => a.t - b.t);
 
@@ -80,8 +92,8 @@ export function pasosDe(opts: OpcionesGuia): Paso[] {
         tFuenteMs: escribiendo.desde,
         tipo: 'escritura',
         titulo: escribiendo.campo
-          ? `Escribe en ${comillas(escribiendo.campo)}`
-          : 'Escribe',
+          ? t('Escribe en {campo}', { campo: comillas(escribiendo.campo, t.idioma) })
+          : t('Escribe'),
       });
     }
     escribiendo = null;
@@ -112,7 +124,7 @@ export function pasosDe(opts: OpcionesGuia): Paso[] {
       campo = etiqueta;
       // Un doble click es un solo paso: la segunda linea diria lo mismo.
       const previo = pasos.at(-1);
-      if (previo?.tipo === 'click' && previo.titulo === tituloDeClick(etiqueta)
+      if (previo?.tipo === 'click' && previo.titulo === tituloDeClick(etiqueta, t)
           && tSalida - previo.tSalidaMs < 600) {
         continue;
       }
@@ -120,7 +132,7 @@ export function pasosDe(opts: OpcionesGuia): Paso[] {
         tSalidaMs: tSalida,
         tFuenteMs: fuente,
         tipo: 'click',
-        titulo: tituloDeClick(etiqueta),
+        titulo: tituloDeClick(etiqueta, t),
         rect: e.rect ?? null,
       });
     } else if (e.type === 'key' && e.key && TECLAS_CON_SENTIDO.has(e.key)) {
@@ -128,7 +140,7 @@ export function pasosDe(opts: OpcionesGuia): Paso[] {
         tSalidaMs: tSalida,
         tFuenteMs: fuente,
         tipo: 'tecla',
-        titulo: `Pulsa ${e.key}`,
+        titulo: t('Pulsa {tecla}', { tecla: e.key }),
       });
     } else if (e.type === 'mark') {
       pasos.push({
@@ -151,8 +163,10 @@ export function pasosDe(opts: OpcionesGuia): Paso[] {
  * la etiqueta a nulo para que tapar los pixeles no deje el texto escrito en
  * otro sitio. La guia tiene que respetarlo igual.
  */
-function tituloDeClick(etiqueta: string | null): string {
-  return etiqueta ? `Pulsa ${comillas(etiqueta)}` : 'Pulsa aquí';
+function tituloDeClick(etiqueta: string | null, t: T): string {
+  return etiqueta
+    ? t('Pulsa {que}', { que: comillas(etiqueta, t.idioma) })
+    : t('Pulsa aquí');
 }
 
 /** `1:04`, o `1:02:03` si la demo pasa de la hora. */
@@ -237,15 +251,17 @@ export function guiaMarkdown(opts: {
   pasos: Paso[];
   /** Ruta relativa de la captura de cada paso, en el mismo orden. */
   capturas?: (string | null)[];
+  idioma?: Idioma;
 }): string {
+  const t = conIdioma(opts.idioma ?? 'es');
   const lineas: string[] = [`# ${opts.titulo}`, ''];
-  lineas.push(`Guía generada de una demo grabada en ${opts.url}.`, '');
+  lineas.push(t('Guía generada de una demo grabada en {url}.', { url: opts.url }), '');
 
   opts.pasos.forEach((p, i) => {
     lineas.push(`## ${i + 1}. ${p.titulo}`, '');
-    lineas.push(`\`${reloj(p.tSalidaMs)}\` del vídeo`, '');
+    lineas.push(`\`${reloj(p.tSalidaMs)}\` ${t('del vídeo')}`, '');
     const captura = opts.capturas?.[i];
-    if (captura) lineas.push(`![Paso ${i + 1}](${captura})`, '');
+    if (captura) lineas.push(`![${t('Paso {n}', { n: i + 1 })}](${captura})`, '');
   });
 
   return lineas.join('\n');

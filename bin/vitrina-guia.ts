@@ -32,6 +32,9 @@ const r = await exportarGuia({
   recordingDir: carpeta,
   ancho: Number(flag('ancho') ?? '') || undefined,
   titulo: flag('titulo'),
+  // `--idioma=en` para entregarle la guia a alguien que no lee espanol sin
+  // tener que cambiar la app entera de idioma.
+  idioma: flag('idioma') === 'en' ? 'en' : 'es',
 });
 
 console.log(`\n  carpeta   ${path.relative(process.cwd(), carpeta)}`);

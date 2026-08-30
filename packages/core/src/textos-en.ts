@@ -368,4 +368,24 @@ export const TEXTOS_EN: Record<string, string> = {
   'Empezar': 'Get started',
   'Ver la documentación': 'Read the docs',
   'comprobando…': 'checking…',
+
+  // --- dialogos del sistema -------------------------------------------------
+  'Elige el ejecutable de ffmpeg': 'Choose the ffmpeg executable',
+  'Ejecutable': 'Executable',
+  'Todos': 'All files',
+  'Imagen de fondo': 'Background image',
+
+  // --- la guia escrita que exporta una demo --------------------------------
+  //
+  // Sale en imperativo, como un tutorial: «Click "Save"», no «Clicked Save».
+  // Quien la lee la esta siguiendo, no leyendo un informe de lo que paso.
+  'Escribe en {campo}': 'Type in {campo}',
+  'Escribe': 'Type',
+  'Pulsa {tecla}': 'Press {tecla}',
+  'Pulsa {que}': 'Click {que}',
+  'Pulsa aquí': 'Click here',
+  'Guía generada de una demo grabada en {url}.':
+    'Guide generated from a demo recorded at {url}.',
+  'del vídeo': 'into the video',
+  'Paso {n}': 'Step {n}',
 };

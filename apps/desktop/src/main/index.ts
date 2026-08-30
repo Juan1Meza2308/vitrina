@@ -28,7 +28,7 @@ import {
   paraOrientacion, reescalarProyecto, idiomaDe, conIdioma,
 } from '@vitrina/core';
 import type {
-  AudioTrack, CamTrack, CameraPresetName, Cut, InputEvent, Manifest, Orientacion, Project,
+  AudioTrack, CamTrack, CameraPresetName, Cut, InputEvent, Manifest, Orientacion, Project, T,
 } from '@vitrina/core';
 import {
   exportRecording, exportarGuia, EXPORT_PRESETS, ExportAbortedError, findFfmpeg,
@@ -212,12 +212,13 @@ ipcMain.handle('sistema:abrir', async (_e, clave: string) => {
  * mira `findFfmpeg()`: no hace falta ni una linea de resolucion nueva.
  */
 ipcMain.handle('sistema:elegirFfmpeg', async (): Promise<EstadoSistema> => {
+  const t = await traductor();
   const r = await dialog.showOpenDialog({
-    title: 'Elige el ejecutable de ffmpeg',
+    title: t('Elige el ejecutable de ffmpeg'),
     properties: ['openFile'],
     filters: process.platform === 'win32'
-      ? [{ name: 'Ejecutable', extensions: ['exe'] }]
-      : [{ name: 'Todos', extensions: ['*'] }],
+      ? [{ name: t('Ejecutable'), extensions: ['exe'] }]
+      : [{ name: t('Todos'), extensions: ['*'] }],
   });
   const elegido = r.filePaths[0];
   if (!r.canceled && elegido) {
@@ -226,6 +227,17 @@ ipcMain.handle('sistema:elegirFfmpeg', async (): Promise<EstadoSistema> => {
   }
   return estadoDelSistema();
 });
+
+/**
+ * La funcion de traduccion del proceso principal.
+ *
+ * Se pide en cada uso y no se guarda en una variable de modulo porque el idioma
+ * puede cambiar mientras la app esta abierta: un titulo de dialogo cacheado se
+ * quedaria en el idioma que hubiera al arrancar.
+ */
+async function traductor(): Promise<T> {
+  return conIdioma((await leerAjustes()).idioma);
+}
 
 async function guardarAjustes(parcial: Partial<Ajustes>): Promise<Ajustes> {
   const fusion = { ...(await leerAjustes()), ...parcial };
@@ -1000,8 +1012,9 @@ ipcMain.handle('record:stop', async () => {
 });
 
 ipcMain.handle('recording:open', async () => {
+  const t = await traductor();
   const r = await dialog.showOpenDialog({
-    title: 'Abrir grabacion',
+    title: t('Abrir grabación'),
     defaultPath: RECORDINGS,
     properties: ['openDirectory'],
   });
@@ -1069,7 +1082,10 @@ ipcMain.handle('export:run', async (_e, opts: {
  * decodifica frames, dos cosas que el renderer no deberia hacer.
  */
 ipcMain.handle('guia:run', async (_e, dir: string) => {
-  const r = await exportarGuia({ recordingDir: path.resolve(dir) });
+  // En el idioma de la app: la guia se comparte con quien no estuvo en la demo,
+  // y quien la exporta en ingles espera entregarla en ingles.
+  const { idioma } = await leerAjustes();
+  const r = await exportarGuia({ recordingDir: path.resolve(dir), idioma });
   return { pasos: r.pasos.length, ficheros: r.ficheros };
 });
 
@@ -1117,8 +1133,9 @@ ipcMain.handle('audio:silencios', async (_e, dir: string): Promise<Cut[]> => {
  * el proyecto sin fondo y sin explicacion.
  */
 ipcMain.handle('background:choose', async (_e, dir: string) => {
+  const t = await traductor();
   const r = await dialog.showOpenDialog({
-    title: 'Imagen de fondo',
+    title: t('Imagen de fondo'),
     properties: ['openFile'],
     filters: [{ name: 'Imagenes', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
   });
@@ -1138,8 +1155,9 @@ ipcMain.handle('background:choose', async (_e, dir: string) => {
  * guardara la ruta original, el export fallaria en cuanto se moviera el fichero.
  */
 ipcMain.handle('watermark:choose', async (_e, dir: string) => {
+  const t = await traductor();
   const r = await dialog.showOpenDialog({
-    title: 'Marca de agua',
+    title: t('Marca de agua'),
     properties: ['openFile'],
     filters: [{ name: 'Imagenes', extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
   });
