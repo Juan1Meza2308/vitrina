@@ -10,6 +10,16 @@ on:
     branches: [master]
   pull_request:
 
+# Solo leer. CI compila y prueba: no publica, no etiqueta, no comenta.
+#
+# Sin esta línea el token hereda los permisos del repositorio, que en un
+# repositorio público incluyen escritura. Un paquete de npm comprometido —o un
+# script de `postinstall` cualquiera— tendría con él permiso para escribir en el
+# repositorio, y `npm ci` instala cientos. Publicar sigue teniendo el suyo, en
+# release.yml, que es donde hace falta.
+permissions:
+  contents: read
+
 jobs:
   test:
     runs-on: ubuntu-latest
