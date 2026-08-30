@@ -10,6 +10,8 @@ export {
 export type { QualityBudget, CapturePreset, Orientacion } from './quality.ts';
 export { FrameIndex } from './frames.ts';
 export { pasosDe, capitulosDe, srtDe, guiaMarkdown, reloj } from './guia.ts';
+export { traducir, plural, conIdioma, idiomaDe } from './idioma.ts';
+export type { Idioma, T, Datos } from './idioma.ts';
 export type { Paso, TipoPaso, Capitulo, OpcionesGuia } from './guia.ts';
 export { audioAlignment, audioTimeFor, supportsAudio } from './audio.ts';
 export { TimeMap } from './timemap.ts';

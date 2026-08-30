@@ -2,6 +2,7 @@ import { memo, useCallback, useEffect, useRef, useState } from 'react';
 import { moveSegment, resizeSegment, clampTrim } from '@vitrina/core';
 import type { Cut, ZoomSegment, Speed } from '@vitrina/core';
 import { marcasDeRegla } from './timeline-calc.ts';
+import { useT } from './idioma.tsx';
 import type { Reloj } from './reloj.ts';
 
 /**
@@ -69,6 +70,7 @@ export interface TimelineProps {
  * volveria a dibujar igual.
  */
 export const Timeline = memo(function Timeline(props: TimelineProps) {
+  const t = useT();
   const { durationMs, zooms, trimStartMs, trimEndMs } = props;
   const escala = Math.max(1, props.escala ?? 1);
   const pista = useRef<HTMLDivElement>(null);
@@ -182,9 +184,9 @@ export const Timeline = memo(function Timeline(props: TimelineProps) {
     <div className="tl">
       <div className="tl-rotulos">
         <span className="tl-rot regla" />
-        <span className="tl-rot">Vídeo</span>
-        <span className="tl-rot">Ritmo</span>
-        <span className="tl-rot">Audio</span>
+        <span className="tl-rot">{t('Vídeo')}</span>
+        <span className="tl-rot">{t('Ritmo')}</span>
+        <span className="tl-rot">{t('Audio')}</span>
       </div>
 
       <div className="tl-scroll" ref={scroll}>
@@ -211,7 +213,10 @@ export const Timeline = memo(function Timeline(props: TimelineProps) {
                 key={`h${i}`}
                 className="hito"
                 style={{ left: pct(h.ms) }}
-                title={`${h.label ?? 'Momento senalado'} · ${(h.ms / 1000).toFixed(1)}s`}
+                title={t('{etiqueta} · {seg}s', {
+                  etiqueta: h.label ?? t('Momento señalado'),
+                  seg: (h.ms / 1000).toFixed(1),
+                })}
                 onPointerDown={(e) => e.stopPropagation()}
                 onClick={() => props.onSeek(h.ms)}
               />
@@ -226,10 +231,10 @@ export const Timeline = memo(function Timeline(props: TimelineProps) {
                 className={`tramo${props.seleccion === i ? ' sel' : ''}${z.auto ? '' : ' manual'}`}
                 data-arrastre="tramo"
                 data-i={i}
-                title={`${z.label ?? 'zoom'} · ${z.scale.toFixed(2)}x`}
+                title={t('{label} · {escala}x', { label: z.label ?? t('zoom'), escala: z.scale.toFixed(2) })}
                 style={{ left: pct(z.startMs), width: pct(z.endMs - z.startMs) }}
               >
-                <span className="etiqueta">{z.label ?? 'zoom'}</span>
+                <span className="etiqueta">{z.label ?? t('zoom')}</span>
                 <span className="asa" data-arrastre="inicio" data-i={i} />
                 <span className="asa asa-der" data-arrastre="fin" data-i={i} />
               </div>
@@ -242,13 +247,13 @@ export const Timeline = memo(function Timeline(props: TimelineProps) {
                 material y uno acelerado lo conserva. Confundirlos visualmente
                 haria pensar que se ha perdido algo. */}
             {(props.speeds ?? []).map((v, i) => (
-              <div key={`v${i}`} className="veloz" title={`×${v.rate} en este tramo`}
+              <div key={`v${i}`} className="veloz" title={t('×{rate} en este tramo', { rate: v.rate })}
                    style={{ left: pct(v.startMs), width: pct(v.endMs - v.startMs) }}>
                 <span>×{v.rate}</span>
               </div>
             ))}
             {(props.cuts ?? []).map((c, i) => (
-              <div key={`c${i}`} className="corte" title="Silencio quitado"
+              <div key={`c${i}`} className="corte" title={t('Silencio quitado')}
                    style={{ left: pct(c.startMs), width: pct(c.endMs - c.startMs) }} />
             ))}
           </div>
@@ -256,7 +261,7 @@ export const Timeline = memo(function Timeline(props: TimelineProps) {
           <div className="carril audio">
             <div className="riel" />
             {onda && onda.length > 0 && <Onda picos={onda} />}
-            {!onda && <span className="sin-audio">sin narración</span>}
+            {!onda && <span className="sin-audio">{t('sin narración')}</span>}
           </div>
 
           {/* Zonas recortadas: se atenuan en vez de ocultarse, para que se vea

@@ -63,6 +63,40 @@ La hoja de contacto es la verificación que importa: la curva de la cámara dice
 cuánto amplía, pero solo el recuadro dibujado sobre el frame dice si amplía
 sobre lo correcto.
 
+## Los textos, en dos idiomas
+
+La app está en español e inglés. La clave del diccionario
+(`packages/core/src/textos-en.ts`) **es la frase en español**, tal y como está
+escrita en el código:
+
+```tsx
+const t = useT();
+<button>{t('Parar y editar')}</button>
+```
+
+Así el código se sigue leyendo como prosa, y una traducción que falte degrada a
+español —una frase de verdad— en vez de a `editor.stop_button`. La contrapartida
+es que retocar la frase en español deja la traducción huérfana, y eso no se ve
+mirando: lo caza `packages/core/src/idioma.test.ts`, que recorre el código, saca
+todas las claves y comprueba que ninguna falta, que ninguna sobra y que los
+huecos `{n}` coinciden en las dos frases.
+
+**Cada texto nuevo son dos textos.** El test lo recuerda en el momento.
+
+Para comprobarlo en la app de verdad:
+
+```bash
+node tools/verificar-app.ts --idioma
+```
+
+Cambia a inglés, comprueba que el inicio y el editor cambian de verdad y que no
+queda ni un texto en español, y que la elección sobrevive a cerrar la app. Es lo
+que caza lo que el diccionario no puede: un texto que nunca llegó a pasar por
+`t()`.
+
+Los demás flujos fijan el idioma en español antes de arrancar, porque
+seleccionan elementos por su texto (`textContent === 'Grabar'`).
+
 ## Empaquetar y publicar
 
 ```bash

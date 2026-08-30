@@ -13,6 +13,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { GrabacionReciente } from '../preload/index.ts';
 import { IconoImagen } from './Iconos.tsx';
+import { useT } from './idioma.tsx';
+import { conIdioma, type T } from '@vitrina/core';
 
 /** Cada cuanto pasa de fotograma la preview. */
 const PASO_MS = 140;
@@ -24,16 +26,16 @@ const PASO_MS = 140;
  * es si esto es de hace un rato o de la semana pasada. Pasado un mes se vuelve
  * a la fecha, que a esa distancia "hace 47 dias" ya no orienta a nadie.
  */
-export function hace(ms: number, ahora = Date.now()): string {
+export function hace(ms: number, ahora = Date.now(), t: T = conIdioma('es')): string {
   const seg = Math.max(0, Math.round((ahora - ms) / 1000));
-  if (seg < 60) return 'hace un momento';
+  if (seg < 60) return t('hace un momento');
   const min = Math.round(seg / 60);
-  if (min < 60) return `hace ${min} min`;
+  if (min < 60) return t('hace {n} min', { n: min });
   const horas = Math.round(min / 60);
-  if (horas < 24) return `hace ${horas} h`;
+  if (horas < 24) return t('hace {n} h', { n: horas });
   const dias = Math.round(horas / 24);
-  if (dias === 1) return 'ayer';
-  if (dias < 30) return `hace ${dias} días`;
+  if (dias === 1) return t('ayer');
+  if (dias < 30) return t('hace {n} días', { n: dias });
   return new Date(ms).toLocaleDateString(undefined, { day: 'numeric', month: 'long' });
 }
 
@@ -46,6 +48,7 @@ export function duracion(ms: number): string {
 }
 
 function Tarjeta({ r, onAbrir }: { r: GrabacionReciente; onAbrir: (dir: string) => void }) {
+  const t = useT();
   const [tira, setTira] = useState<string[]>([]);
   const [i, setI] = useState(0);
   const dentro = useRef(false);
@@ -94,7 +97,7 @@ function Tarjeta({ r, onAbrir }: { r: GrabacionReciente; onAbrir: (dir: string) 
         <span className="duracion">{duracion(r.durationMs)}</span>
       </span>
       <b>{r.host || 'grabación'}</b>
-      <small>{hace(r.startedAt)}</small>
+      <small>{hace(r.startedAt, Date.now(), t)}</small>
     </button>
   );
 }
@@ -107,6 +110,7 @@ export function Recientes(
     onAbrirOtra: () => void;
   },
 ) {
+  const t = useT();
   return (
     <div className="rejilla-recientes">
       {items.map((r) => <Tarjeta key={r.dir} r={r} onAbrir={onAbrir} />)}
@@ -118,8 +122,8 @@ export function Recientes(
         <span className="lienzo">
           <span className="sin-portada">+</span>
         </span>
-        <b>Abrir grabación</b>
-        <small>de cualquier carpeta</small>
+        <b>{t('Abrir grabación')}</b>
+        <small>{t('de cualquier carpeta')}</small>
       </button>
     </div>
   );

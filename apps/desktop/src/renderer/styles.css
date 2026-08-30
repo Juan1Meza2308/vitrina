@@ -1082,7 +1082,11 @@ button.mas:hover:not(:disabled) { background: none; border: none; }
   from { opacity: 0; transform: translateY(10px) scale(.99); }
   to { opacity: 1; transform: none; }
 }
-.bienvenida header { display: grid; grid-template-columns: auto 1fr; gap: 4px 14px; }
+.bienvenida header {
+  display: grid; grid-template-columns: auto 1fr auto; gap: 4px 14px;
+  align-items: center;
+}
+.bienvenida header .idioma { grid-row: span 2; align-self: center; }
 .bienvenida .marca-app { grid-row: span 2; align-self: center; border-radius: 10px; }
 .bienvenida h1 {
   margin: 0; font-size: 30px; font-weight: 600; letter-spacing: -.02em;

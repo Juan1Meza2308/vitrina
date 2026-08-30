@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useT } from './idioma.tsx';
 
 /**
  * Aviso de que hay una versión nueva.
@@ -21,6 +22,7 @@ import { useEffect, useState } from 'react';
  * prometerla y que no pase es peor que no ofrecerla—.
  */
 export function AvisoActualizacion() {
+  const t = useT();
   const [version, setVersion] = useState<string | null>(null);
   const [progreso, setProgreso] = useState<number | null>(null);
   const [cerrado, setCerrado] = useState(false);
@@ -46,15 +48,15 @@ export function AvisoActualizacion() {
     <div className="aviso-version cristal flota" role="status">
       <span className="punto" aria-hidden />
       <span>
-        Hay una versión nueva: <b>{version}</b>
+        {t('Hay una versión nueva:')} <b>{version}</b>
       </span>
       {progreso === null ? (
         <>
-          <button className="primario" onClick={instalar}>Actualizar</button>
-          <button className="enlace" onClick={() => setCerrado(true)}>Ahora no</button>
+          <button className="primario" onClick={instalar}>{t('Actualizar')}</button>
+          <button className="enlace" onClick={() => setCerrado(true)}>{t('Ahora no')}</button>
         </>
       ) : (
-        <span className="sutil">Descargando… {progreso}%</span>
+        <span className="sutil">{t('Descargando… {pct}%', { pct: progreso })}</span>
       )}
     </div>
   );

@@ -89,6 +89,7 @@ habitual, apunta `VITRINA_BROWSER` a él.
 | **Rehacer solo un trozo** | Regraba desde un punto conservando todo lo anterior |
 | **Se documenta sola** | Exporta una guía escrita de la demo, con una captura por paso |
 | **Exportar** | MP4, WebM, GIF y ProRes con alfa |
+| **Español e inglés** | La interfaz sigue al idioma del sistema, y se cambia en un click |
 
 ## Documentación
 

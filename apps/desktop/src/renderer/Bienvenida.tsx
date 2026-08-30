@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { EstadoSistema } from '../preload/index.ts';
+import { useT } from './idioma.tsx';
+import type { Idioma, T } from '@vitrina/core';
 
 /**
  * Lo que se ve la primera vez que se abre Vitrina.
@@ -23,7 +25,14 @@ import type { EstadoSistema } from '../preload/index.ts';
  * No hay «no volver a mostrar»: ya no vuelve a salir. Un ajuste para apagar algo
  * que solo ocurre una vez es una casilla que nadie necesita leer.
  */
-export function Bienvenida({ onEmpezar }: { onEmpezar: () => void }) {
+export function Bienvenida(
+  { onEmpezar, idioma, onIdioma }: {
+    onEmpezar: () => void;
+    idioma: Idioma;
+    onIdioma: (i: Idioma) => void;
+  },
+) {
+  const t = useT();
   const [estado, setEstado] = useState<EstadoSistema | null>(null);
   const [buscando, setBuscando] = useState(false);
 
@@ -42,47 +51,56 @@ export function Bienvenida({ onEmpezar }: { onEmpezar: () => void }) {
 
   return (
     <div className="bienvenida-fondo" role="dialog" aria-modal="true"
-         aria-label="Bienvenida a Vitrina">
+         aria-label={t('Bienvenida a Vitrina')}>
       <div className="bienvenida cristal modal">
         <header>
           <Marca />
           <h1>Vitrina</h1>
+          {/* El idioma, arriba del todo y no en un menu: es la primera pantalla
+              que ve alguien que quiza no lea español, y de poco sirve explicarle
+              nada antes de dejarle cambiarlo. */}
+          <button className="tema idioma" title={t('Cambiar el idioma de la app')}
+                  onClick={() => onIdioma(idioma === 'es' ? 'en' : 'es')}>
+            {idioma === 'es' ? 'English' : 'Español'}
+          </button>
           <p className="sutil">
-            Graba demos de tu app web con zoom automático en los clicks.
+            {t('Graba demos de tu app web con zoom automático en los clicks.')}
           </p>
         </header>
 
         <section className="bloque">
-          <h2>Graba páginas web, no la pantalla</h2>
+          <h2>{t('Graba páginas web, no la pantalla')}</h2>
           <p>
-            Vitrina abre tu app en una ventana limpia y la graba desde dentro del
-            navegador. Por eso la cámara sabe encuadrar el botón que pulsas. No
-            captura el escritorio, ni tu editor, ni una videollamada.
+            {t('Vitrina abre tu app en una ventana limpia y la graba desde dentro '
+              + 'del navegador. Por eso la cámara sabe encuadrar el botón que pulsas. '
+              + 'No captura el escritorio, ni tu editor, ni una videollamada.')}
           </p>
         </section>
 
         <section className="bloque">
-          <h2>Lo que hace falta</h2>
+          <h2>{t('Lo que hace falta')}</h2>
           <ul className="requisitos">
             <Requisito
-              nombre="Navegador"
+              t={t}
+              nombre={t('Navegador')}
               ok={estado?.navegador.ok}
               detalle={estado?.navegador.detalle}
               accion={estado && !estado.navegador.ok
-                ? { texto: 'Descargar Chrome', hacer: () => window.vitrina.abrirEnlace('navegador') }
+                ? { texto: t('Descargar Chrome'), hacer: () => window.vitrina.abrirEnlace('navegador') }
                 : null}
             />
             <Requisito
-              nombre="Vídeo (ffmpeg)"
+              t={t}
+              nombre={t('Vídeo (ffmpeg)')}
               ok={estado?.ffmpeg.ok}
               detalle={estado?.ffmpeg.ok
                 ? (estado.ffmpeg.origen === 'incluido'
-                  ? 'Incluido con la app'
-                  : 'Instalado en tu equipo')
+                  ? t('Incluido con la app')
+                  : t('Instalado en tu equipo'))
                 : estado?.ffmpeg.detalle}
               accion={estado && !estado.ffmpeg.ok
                 ? {
-                  texto: buscando ? 'Buscando…' : 'Buscar el archivo…',
+                  texto: buscando ? t('Buscando…') : t('Buscar el archivo…'),
                   hacer: elegirFfmpeg,
                 }
                 : null}
@@ -90,31 +108,31 @@ export function Bienvenida({ onEmpezar }: { onEmpezar: () => void }) {
           </ul>
           {estado && !estado.ffmpeg.ok && (
             <p className="sutil">
-              Vitrina trae el suyo, así que esto no debería pasar. Si no aparece,
-              señálalo a mano o{' '}
+              {t('Vitrina trae el suyo, así que esto no debería pasar. Si no aparece, '
+                + 'señálalo a mano o')}{' '}
               <button className="enlace" onClick={() => window.vitrina.abrirEnlace('ffmpeg')}>
-                descárgalo de ffmpeg.org
+                {t('descárgalo de ffmpeg.org')}
               </button>.
             </p>
           )}
         </section>
 
         <section className="bloque">
-          <h2>Lo que escribes no se guarda</h2>
+          <h2>{t('Lo que escribes no se guarda')}</h2>
           <p>
-            El registro de teclado anota que pulsaste una tecla, nunca cuál. Una
-            demo con login no puede filtrar tu contraseña. Y lo que tapes —un
-            saldo, un correo— se difumina <b>al grabar</b>: no llega a existir en
-            el vídeo.
+            {t('El registro de teclado anota que pulsaste una tecla, nunca cuál. '
+              + 'Una demo con login no puede filtrar tu contraseña. Y lo que tapes '
+              + '—un saldo, un correo— se difumina')} <b>{t('al grabar')}</b>
+            {t(': no llega a existir en el vídeo.')}
           </p>
         </section>
 
         <footer>
           <button className="primario" onClick={onEmpezar} autoFocus>
-            Empezar
+            {t('Empezar')}
           </button>
           <button className="enlace" onClick={() => window.vitrina.abrirEnlace('guia')}>
-            Ver la documentación
+            {t('Ver la documentación')}
           </button>
         </footer>
       </div>
@@ -151,11 +169,12 @@ function Marca() {
  * aparece antes de haber mirado es peor que esperar medio segundo.
  */
 function Requisito(
-  { nombre, ok, detalle, accion }: {
+  { nombre, ok, detalle, accion, t }: {
     nombre: string;
     ok: boolean | undefined;
     detalle: string | undefined;
     accion: { texto: string; hacer: () => void } | null;
+    t: T;
   },
 ) {
   const estado = ok === undefined ? 'comprobando' : ok ? 'bien' : 'falta';
@@ -164,7 +183,7 @@ function Requisito(
       <span className="marca" aria-hidden>{ok === undefined ? '·' : ok ? '✓' : '!'}</span>
       <span className="nombre">{nombre}</span>
       <span className="detalle" title={detalle}>
-        {ok === undefined ? 'comprobando…' : detalle}
+        {ok === undefined ? t('comprobando…') : detalle}
       </span>
       {accion && (
         <button onClick={accion.hacer}>{accion.texto}</button>

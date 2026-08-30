@@ -70,7 +70,7 @@ your browser lives somewhere unusual, point `VITRINA_BROWSER` at it.
 3. **Stop**, and you land in the editor with the zooms already planned. Drag them,
    stretch them, change the background, and export.
 
-<img src="docs/img/editor.png" width="820" alt="Vitrina's editor: the preview in the middle, the timeline in lanes below, and panels for background, frame and zoom.">
+<img src="docs/img/editor-en.png" width="820" alt="Vitrina's editor: the preview in the middle, the timeline in lanes below, and panels for background, frame and zoom.">
 
 ## What it does
 
@@ -86,10 +86,12 @@ your browser lives somewhere unusual, point `VITRINA_BROWSER` at it.
 | **Redo just a piece** | Re-record from any point, keeping everything before it |
 | **Self-documenting** | Exports a written guide of the demo, with a screenshot per step |
 | **Export** | MP4, WebM, GIF, and ProRes with alpha |
+| **English and Spanish** | The interface follows your system language, and switches with one click |
 
 ## Docs
 
-Written in Spanish, which is the language of the codebase.
+Written in Spanish, which is the language of the codebase. The app itself is not:
+it ships in English and Spanish, and picks your system language on first launch.
 
 - [Grabar](docs/grabar.md) — quality, vertical mode, backgrounds
 - [El editor](docs/editor.md) — timeline, undo, looks, watermark

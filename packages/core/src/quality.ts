@@ -19,6 +19,7 @@
  *   ventanaPx = 1024  ->  margen = 1600 / 1024 = 1.5625x
  * En reposo (s = 1) se submuestrea 1600 -> 1024, que se ve mas nitido que 1:1.
  */
+import { conIdioma, type T } from './idioma.ts';
 import type { CaptureSize, ExportSettings } from './types.ts';
 import { layoutFrame, type FrameStyleInput } from './layout.ts';
 import { PRESETS_MEDIDOS, MEDIDO_EN } from './presets.medidos.ts';
@@ -64,11 +65,12 @@ export function computeQualityBudget(
  * Texto para la UI. Se muestra siempre, tambien cuando la noticia es mala:
  * el usuario tiene que enterarse ANTES de grabar, no al ver el export.
  */
-export function describeBudget(b: QualityBudget): string {
+export function describeBudget(b: QualityBudget, t: T = conIdioma('es')): string {
   if (!b.sharpAtRest) {
-    return `sin margen: ya se amplia ${(1 / b.maxSharpZoom).toFixed(2)}x en reposo`;
+    return t('sin margen: ya se amplía {escala}x en reposo',
+      { escala: (1 / b.maxSharpZoom).toFixed(2) });
   }
-  return `zoom nitido hasta ${b.maxSharpZoom.toFixed(2)}x`;
+  return t('zoom nítido hasta {escala}x', { escala: b.maxSharpZoom.toFixed(2) });
 }
 
 /**
