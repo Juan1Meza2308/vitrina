@@ -18,6 +18,7 @@ import { Timeline } from './Timeline.tsx';
 import { Recientes } from './Recientes.tsx';
 import { Bienvenida } from './Bienvenida.tsx';
 import { ProveedorIdioma, useT } from './idioma.tsx';
+import { explicar, aviso, textoDe, type Aviso } from './errores.ts';
 import { AvisoActualizacion } from './Actualizacion.tsx';
 import { instalarReflejo } from './reflejo.ts';
 import {
@@ -110,7 +111,7 @@ function Contenido({ idioma, onIdioma }: { idioma: Idioma; onIdioma: (i: Idioma)
   const [cuenta, setCuenta] = useState(3);
   const [stats, setStats] = useState({ frames: 0, elapsedMs: 0 });
   const [datos, setDatos] = useState<RecordingData | null>(null);
-  const [error, setError] = useState('');
+  const [error, setError] = useState<Aviso | null>(null);
   const [micOn, setMicOn] = useState(true);
   const [micDevices, setMicDevices] = useState<DispositivoAudio[]>([]);
   const [micDeviceId, setMicDeviceId] = useState('');
@@ -187,7 +188,12 @@ function Contenido({ idioma, onIdioma }: { idioma: Idioma; onIdioma: (i: Idioma)
     setDatos(d);
     setFase('editor');
   }), []);
-  useEffect(() => window.vitrina.onRecordingError(setError), []);
+  // Llega del proceso principal al abrir una .vitrina desde la linea de
+  // comandos, y llega en crudo: se explica aqui como cualquier otro fallo.
+  useEffect(
+    () => window.vitrina.onRecordingError((msg) => setError(explicar(new Error(msg), 'apertura'))),
+    [t],
+  );
 
   // Ya reencuadrado: lo que se ensena en las fichas de calidad es lo que se va
   // a capturar de verdad, no la version apaisada del preset.
@@ -235,7 +241,7 @@ function Contenido({ idioma, onIdioma }: { idioma: Idioma; onIdioma: (i: Idioma)
         setCamPreview(abierto);
         setCamDevices(await listarCamaras());
       } catch (e) {
-        setError(`Sin camara: ${e instanceof Error ? e.message : String(e)}`);
+        setError(explicar(e, 'camara'));
         setCamOn(false);
       }
     })();
@@ -256,7 +262,7 @@ function Contenido({ idioma, onIdioma }: { idioma: Idioma; onIdioma: (i: Idioma)
   const selectoresTapados = tapar.split(/[\n,]/).filter((t) => t.trim()).length;
 
   const grabar = useCallback(async () => {
-    setError('');
+    setError(null);
     setFase('cuenta');
     for (let i = 3; i > 0; i--) {
       setCuenta(i);
@@ -273,7 +279,7 @@ function Contenido({ idioma, onIdioma }: { idioma: Idioma; onIdioma: (i: Idioma)
         } catch (e) {
           // Sin microfono se graba igual: perder la demo entera porque falle el
           // audio seria peor que quedarse sin narracion.
-          setError(`Sin audio: ${e instanceof Error ? e.message : String(e)}`);
+          setError(explicar(e, 'microfono'));
         }
       }
       if (camOn) {
@@ -286,7 +292,7 @@ function Contenido({ idioma, onIdioma }: { idioma: Idioma; onIdioma: (i: Idioma)
         } catch (e) {
           // Igual que con el microfono: perder la demo entera porque falle la
           // camara seria peor que quedarse sin burbuja.
-          setError(`Sin camara: ${e instanceof Error ? e.message : String(e)}`);
+          setError(explicar(e, 'camara'));
         }
       }
       // Se guardan al grabar y no al teclear: escribir media URL y cerrar no
@@ -304,7 +310,7 @@ function Contenido({ idioma, onIdioma }: { idioma: Idioma; onIdioma: (i: Idioma)
       mic.current = null;
       await cam.current?.detener().catch(() => {});
       cam.current = null;
-      setError(e instanceof Error ? e.message : String(e));
+      setError(explicar(e, 'grabacion'));
       setFase('inicio');
     }
   }, [url, presetName, orientacion, micOn, micDeviceId, tapar, camOn, camDeviceId, camPreview]);
@@ -330,7 +336,7 @@ function Contenido({ idioma, onIdioma }: { idioma: Idioma; onIdioma: (i: Idioma)
       setDatos(await window.vitrina.stopRecording());
       setFase('editor');
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(explicar(e, 'grabacion'));
       setFase('inicio');
     }
   }, []);
@@ -348,7 +354,7 @@ function Contenido({ idioma, onIdioma }: { idioma: Idioma; onIdioma: (i: Idioma)
    * narracion empieza en el relevo.
    */
   const regrabar = useCallback(async (dir: string, desdeMs: number, conMicro: boolean) => {
-    setError('');
+    setError(null);
     setDatos(null);
     setCabeza(true);
     setStats({ frames: 0, elapsedMs: 0 });
@@ -361,12 +367,12 @@ function Contenido({ idioma, onIdioma }: { idioma: Idioma; onIdioma: (i: Idioma)
         try {
           mic.current = await grabarMicrofono(micDeviceId || undefined);
         } catch (e) {
-          setError(`Sin audio: ${e instanceof Error ? e.message : String(e)}`);
+          setError(explicar(e, 'microfono'));
         }
       }
     } catch (e) {
       setCabeza(false);
-      setError(e instanceof Error ? e.message : String(e));
+      setError(explicar(e, 'grabacion'));
       setFase('inicio');
     }
   }, [micDeviceId]);
@@ -376,7 +382,7 @@ function Contenido({ idioma, onIdioma }: { idioma: Idioma; onIdioma: (i: Idioma)
       setDatos(await window.vitrina.loadRecording(dir));
       setFase('editor');
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(explicar(e, 'apertura'));
     }
   }, []);
 
@@ -394,7 +400,8 @@ function Contenido({ idioma, onIdioma }: { idioma: Idioma; onIdioma: (i: Idioma)
     if (!f) return;
     const ruta = window.vitrina.rutaDeFichero(f);
     if (!ruta.endsWith('.vitrina')) {
-      setError('Eso no es una carpeta .vitrina. Suelta la carpeta entera, no un frame.');
+      setError(aviso(t('Eso no es una carpeta .vitrina. Suelta la carpeta entera, '
+        + 'no un frame.')));
       return;
     }
     void abrirDir(ruta);
@@ -478,7 +485,7 @@ function Contenido({ idioma, onIdioma }: { idioma: Idioma; onIdioma: (i: Idioma)
           ) : null}
           {/* Si el microfono fallo hay que decirlo AQUI. Enterarse al reproducir
               significa repetir la demo entera. */}
-          {error && <p className="error" style={{ maxWidth: 460 }}>{error}</p>}
+          <AvisoDeError aviso={error} ancho={460} />
           {cabeza && (
             <p className="sutil" style={{ maxWidth: 460, textAlign: 'center' }}>
               {t('No toques nada: cuando llegue al punto que elegiste te avisará '
@@ -735,8 +742,9 @@ function Contenido({ idioma, onIdioma }: { idioma: Idioma; onIdioma: (i: Idioma)
         {/* Flotante y no en la columna: apareciendo entre los campos empujaba
             todo hacia abajo y el boton de Grabar se movia debajo del cursor. */}
         {error && (
-          <div className="aviso-flotante cristal flota" role="alert" onClick={() => setError('')}>
-            {error}
+          <div className="aviso-flotante cristal flota" role="alert" onClick={() => setError(null)}>
+            {textoDe(error, t)}
+            <DetalleTecnico texto={error.detalle} />
             <span>{t('Toca para cerrar')}</span>
           </div>
         )}
@@ -747,6 +755,40 @@ function Contenido({ idioma, onIdioma }: { idioma: Idioma; onIdioma: (i: Idioma)
 }
 
 // ---------------------------------------------------------------------------
+
+/**
+ * Un fallo, en dos capas.
+ *
+ * Arriba lo que hace falta para decidir que hacer ahora, en el idioma de la
+ * app. Plegado, el mensaje original: lo que hace falta para reportarlo. Antes
+ * solo estaba lo segundo —«spawn ...\resources\ffmpeg.exe ENOENT», con la ruta
+ * del disco de quien lo sufria— y no servia para ninguna de las dos cosas.
+ *
+ * Va en un `div` y no en un `p`: un `details` dentro de un parrafo lo parte en
+ * dos y el navegador lo arregla a su manera.
+ */
+function AvisoDeError({ aviso, ancho }: { aviso: Aviso | null; ancho?: number }) {
+  const t = useT();
+  if (!aviso) return null;
+  return (
+    <div className="error" role="alert" style={ancho ? { maxWidth: ancho } : undefined}>
+      {textoDe(aviso, t)}
+      <DetalleTecnico texto={aviso.detalle} />
+    </div>
+  );
+}
+
+/** El mensaje original, plegado. `details` nativo: sin JavaScript y accesible. */
+function DetalleTecnico({ texto }: { texto?: string }) {
+  const t = useT();
+  if (!texto) return null;
+  return (
+    <details className="detalle-tecnico">
+      <summary>{t('Detalles técnicos')}</summary>
+      <code>{texto}</code>
+    </details>
+  );
+}
 
 function Editor(
   { datos, onSalir, onAbrir, onRegrabar }: {
@@ -848,7 +890,7 @@ function Editor(
   const [calidadRepeticion, setCalidadRepeticion] = useState('');
   const [lookPorDefecto, setLookPorDefecto] = useState<string | null>(null);
   const [presetsCaptura, setPresetsCaptura] = useState<CapturePreset[]>([]);
-  const [errorRepeticion, setErrorRepeticion] = useState('');
+  const [errorRepeticion, setErrorRepeticion] = useState<Aviso | null>(null);
 
   useEffect(() => {
     void window.vitrina.ajustes().then((a) => {
@@ -911,7 +953,7 @@ function Editor(
       onAbrir(await window.vitrina.repetirGrabacion(
         datos.dir, calidadRepeticion || undefined));
     } catch (e) {
-      setErrorRepeticion(e instanceof Error ? e.message : String(e));
+      setErrorRepeticion(explicar(e, 'grabacion'));
     } finally {
       setRepitiendo(false);
     }
@@ -1342,7 +1384,7 @@ function Editor(
    */
   const doblar = useCallback(async () => {
     if (doblando) return;
-    setErrorRepeticion('');
+    setErrorRepeticion(null);
     setMudo(true);
     setReproduciendo(false);
     setTMs(0);
@@ -1361,7 +1403,7 @@ function Editor(
       setReproduciendo(true);
     } catch (e) {
       setMudo(false);
-      setErrorRepeticion(`Sin voz: ${e instanceof Error ? e.message : String(e)}`);
+      setErrorRepeticion(explicar(e, 'voz'));
     }
   }, [doblando, datos.dir]);
 
@@ -1538,7 +1580,7 @@ function Editor(
             {datos.manifest.tapado && ' ' + t('Lo que tapaste se vuelve a tapar.')}
             {pistaCam && ' ' + t('La cámara no se repite: se repite la demo, no quien la cuenta.')}
           </p>
-          {errorRepeticion && <p className="error">{errorRepeticion}</p>}
+          <AvisoDeError aviso={errorRepeticion} />
         </div>
 
         <div className="grupo">
@@ -2070,10 +2112,10 @@ function Exportar(
       setGuia({ pasos: r.pasos });
     } catch (e) {
       setGuia('no');
-      setError(e instanceof Error ? e.message : String(e));
+      setError(explicar(e, 'guia'));
     }
   };
-  const [error, setError] = useState('');
+  const [error, setError] = useState<Aviso | null>(null);
 
   useEffect(() => {
     void window.vitrina.exportPresets().then((ps) => {
@@ -2087,7 +2129,7 @@ function Exportar(
   useEffect(() => window.vitrina.onExportProgress(setProgreso), []);
 
   const lanzar = async () => {
-    setError('');
+    setError(null);
     setResultado(null);
     setProgreso({ frame: 0, totalFrames: 1, fraction: 0, fps: 0, etaMs: 0 });
     try {
@@ -2096,10 +2138,10 @@ function Exportar(
       // produciria un video con la version anterior y ningun aviso.
       await guardar();
       const r = await window.vitrina.runExport({ dir, preset: elegido, cameraPreset: camara, soft: false });
-      if (r && 'cancelled' in r) setError(t('Exportación cancelada'));
+      if (r && 'cancelled' in r) setError(aviso(t('Exportación cancelada')));
       else if (r) setResultado(r);
     } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+      setError(explicar(e, 'exportacion'));
     } finally {
       setProgreso(null);
     }
@@ -2168,7 +2210,7 @@ function Exportar(
           </button>
         </>
       )}
-      {error && <p className="error">{error}</p>}
+      <AvisoDeError aviso={error} />
     </div>
   );
 }

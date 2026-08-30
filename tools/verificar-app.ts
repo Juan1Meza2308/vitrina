@@ -1697,6 +1697,69 @@ async function verificarInicio(): Promise<void> {
 }
 
 /**
+ * Verifica lo que se lee cuando algo falla.
+ *
+ * Se provoca un fallo de verdad —abrir una .vitrina que no existe, que es el
+ * camino de `recording:error`— y se mira lo que queda en pantalla. Lo que
+ * importa no es que salga un aviso, sino QUE dice: antes salia el mensaje del
+ * sistema con la ruta del disco de quien lo sufre, y no decia ni que paso ni
+ * que hacer.
+ *
+ * Se comprueba en los dos idiomas porque cinco de esos mensajes estaban
+ * escritos a pelo en espanol y en ingles salian en espanol.
+ */
+async function verificarErrores(): Promise<void> {
+  console.log('  lo que se lee cuando algo falla\n');
+  const inexistente = path.join(os.tmpdir(), 'no-existe-esta-grabacion.vitrina');
+
+  for (const idioma of ['es', 'en'] as const) {
+    // La camara apagada: en una maquina sin camara el fallo de la camara se
+    // adelanta al que se quiere medir, y es otro camino.
+    ajustarAntesDeArrancar({ idioma, bienvenidaVista: 'verificacion', camOn: false, micOn: false });
+    const child = spawn(ELECTRON, [APP, `--remote-debugging-port=${PORT}`, inexistente],
+      { stdio: ['ignore', 'ignore', 'inherit'] });
+    const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+    await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+    await sleep(2500);
+
+    // Lo que se ve SIN desplegar nada.
+    const visible = await ev<string>(client, `
+      (() => {
+        const e = document.querySelector('.error, .aviso-flotante');
+        if (!e) return '';
+        const d = e.querySelector('details');
+        return e.textContent.replace(d ? d.textContent : '', '').trim();
+      })()
+    `);
+    const esperado = idioma === 'es' ? 'No se pudo abrir' : 'could not be opened';
+    check(`[${idioma}] el aviso dice que paso, en su idioma`,
+      visible.includes(esperado), visible.slice(0, 70));
+    check(`[${idioma}] y no ensena la ruta del disco`,
+      !visible.includes(inexistente) && !visible.includes('ENOENT'), visible.slice(0, 70));
+
+    // Y el detalle sigue estando, plegado.
+    const detalle = await ev<string>(client, `
+      (() => {
+        const d = document.querySelector('.detalle-tecnico');
+        if (!d) return 'NO HAY';
+        d.open = true;
+        return d.querySelector('code')?.textContent ?? 'VACIO';
+      })()
+    `);
+    check(`[${idioma}] el mensaje original sigue ahi para reportarlo`,
+      detalle.includes('no-existe-esta-grabacion'), detalle.slice(0, 70));
+
+    await client.close();
+    child.kill();
+    await sleep(800);
+  }
+
+  ajustarAntesDeArrancar({ idioma: 'es' });
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}\n`);
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
  * Verifica que la ventana esta cerrada por fuera.
  *
  * Lo que se mira no es la configuracion —eso ya lo comprueba un test leyendo el
@@ -2701,7 +2764,8 @@ async function verificarSilencios(): Promise<void> {
   process.exit(fallos === 0 ? 0 : 1);
 }
 
-const flujo = process.argv.includes('--seguridad') ? verificarSeguridad
+const flujo = process.argv.includes('--errores') ? verificarErrores
+  : process.argv.includes('--seguridad') ? verificarSeguridad
   : process.argv.includes('--silencios') ? verificarSilencios
   : process.argv.includes('--vertical') ? verificarVertical
   : process.argv.includes('--bienvenida') ? verificarBienvenida   // se encarga el flujo

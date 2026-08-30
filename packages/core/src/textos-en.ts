@@ -418,4 +418,36 @@ export const TEXTOS_EN: Record<string, string> = {
   'Paso {n}': 'Step {n}',
   'Cómo se hace en {donde}': 'How to do it in {donde}',
   'tu app': 'your app',
+
+  // --- cuando algo falla ---------------------------------------------------
+  'No se pudo encender la cámara.': 'The camera would not turn on.',
+  'No se pudo encender el micrófono.': 'The microphone would not turn on.',
+  'No se pudo grabar la voz.': 'The voice-over could not be recorded.',
+  'No se pudo empezar a grabar.': 'Recording could not start.',
+  'No se pudo exportar el vídeo.': 'The video could not be exported.',
+  'No se pudo crear la guía.': 'The written guide could not be created.',
+  'No se pudo abrir la grabación.': 'That recording could not be opened.',
+  'Algo no ha salido bien.': 'Something went wrong.',
+  ['El sistema no dio permiso. Búscalo en los ajustes de privacidad '
+    + 'de tu equipo y vuelve a intentarlo.']:
+    'Your system denied permission. Grant it in your privacy settings and try '
+    + 'again.',
+  'No hay ninguno conectado, o el que elegiste ya no está.':
+    'There is none connected, or the one you picked is gone.',
+  'Otro programa lo está usando. Ciérralo y vuelve a intentarlo.':
+    'Another program is using it. Close that program and try again.',
+  'No queda espacio en el disco.': 'The disk is full.',
+  'El sistema no dejó escribir ahí. Prueba con otra carpeta.':
+    'Your system would not let Vitrina write there. Try another folder.',
+  ['Falta ffmpeg, que es lo que escribe el vídeo. Vitrina trae el '
+    + 'suyo; si no aparece, señálalo a mano desde la pantalla de inicio.']:
+    'FFmpeg is missing, and it is what writes the video. Vitrina ships its own; '
+    + 'if it does not show up, point to it by hand from the start screen.',
+  ['El navegador no llegó a abrirse. Si tienes uno abierto en modo '
+    + 'depuración, ciérralo y vuelve a intentarlo.']:
+    'The browser never opened. If you have one running in debugging mode, close '
+    + 'it and try again.',
+  'Detalles técnicos': 'Technical details',
+  'Eso no es una carpeta .vitrina. Suelta la carpeta entera, no un frame.':
+    'That is not a .vitrina folder. Drop the whole folder, not a single frame.',
 };
