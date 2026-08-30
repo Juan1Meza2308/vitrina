@@ -62,11 +62,25 @@ export function App() {
   // podria envolver a si mismo, y el proveedor tiene que estar por encima de
   // todo lo que se pinta —incluidas la cuenta atras y la grabacion—.
   const [idioma, setIdioma] = useState<Idioma>('es');
+  /**
+   * Si el usuario ya ha elegido idioma a mano en esta sesion.
+   *
+   * Los ajustes se leen del disco de forma asincrona, y quien pulse el boton
+   * antes de que lleguen se encontraba con que su eleccion se deshacia sola:
+   * la respuesta tardia escribia el idioma guardado encima. Pasa de verdad —lo
+   * caza `verificar-app --idioma`, que pulsa en cuanto aparece la pantalla— y
+   * es de las cosas que se leen como que la app "no hace caso".
+   */
+  const elegido = useRef(false);
+
   useEffect(() => {
-    void window.vitrina.ajustes().then((a) => setIdioma(a.idioma));
+    void window.vitrina.ajustes().then((a) => {
+      if (!elegido.current) setIdioma(a.idioma);
+    });
   }, []);
 
   const cambiarIdioma = useCallback((otro: Idioma) => {
+    elegido.current = true;
     setIdioma(otro);
     void window.vitrina.guardarAjustes({ idioma: otro });
   }, []);
