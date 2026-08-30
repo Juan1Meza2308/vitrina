@@ -1,6 +1,6 @@
 {
   "name": "@vitrina/desktop",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "App de escritorio de Vitrina",
   "main": "out/main/index.js",
@@ -11,7 +11,8 @@
   },
   "dependencies": {
     "@napi-rs/canvas": "^1.0.8",
-    "chrome-remote-interface": "^0.33.3"
+    "chrome-remote-interface": "^0.33.3",
+    "electron-updater": "^6.8.9"
   },
   "author": "Vitrina"
 }
