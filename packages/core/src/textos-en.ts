@@ -198,6 +198,11 @@ export const TEXTOS_EN: Record<string, string> = {
   'Sin marco': 'No frame',
   'Móvil': 'Phone',
   'Movimiento del zoom': 'Zoom motion',
+  // Nombres de los presets de camara. La clave viaja en el proyecto y no se
+  // renombra; esto es solo como se ensena.
+  'sutil': 'subtle',
+  'normal': 'normal',
+  'marcado': 'strong',
   'Afloja el marco para recuperar su ampliación.':
     'Loosen the frame to get their zoom back.',
 

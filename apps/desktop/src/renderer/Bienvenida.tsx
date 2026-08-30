@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import type { EstadoSistema } from '../preload/index.ts';
 import { useT } from './idioma.tsx';
-import type { T } from '@vitrina/core';
+import type { Idioma, T } from '@vitrina/core';
 
 /**
  * Lo que se ve la primera vez que se abre Vitrina.
@@ -25,7 +25,13 @@ import type { T } from '@vitrina/core';
  * No hay «no volver a mostrar»: ya no vuelve a salir. Un ajuste para apagar algo
  * que solo ocurre una vez es una casilla que nadie necesita leer.
  */
-export function Bienvenida({ onEmpezar }: { onEmpezar: () => void }) {
+export function Bienvenida(
+  { onEmpezar, idioma, onIdioma }: {
+    onEmpezar: () => void;
+    idioma: Idioma;
+    onIdioma: (i: Idioma) => void;
+  },
+) {
   const t = useT();
   const [estado, setEstado] = useState<EstadoSistema | null>(null);
   const [buscando, setBuscando] = useState(false);
@@ -50,6 +56,13 @@ export function Bienvenida({ onEmpezar }: { onEmpezar: () => void }) {
         <header>
           <Marca />
           <h1>Vitrina</h1>
+          {/* El idioma, arriba del todo y no en un menu: es la primera pantalla
+              que ve alguien que quiza no lea español, y de poco sirve explicarle
+              nada antes de dejarle cambiarlo. */}
+          <button className="tema idioma" title={t('Cambiar el idioma de la app')}
+                  onClick={() => onIdioma(idioma === 'es' ? 'en' : 'es')}>
+            {idioma === 'es' ? 'English' : 'Español'}
+          </button>
           <p className="sutil">
             {t('Graba demos de tu app web con zoom automático en los clicks.')}
           </p>

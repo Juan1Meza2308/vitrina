@@ -1034,6 +1034,11 @@ async function verificarIdioma(): Promise<void> {
     await esperarA(client,
       "[...document.querySelectorAll('button')].some(b => b.textContent === 'Export')",
       'editor en ingles', 30_000));
+  // La captura del editor en ingles ilustra el README en ingles: una interfaz
+  // en otro idioma que el texto que la rodea hace dudar de un proyecto.
+  await sleep(1200);
+  await capturar(client, path.join(APP, 'captura-editor-ingles.png'));
+
   const restosEditor = await restosEnEspanol(client);
   check('y tampoco queda nada en espanol en el editor', restosEditor.length === 0,
     restosEditor.slice(0, 3).join(' · '));
@@ -1184,6 +1189,16 @@ async function verificarBienvenida(): Promise<void> {
   check('dice que las teclas no se guardan', /nunca cuál/i.test(texto));
 
   await capturar(client, path.join(APP, 'captura-bienvenida.png'));
+
+  // El idioma se puede cambiar AQUI, que es donde importa: quien no lea espanol
+  // no deberia tener que adivinar los tres bloques para llegar al selector.
+  await ev(client, `[...document.querySelectorAll('.bienvenida button')].find(b => b.textContent === 'English')?.click()`);
+  await sleep(700);
+  check('la bienvenida se puede leer en ingles',
+    await ev<boolean>(client,
+      `document.querySelector('.bienvenida')?.textContent?.includes('Get started') ?? false`));
+  await ev(client, `[...document.querySelectorAll('.bienvenida button')].find(b => b.textContent === 'Español')?.click()`);
+  await sleep(700);
 
   await ev(client, `[...document.querySelectorAll('button')].find(b => b.textContent === 'Empezar').click()`);
   check('al pulsar Empezar se llega a la pantalla de grabar',

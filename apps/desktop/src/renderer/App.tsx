@@ -413,7 +413,7 @@ function Contenido({ idioma, onIdioma }: { idioma: Idioma; onIdioma: (i: Idioma)
   // interrumpir, no recibir.
   if (bienvenida) {
     return (
-      <Bienvenida onEmpezar={() => {
+      <Bienvenida idioma={idioma} onIdioma={onIdioma} onEmpezar={() => {
         setBienvenida(false);
         void window.vitrina.estadoDelSistema().then((e) => {
           void window.vitrina.guardarAjustes({ bienvenidaVista: e.version });
@@ -1719,9 +1719,14 @@ function Editor(
         <div className="grupo">
           <h3>{t('Movimiento del zoom')}</h3>
           <div className="fila">
+            {/* El nombre del preset es una CLAVE —viaja en el proyecto y en la
+                linea de comandos—, asi que se traduce al ensenarlo y no se
+                renombra: un `project.json` de ayer tiene que seguir abriendo. */}
             {(Object.keys(CAMERA_PRESETS) as CameraPresetName[]).map((c) => (
               <button key={c} className={camara === c ? 'on' : ''}
-                      onClick={() => cambiarCamara(c)}>{c}</button>
+                      onClick={() => cambiarCamara(c)}>
+                {c === 'sutil' ? t('sutil') : c === 'normal' ? t('normal') : t('marcado')}
+              </button>
             ))}
           </div>
           <div className={`nota-calidad${presupuesto.maxSharpZoom < 1.15 ? ' aviso' : ''}`}>

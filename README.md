@@ -70,7 +70,7 @@ your browser lives somewhere unusual, point `VITRINA_BROWSER` at it.
 3. **Stop**, and you land in the editor with the zooms already planned. Drag them,
    stretch them, change the background, and export.
 
-<img src="docs/img/editor.png" width="820" alt="Vitrina's editor: the preview in the middle, the timeline in lanes below, and panels for background, frame and zoom.">
+<img src="docs/img/editor-en.png" width="820" alt="Vitrina's editor: the preview in the middle, the timeline in lanes below, and panels for background, frame and zoom.">
 
 ## What it does
 
