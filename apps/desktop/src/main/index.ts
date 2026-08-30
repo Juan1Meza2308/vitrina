@@ -709,6 +709,33 @@ ipcMain.handle('record:start', async (
 });
 
 /**
+ * Conexion a la pagina del navegador que ESTE grabador tiene abierto, para
+ * enviarle la entrada grabada.
+ *
+ * El puerto se le pregunta al grabador en vez de darlo por sabido: desde que se
+ * pide un puerto libre en lugar de 9222, cada grabacion escucha en uno
+ * distinto. Con el numero fijo esto habria acabado mandando clicks al navegador
+ * que otro programa tuviera abierto en depuracion.
+ *
+ * Va al target de la pagina y con `local: true`: conectar en medio del
+ * screencast sin eso se come mas de quince segundos, y esos segundos
+ * desplazarian el guion entero respecto a la grabacion.
+ */
+async function entradaDelNavegador(
+  grabador: Recorder,
+  queEs: string,
+): Promise<Parameters<typeof reproducir>[0] & { close(): Promise<void> }> {
+  const puerto = grabador.puerto;
+  const objetivos = (await (await fetch(`http://127.0.0.1:${puerto}/json/list`)).json()) as
+    { type: string; id: string }[];
+  const pagina = objetivos.find((t) => t.type === 'page');
+  if (!pagina) throw new Error(`El navegador de ${queEs} no expuso una pagina`);
+  return (await CDP({
+    port: puerto, target: pagina.id, local: true,
+  })) as unknown as Parameters<typeof reproducir>[0] & { close(): Promise<void> };
+}
+
+/**
  * Repite una grabacion: vuelve a ejecutar su log de entrada y guarda otra nueva.
  *
  * Es lo que evita la dolencia de siempre —un fallo a los tres minutos obliga a
@@ -766,16 +793,7 @@ ipcMain.handle('record:repeat', async (
     await recorder.launch();
     await recorder.start();
 
-    // Al target de la pagina y con `local: true`: conectar en medio del
-    // screencast sin eso se come mas de quince segundos, y aqui esos segundos
-    // desplazarian el guion entero respecto a la grabacion.
-    const objetivos = (await (await fetch('http://127.0.0.1:9222/json/list')).json()) as
-      { type: string; id: string }[];
-    const pagina = objetivos.find((t) => t.type === 'page');
-    if (!pagina) throw new Error('El navegador de repeticion no expuso una pagina');
-    const input = (await CDP({
-      port: 9222, target: pagina.id, local: true,
-    })) as unknown as Parameters<typeof reproducir>[0] & { close(): Promise<void> };
+    const input = await entradaDelNavegador(recorder, 'repeticion');
 
     await reproducir(input, guion, { relleno: opts.texto ?? '' });
     await input.close();
@@ -893,13 +911,7 @@ ipcMain.handle('record:retake', async (_e, opts: { dir: string; desdeMs: number 
     await recorder.start();
     const arranque = Date.now();
 
-    const objetivos = (await (await fetch('http://127.0.0.1:9222/json/list')).json()) as
-      { type: string; id: string }[];
-    const pagina = objetivos.find((t) => t.type === 'page');
-    if (!pagina) throw new Error('El navegador de regrabacion no expuso una pagina');
-    const input = (await CDP({
-      port: 9222, target: pagina.id, local: true,
-    })) as unknown as Parameters<typeof reproducir>[0] & { close(): Promise<void> };
+    const input = await entradaDelNavegador(recorder, 'regrabacion');
 
     await reproducir(input, cabeza);
     await input.close();

@@ -77,6 +77,13 @@ export interface RecorderOptions {
   /** 92 por defecto: en M0 la calidad no afecta al rendimiento, asi que sale gratis. */
   quality?: number;
   outDir: string;
+  /**
+   * Puerto CDP. Sin darlo, lo elige el navegador y se descubre despues.
+   *
+   * Lo tienen las herramientas de `tools/`, que lanzan su propio navegador y
+   * necesitan saber a donde conectarse. La aplicacion NO lo da: ver
+   * `descubrirPuerto`.
+   */
   port?: number;
   /** Tamano de la ventana fisica. Se ajusta para caber en la pantalla. */
   window?: { width: number; height: number };
@@ -116,6 +123,7 @@ export class Recorder {
   private client: CdpClient | null = null;
   private browser: BrowserInfo | null = null;
   private profileDir = '';
+  private puertoReal = 0;
 
   private frames: Frame[] = [];
   private events: InputEvent[] = [];
@@ -133,7 +141,18 @@ export class Recorder {
   private pausadaEn = 0;
 
   constructor(options: RecorderOptions) {
-    this.opts = { quality: 92, port: 9222, ...options };
+    this.opts = { quality: 92, port: 0, ...options };
+  }
+
+  /**
+   * Puerto CDP del navegador que se esta grabando. 0 mientras no hay ninguno.
+   *
+   * Lo necesita quien tenga que conectarse al MISMO navegador —el proceso
+   * principal lo hace para reproducir la entrada al repetir una demo—, y ya no
+   * puede darlo por sabido.
+   */
+  get puerto(): number {
+    return this.puertoReal;
   }
 
   /** Arranca el navegador, inyecta la captura de eventos y navega a la url. */
@@ -167,8 +186,8 @@ export class Recorder {
       { stdio: 'ignore' },
     );
 
-    await this.waitForPort();
-    this.client = (await CDP({ port: this.opts.port })) as unknown as CdpClient;
+    this.puertoReal = await this.descubrirPuerto();
+    this.client = (await CDP({ port: this.puertoReal })) as unknown as CdpClient;
     const { Page, Runtime, Emulation } = this.client;
     await Promise.all([Page.enable(), Runtime.enable()]);
 
@@ -470,17 +489,57 @@ export class Recorder {
     };
   }
 
-  private async waitForPort(timeoutMs = 20000): Promise<void> {
+  /**
+   * El puerto CDP del navegador que acabamos de lanzar.
+   *
+   * Antes esto sondeaba `127.0.0.1:9222` hasta que respondiera. Funcionaba, y
+   * era peligroso: 9222 es el puerto de todos los tutoriales y el que deja
+   * abierto medio mundo del desarrollo web. Con un Chrome ya escuchando ahi,
+   * Vitrina se conectaba A ESE —pestanas reales, sesiones iniciadas, correo— y
+   * grababa el navegador de quien la abriera. Sin aviso, porque desde fuera
+   * responde igual.
+   *
+   * Por eso la aplicacion pide el puerto 0: uno libre cualquiera, que el
+   * navegador escribe en `DevToolsActivePort` dentro del perfil —un temporal
+   * recien creado para esta grabacion—. Leerlo de ahi responde por el navegador
+   * NUESTRO y por ninguno mas.
+   *
+   * Con un puerto pedido a mano se sondea, como siempre. No es una preferencia:
+   * **Chromium no escribe ese fichero cuando el puerto es fijo**, comprobado
+   * aqui con la 1194 (con `--remote-debugging-port=0` aparece; con `=9311` no).
+   * Lo usan las herramientas de `tools/`, que necesitan un numero conocido de
+   * antemano para mandar la entrada.
+   */
+  private async descubrirPuerto(timeoutMs = 20000): Promise<number> {
+    const fijo = this.opts.port;
+    const fichero = path.join(this.profileDir, 'DevToolsActivePort');
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
+      if (this.child?.exitCode != null) {
+        throw new Error(
+          `El navegador se cerro nada mas arrancar (codigo ${this.child.exitCode}).`,
+        );
+      }
       try {
-        const r = await fetch(`http://127.0.0.1:${this.opts.port}/json/version`);
-        if (r.ok) return;
+        if (fijo > 0) {
+          const r = await fetch(`http://127.0.0.1:${fijo}/json/version`);
+          if (r.ok) return fijo;
+        } else {
+          const crudo = await fsp.readFile(fichero, 'utf8');
+          // Son dos lineas y no se escriben de golpe: sin el salto, el numero
+          // puede estar a medias y `43333` leerse como `433`.
+          if (crudo.includes('\n')) {
+            const puerto = Number.parseInt(crudo.split('\n')[0] ?? '', 10);
+            if (Number.isInteger(puerto) && puerto > 0) return puerto;
+          }
+        }
       } catch {
         /* el navegador todavia esta arrancando */
       }
-      await sleep(150);
+      await sleep(fijo > 0 ? 150 : 50);
     }
-    throw new Error(`El navegador no expuso CDP en el puerto ${this.opts.port}`);
+    throw new Error(fijo > 0
+      ? `El navegador no expuso CDP en el puerto ${fijo}`
+      : 'El navegador no expuso CDP: no escribio su puerto en el perfil temporal.');
   }
 }
