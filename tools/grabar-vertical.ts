@@ -35,13 +35,15 @@ interface Entrada {
   close(): Promise<void>;
 }
 
-async function pulsar(selectores: string[]): Promise<void> {
+// El puerto se le pregunta al grabador: desde que pide uno libre en vez de
+// 9222, cada grabacion escucha en uno distinto.
+async function pulsar(puerto: number, selectores: string[]): Promise<void> {
   const CDP = (await import('chrome-remote-interface')).default;
-  const lista = (await (await fetch('http://127.0.0.1:9222/json/list')).json()) as
+  const lista = (await (await fetch(`http://127.0.0.1:${puerto}/json/list`)).json()) as
     { type: string; id: string }[];
   const page = lista.find((t) => t.type === 'page');
   if (!page) return;
-  const input = (await CDP({ port: 9222, target: page.id })) as unknown as Entrada;
+  const input = (await CDP({ port: puerto, target: page.id })) as unknown as Entrada;
   await input.Runtime.enable();
   const { result } = await input.Runtime.evaluate({
     expression: `JSON.stringify(${JSON.stringify(selectores)}.map(s => {
@@ -75,7 +77,7 @@ const rec = new Recorder({
 });
 await rec.launch();
 await rec.start();
-await pulsar(['#b2', '#b3']);
+await pulsar(rec.puerto, ['#b2', '#b3']);
 await sleep(SECS * 1000);
 await rec.stop();
 await rec.close();

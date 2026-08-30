@@ -880,7 +880,7 @@ async function verificarGrabacion(): Promise<void> {
 
   // Sin interaccion no hay zoom, y con razon: el motor de camara encuadra
   // clicks. Hay que pulsar de verdad dentro de la pagina grabada, no solo
-  // dejar correr el tiempo. Vitrina expone ese navegador en el puerto 9222.
+  // dejar correr el tiempo. Ese navegador escucha en un puerto propio.
   await interactuarConLoGrabado();
   await sleep(1500);
 
@@ -2490,6 +2490,33 @@ async function medirVideo(file: string): Promise<string> {
  * coordenadas escritas a ojo pulsarian el vacio y la comprobacion diria "sin
  * zoom" sin que nada estuviera roto.
  */
+/**
+ * El puerto CDP del navegador que la app tiene grabando.
+ *
+ * Ya no es 9222: la app pide un puerto libre para no acabar hablando con el
+ * navegador que cualquiera tenga abierto en depuracion. El numero lo escribe el
+ * propio navegador en `DevToolsActivePort`, dentro de su perfil temporal, y de
+ * ahi se lee — el mas reciente, que es el de esta grabacion.
+ */
+async function puertoDelNavegadorGrabado(): Promise<number> {
+  const tmp = os.tmpdir();
+  const perfiles = (await fsp.readdir(tmp))
+    .filter((d) => d.startsWith('vitrina-') && !d.startsWith('vitrina-export'))
+    .map((d) => path.join(tmp, d));
+  let mejor: { puerto: number; cuando: number } | null = null;
+  for (const dir of perfiles) {
+    const f = path.join(dir, 'DevToolsActivePort');
+    const st = await fsp.stat(f).catch(() => null);
+    if (!st) continue;
+    const puerto = Number.parseInt((await fsp.readFile(f, 'utf8')).split('\n')[0] ?? '', 10);
+    if (Number.isInteger(puerto) && (!mejor || st.mtimeMs > mejor.cuando)) {
+      mejor = { puerto, cuando: st.mtimeMs };
+    }
+  }
+  if (!mejor) throw new Error('No se encontro el navegador de la grabacion');
+  return mejor.puerto;
+}
+
 async function interactuarConLoGrabado(selectores?: string[]): Promise<void> {
   interface Entrada {
     Input: {
@@ -2505,12 +2532,13 @@ async function interactuarConLoGrabado(selectores?: string[]): Promise<void> {
     close(): Promise<void>;
   }
 
-  const lista = (await (await fetch('http://127.0.0.1:9222/json/list')).json()) as
+  const puerto = await puertoDelNavegadorGrabado();
+  const lista = (await (await fetch(`http://127.0.0.1:${puerto}/json/list`)).json()) as
     { type: string; id: string }[];
   const page = lista.find((t) => t.type === 'page');
   if (!page) throw new Error('El navegador de grabacion no expuso una pagina');
 
-  const input = (await CDP({ port: 9222, target: page.id })) as unknown as Entrada;
+  const input = (await CDP({ port: puerto, target: page.id })) as unknown as Entrada;
 
   let puntos: { x: number; y: number }[];
   if (selectores) {
