@@ -112,9 +112,26 @@ que trae sus códecs, y para el build si no.
 
 Publicar no se hace a mano. Al empujar a `master` un commit que sube `version` en
 `package.json` —y en `apps/desktop/package.json`, que un test obliga a mantener
-igual—, el flujo `.github/workflows/release.yml` compila en Windows y macOS y
-publica la Release con los instaladores. Eso es también lo que enciende el aviso
-de «hay una versión nueva» en las apps ya instaladas.
+igual—, el flujo `.github/workflows/release.yml` hace esto, en este orden:
+
+1. **Crea la Release como borrador**, antes de compilar nada. Un borrador no
+   necesita tag, y así ningún trabajo posterior tiene que crearla.
+2. **Compila Windows y macOS**, de uno en uno, y cada uno **solo sube** sus
+   ficheros al borrador.
+3. **Comprueba que están todos** —el `.exe`, los dos `.dmg` y los dos
+   `latest*.yml`— y solo entonces publica el borrador, que es lo que crea el tag.
+
+Los dos primeros puntos no son manías: la v0.1.0 y la v0.1.1 salieron a medias
+porque varios publicadores intentaban crear la Release a la vez y chocaban con un
+`422 Published releases must have a valid tag`. El tercero tampoco: la v0.1.1 se
+publicó **sin `latest.yml`** —o sea, sin actualizaciones en Windows— y nada lo
+dijo.
+
+Si un build falla, la Release se queda en borrador y sin tag: nadie se descarga
+media versión, y el siguiente intento reutiliza el mismo borrador.
+
+Publicar la Release es también lo que enciende el aviso de «hay una versión
+nueva» en las apps ya instaladas.
 
 Ni el `.exe` ni el `.dmg` van firmados: firmar cuesta una cuenta de desarrollador
 en cada plataforma. La consecuencia es que Windows avisa con SmartScreen y macOS

@@ -35,10 +35,18 @@ publish:
   provider: github
   owner: Juan1Meza2308
   repo: vitrina
-  # Publicada, no borrador. Una Release en borrador no la ve nadie —ni las apps
-  # instaladas, que es lo que dispara el aviso de version nueva—, asi que
-  # quedaria una publicacion que parece hecha y que no llega a nadie.
-  releaseType: release
+  # BORRADOR, y la publica el flujo al final.
+  #
+  # No es una preferencia: una Release publicada exige un tag que todavia no
+  # existe cuando se sube el primer fichero, y electron-builder lanza un
+  # publicador POR FICHERO. Los dos intentaban crearla a la vez y el segundo se
+  # estrellaba contra un 422 «Published releases must have a valid tag» —paso en
+  # la v0.1.0 y otra vez en la v0.1.1—. Un borrador no necesita tag.
+  #
+  # El flujo la crea antes de compilar y la publica al final, cuando ha
+  # comprobado que estan todos los ficheros. Si un build falla, se queda en
+  # borrador: nadie se descarga media version.
+  releaseType: draft
 
 files:
   - out/**/*
