@@ -25,7 +25,7 @@ import {
 import {
   CAPTURE_PRESETS, CAMERA_PRESETS, cameraConfigForBudget, computeQualityBudget,
   defaultProject, FrameIndex, hostFromUrl, planSegments, parseSilenceReport, silenceFilter,
-  paraOrientacion, reescalarProyecto,
+  paraOrientacion, reescalarProyecto, idiomaDe, conIdioma,
 } from '@vitrina/core';
 import type {
   AudioTrack, CamTrack, CameraPresetName, Cut, InputEvent, Manifest, Orientacion, Project,
@@ -52,11 +52,18 @@ const RECORDINGS = path.join(app.getPath('videos'), 'Vitrina');
 const ficheroAjustes = () => path.join(app.getPath('userData'), 'ajustes.json');
 
 async function leerAjustes(): Promise<Ajustes> {
+  let crudo: unknown = null;
   try {
-    return normalizarAjustes(JSON.parse(await fsp.readFile(ficheroAjustes(), 'utf8')));
+    crudo = JSON.parse(await fsp.readFile(ficheroAjustes(), 'utf8'));
   } catch {
-    return normalizarAjustes(null);
+    crudo = null;
   }
+  const guardados = normalizarAjustes(crudo);
+  // Sin idioma guardado manda el sistema. Se resuelve aqui y no en la
+  // normalizacion porque `ajustes.ts` no puede importar Electron —es lo que lo
+  // hace testeable— y `app.getLocale()` es de Electron.
+  const tieneIdioma = typeof (crudo as { idioma?: unknown } | null)?.idioma === 'string';
+  return tieneIdioma ? guardados : { ...guardados, idioma: idiomaDe(app.getLocale()) };
 }
 
 ipcMain.handle('settings:get', () => leerAjustes());

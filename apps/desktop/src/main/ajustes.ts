@@ -9,7 +9,7 @@
  * que dar los valores de fabrica: que la app no arranque porque un JSON quedo
  * mal escrito seria un desastre desproporcionado para lo que guarda.
  */
-import type { Background, FrameStyle, Orientacion, Project, Watermark } from '@vitrina/core';
+import type { Background, FrameStyle, Idioma, Orientacion, Project, Watermark } from '@vitrina/core';
 
 /** Aspecto de la app. No toca el video: el compositor pinta lo suyo. */
 export type Tema = 'oscuro' | 'claro';
@@ -46,6 +46,14 @@ export interface Ajustes {
   camOn: boolean;
   camDeviceId: string;
   tema: Tema;
+  /**
+   * Idioma de la interfaz.
+   *
+   * Vacio no es un valor: cuando no hay nada guardado, quien decide es el
+   * sistema (`idiomaDe(app.getLocale())` en el proceso principal). Aqui se
+   * guarda solo lo que el usuario ha elegido a mano.
+   */
+  idioma: Idioma;
   looks: Look[];
   /** Nombre del look que se aplica solo a las grabaciones nuevas. */
   lookPorDefecto: string | null;
@@ -76,6 +84,7 @@ export const AJUSTES_POR_DEFECTO: Ajustes = {
   camOn: false,
   camDeviceId: '',
   tema: 'oscuro',
+  idioma: 'es',
   looks: [],
   lookPorDefecto: null,
   bienvenidaVista: '',
@@ -98,6 +107,9 @@ export function normalizarAjustes(crudo: unknown): Ajustes {
     camDeviceId: typeof o.camDeviceId === 'string'
       ? o.camDeviceId : AJUSTES_POR_DEFECTO.camDeviceId,
     tema: o.tema === 'claro' ? 'claro' : 'oscuro',
+    // Cualquier cosa que no sea 'en' cae en espanol, que es el idioma en el que
+    // esta escrita la app: ante unos ajustes corruptos, el original.
+    idioma: o.idioma === 'en' ? 'en' : 'es',
     looks: Array.isArray(o.looks) ? o.looks.filter(esLook) : [],
     lookPorDefecto: typeof o.lookPorDefecto === 'string' ? o.lookPorDefecto : null,
     bienvenidaVista: typeof o.bienvenidaVista === 'string' ? o.bienvenidaVista : '',

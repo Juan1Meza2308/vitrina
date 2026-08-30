@@ -7,7 +7,7 @@
  */
 import { contextBridge, ipcRenderer, webUtils } from 'electron';
 import type {
-  CameraPresetName, CapturePreset, Cut, InputEvent, Manifest, Orientacion, Project,
+  CameraPresetName, CapturePreset, Cut, Idioma, InputEvent, Manifest, Orientacion, Project,
 } from '@vitrina/core';
 
 export interface RecordingData {
@@ -32,6 +32,7 @@ export interface Ajustes {
   camOn: boolean;
   camDeviceId: string;
   tema: 'oscuro' | 'claro';
+  idioma: Idioma;
   looks: Look[];
   lookPorDefecto: string | null;
   /** Version cuya bienvenida ya se leyo. Vacio = no se ha visto nunca. */

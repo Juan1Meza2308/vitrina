@@ -8,7 +8,7 @@ import {
 } from '@vitrina/core';
 import { withAlpha } from '@vitrina/renderer';
 import type {
-  Background, CameraPresetName, CapturePreset, Cut, Orientacion, Project, ZoomSegment,
+  Background, CameraPresetName, CapturePreset, Cut, Idioma, Orientacion, Project, ZoomSegment,
 } from '@vitrina/core';
 import type {
   RecordingData, ExportProgressMsg, ExportPresetInfo, GrabacionReciente, Look, ResultadoExport,
@@ -17,6 +17,7 @@ import { Preview, makeTrack } from './preview.ts';
 import { Timeline } from './Timeline.tsx';
 import { Recientes } from './Recientes.tsx';
 import { Bienvenida } from './Bienvenida.tsx';
+import { ProveedorIdioma, useT } from './idioma.tsx';
 import { AvisoActualizacion } from './Actualizacion.tsx';
 import { instalarReflejo } from './reflejo.ts';
 import {
@@ -57,6 +58,35 @@ const FONDOS: { nombre: string; bg: Background; css: string }[] = [
 ];
 
 export function App() {
+  // El idioma vive AQUI, por encima del proveedor: dentro de `Contenido` no se
+  // podria envolver a si mismo, y el proveedor tiene que estar por encima de
+  // todo lo que se pinta —incluidas la cuenta atras y la grabacion—.
+  const [idioma, setIdioma] = useState<Idioma>('es');
+  useEffect(() => {
+    void window.vitrina.ajustes().then((a) => setIdioma(a.idioma));
+  }, []);
+
+  const cambiarIdioma = useCallback((otro: Idioma) => {
+    setIdioma(otro);
+    void window.vitrina.guardarAjustes({ idioma: otro });
+  }, []);
+
+  return (
+    <ProveedorIdioma idioma={idioma}>
+      <Contenido idioma={idioma} onIdioma={cambiarIdioma} />
+    </ProveedorIdioma>
+  );
+}
+
+/**
+ * El contenido de la app, ya con idioma.
+ *
+ * `App` solo existe para envolverlo: el proveedor tiene que estar POR ENCIMA de
+ * todo lo que pinta, incluidas la cuenta atras y la grabacion, y desde dentro
+ * del propio componente no se puede envolver a uno mismo.
+ */
+function Contenido({ idioma, onIdioma }: { idioma: Idioma; onIdioma: (i: Idioma) => void }) {
+  const t = useT();
   const [fase, setFase] = useState<Fase>('inicio');
   const [bienvenida, setBienvenida] = useState(false);
   const [presets, setPresets] = useState<CapturePreset[]>([]);
@@ -404,7 +434,9 @@ export function App() {
       <div className="app">
         <div className="centro">
           <div className="cuenta">{cuenta}</div>
-          <p style={{ color: 'var(--dim)' }}>Se abrirá una ventana con tu app. Haz la demo ahí.</p>
+          <p style={{ color: 'var(--dim)' }}>
+            {t('Se abrirá una ventana con tu app. Haz la demo ahí.')}
+          </p>
         </div>
       </div>
     );
@@ -417,16 +449,16 @@ export function App() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <span className="pulso" />
             <span style={{ fontSize: 17, fontWeight: 600 }}>
-              {cabeza ? 'Vitrina está repitiendo la parte buena' : 'Grabando'}
+              {cabeza ? t('Vitrina está repitiendo la parte buena') : t('Grabando')}
             </span>
           </div>
           <div className="stats">
             <span><b>{(stats.elapsedMs / 1000).toFixed(1)}</b> s</span>
-            <span><b>{stats.frames}</b> frames</span>
+            <span><b>{stats.frames}</b> {t('frames')}</span>
             <span><b>{(stats.frames / Math.max(0.1, stats.elapsedMs / 1000)).toFixed(0)}</b> fps</span>
           </div>
           {mic.current ? (
-            <div className="medidor" title="Nivel del microfono">
+            <div className="medidor" title={t('Nivel del micrófono')}>
               <div style={{ transform: `scaleX(${nivel.toFixed(3)})` }} />
             </div>
           ) : null}
@@ -435,35 +467,39 @@ export function App() {
           {error && <p className="error" style={{ maxWidth: 460 }}>{error}</p>}
           {cabeza && (
             <p className="sutil" style={{ maxWidth: 460, textAlign: 'center' }}>
-              No toques nada: cuando llegue al punto que elegiste te avisará y
-              seguirás tú.
+              {t('No toques nada: cuando llegue al punto que elegiste te avisará '
+                + 'y seguirás tú.')}
             </p>
           )}
           {pausado && (
             <p className="sutil" style={{ color: 'var(--acc)' }}>
-              En pausa · el trozo pausado no saldrá en el vídeo
+              {t('En pausa · el trozo pausado no saldrá en el vídeo')}
             </p>
           )}
           <div className="fila" style={{ gap: 10 }}>
             <button onClick={() => void window.vitrina.pausarGrabacion()}>
-              {pausado ? 'Reanudar' : 'Pausar'}
+              {pausado ? t('Reanudar') : t('Pausar')}
             </button>
             <button onClick={() => void window.vitrina.marcarMomento()} disabled={pausado}
-                    title="Deja una chincheta en este instante para encontrarlo luego">
-              Señalar momento
+                    title={t('Deja una chincheta en este instante para encontrarlo luego')}>
+              {t('Señalar momento')}
             </button>
-            <button className="primario" onClick={() => void parar()}>Parar y editar</button>
+            <button className="primario" onClick={() => void parar()}>
+              {t('Parar y editar')}
+            </button>
           </div>
           {/* Los atajos se dicen aqui porque su gracia es usarlos con esta
               ventana detras: leerlos en el README no sirve de nada. */}
           <p className="sutil" style={{ maxWidth: 460, textAlign: 'center' }}>
-            Sin volver aquí: <b>Ctrl+Mayús+S</b> para parar, <b>Ctrl+Mayús+P</b>{' '}
-            para pausar y <b>Ctrl+Mayús+M</b> para señalar un momento.
+            {t('Sin volver aquí:')} <b>Ctrl+Mayús+S</b> {t('para parar,')}{' '}
+            <b>Ctrl+Mayús+P</b> {t('para pausar y')} <b>Ctrl+Mayús+M</b>{' '}
+            {t('para señalar un momento.')}
           </p>
           {atajosFallidos.length > 0 && (
             <p className="sutil" style={{ maxWidth: 460, textAlign: 'center' }}>
-              Estos no los concedió el sistema, seguramente porque otra app los
-              usa: <b>{atajosFallidos.join(', ')}</b>. Los demás sí funcionan.
+              {t('Estos no los concedió el sistema, seguramente porque otra app '
+                + 'los usa:')} <b>{atajosFallidos.join(', ')}</b>.{' '}
+              {t('Los demás sí funcionan.')}
             </p>
           )}
         </div>
@@ -480,14 +516,20 @@ export function App() {
       <div className="inicio">
         <div className="marca">
           <h1>Vitrina</h1>
-          <span>demos de apps web con zoom automático</span>
-          <button className="tema" title="Cambiar el aspecto de la app"
+          <span>{t('demos de apps web con zoom automático')}</span>
+          <button className="tema" title={t('Cambiar el aspecto de la app')}
                   onClick={() => {
                     const otro = tema === 'oscuro' ? 'claro' : 'oscuro';
                     setTema(otro);
                     void window.vitrina.guardarAjustes({ tema: otro });
                   }}>
-            {tema === 'oscuro' ? 'Claro' : 'Oscuro'}
+            {tema === 'oscuro' ? t('Claro') : t('Oscuro')}
+          </button>
+          {/* El idioma, al lado del aspecto: son las dos cosas que cambian como
+              se ve la app entera y no tienen que ver con la grabacion. */}
+          <button className="tema idioma" title={t('Cambiar el idioma de la app')}
+                  onClick={() => onIdioma(idioma === 'es' ? 'en' : 'es')}>
+            {idioma === 'es' ? 'English' : 'Español'}
           </button>
         </div>
 
@@ -495,10 +537,10 @@ export function App() {
             DENTRO de la tarjeta. Antes vivia al final de la pagina, detras de
             todo lo demas y fuera de la ventana en un portatil. */}
         <section className="tarjeta cristal">
-          <h2 className="titulo-panel"><IconoGrabacion /> Nueva grabación</h2>
+          <h2 className="titulo-panel"><IconoGrabacion /> {t('Nueva grabación')}</h2>
 
           <div className="campo">
-            <label htmlFor="url">Dirección de tu app</label>
+            <label htmlFor="url">{t('Dirección de tu app')}</label>
             <input id="url" type="text" value={url} spellCheck={false}
                    onChange={(e) => setUrl(e.target.value)}
                    onKeyDown={(e) => { if (e.key === 'Enter') void grabar(); }}
@@ -506,31 +548,32 @@ export function App() {
           </div>
 
           <div className="campo">
-            <label>Formato</label>
+            <label>{t('Formato')}</label>
             <div className="fila">
               <button className={orientacion === 'horizontal' ? 'on' : ''}
                       onClick={() => setOrientacion('horizontal')}>
-                Horizontal <small>16:9</small>
+                {t('Horizontal')} <small>16:9</small>
               </button>
               <button className={orientacion === 'vertical' ? 'on' : ''}
                       onClick={() => setOrientacion('vertical')}>
-                Vertical <small>9:16 · TikTok, Reels</small>
+                {t('Vertical')} <small>9:16 · TikTok, Reels</small>
               </button>
             </div>
             {orientacion === 'vertical' && (
               <p className="nota-formato">
-                La ventana se abre a <b>{preset?.css?.w ?? 430} px</b> como un
-                móvil de verdad, así que tu web enseña su diseño móvil.{' '}
+                {t('La ventana se abre a')} <b>{preset?.css?.w ?? 430} px</b>{' '}
+                {t('como un móvil de verdad, así que tu web enseña su diseño móvil.')}{' '}
                 <button className="mas" onClick={() => setDetalleVertical((v) => !v)}>
-                  {detalleVertical ? 'menos' : 'más'}
+                  {detalleVertical ? t('menos') : t('más')}
                 </button>
                 {detalleVertical && (
                   <>
                     <br />
-                    Se captura a escala ×{preset?.dsf ?? 2}: sale nítida pese a la
-                    pantalla pequeña. Los fps de abajo están medidos en
-                    horizontal; en vertical pueden ser menores. Para medirlo en tu
-                    equipo: <code>node tools/calibrar.ts --vertical</code>.
+                    {t('Se captura a escala ×{escala}: sale nítida pese a la '
+                      + 'pantalla pequeña. Los fps de abajo están medidos en '
+                      + 'horizontal; en vertical pueden ser menores. Para medirlo '
+                      + 'en tu equipo:', { escala: preset?.dsf ?? 2 })}{' '}
+                    <code>node tools/calibrar.ts --vertical</code>.
                   </>
                 )}
               </p>
@@ -538,15 +581,18 @@ export function App() {
           </div>
 
           <div className="campo">
-            <label>Calidad de captura</label>
+            <label>{t('Calidad de captura')}</label>
             <div className="presets">
               {presets.map((p) => {
-                const t = paraOrientacion(p, orientacion);
+                // `po` y no `t`: `t` es la funcion de traduccion de todo el
+                // componente, y llamar igual a la variable local la taparia
+                // justo dentro del bucle.
+                const po = paraOrientacion(p, orientacion);
                 return (
                   <button key={p.name} className={`preset${p.name === presetName ? ' on' : ''}`}
                           onClick={() => setPresetName(p.name)}>
-                    <b>{t.capture.w}×{t.capture.h}</b>
-                    <small>tu web a {t.css?.w ?? t.capture.w} px</small>
+                    <b>{po.capture.w}×{po.capture.h}</b>
+                    <small>{t('tu web a {px} px', { px: po.css?.w ?? po.capture.w })}</small>
                     <small>~{p.measuredFps} fps</small>
                   </button>
                 );
@@ -556,8 +602,10 @@ export function App() {
 
           {presupuestoInicial && (
             <div className={`nota-calidad${presupuestoInicial.maxSharpZoom < 1.15 ? ' aviso' : ''}`}>
-              <span>Exportando a {salidaInicial?.w}×{salidaInicial?.h}:</span>
-              <b>{describeBudget(presupuestoInicial)}</b>
+              <span>
+                {t('Exportando a {w}×{h}:', { w: salidaInicial?.w ?? 0, h: salidaInicial?.h ?? 0 })}
+              </span>
+              <b>{describeBudget(presupuestoInicial, t)}</b>
             </div>
           )}
 
@@ -566,48 +614,50 @@ export function App() {
               nadie recordara que dejo un selector tapando media pantalla. */}
           <details className="avanzado">
             <summary>
-              Opciones avanzadas
+              {t('Opciones avanzadas')}
               {selectoresTapados > 0 && (
                 <span className="pastilla">
-                  {selectoresTapados} {selectoresTapados === 1 ? 'selector' : 'selectores'} tapados
+                  {t.plural(selectoresTapados, '{n} selector tapado', '{n} selectores tapados')}
                 </span>
               )}
             </summary>
             <div className="campo">
-              <label htmlFor="tapar">Tapar datos sensibles</label>
+              <label htmlFor="tapar">{t('Tapar datos sensibles')}</label>
               <input id="tapar" type="text" value={tapar} spellCheck={false}
                      onChange={(e) => setTapar(e.target.value)}
                      placeholder="#saldo, .email, [data-privado]" />
               <p className="nota-formato">
-                Selectores CSS de lo que no debe salir. Se difuminan{' '}
-                <b>mientras grabas</b>, así que el dato nunca llega al vídeo ni
-                queda en la carpeta. Se difuminan en vez de ocultarse para no
-                mover nada de sitio.
+                {t('Selectores CSS de lo que no debe salir. Se difuminan')}{' '}
+                <b>{t('mientras grabas')}</b>
+                {t(', así que el dato nunca llega al vídeo ni queda en la carpeta. '
+                  + 'Se difuminan en vez de ocultarse para no mover nada de sitio.')}
               </p>
             </div>
           </details>
 
-          <button className="primario grabar" onClick={() => void grabar()}>Grabar</button>
+          <button className="primario grabar" onClick={() => void grabar()}>
+            {t('Grabar')}
+          </button>
         </section>
 
         {/* Columna derecha: de donde sale el material, y lo ya grabado. */}
         <div className="lado">
           <section className="tarjeta cristal">
-            <h2 className="titulo-panel"><IconoSonido /> Micrófono y cámara</h2>
+            <h2 className="titulo-panel"><IconoSonido /> {t('Micrófono y cámara')}</h2>
 
             <div className="campo">
-              <label>Narración</label>
+              <label>{t('Narración')}</label>
               <div className="fila">
                 <button className={micOn ? 'on' : ''} onClick={() => setMicOn(true)}>
-                  Con micrófono
+                  {t('Con micrófono')}
                 </button>
                 <button className={!micOn ? 'on' : ''} onClick={() => setMicOn(false)}>
-                  Sin audio
+                  {t('Sin audio')}
                 </button>
               </div>
               {micOn && micDevices.length > 1 && (
                 <select value={micDeviceId} onChange={(e) => setMicDeviceId(e.target.value)}>
-                  <option value="">Micrófono predeterminado</option>
+                  <option value="">{t('Micrófono predeterminado')}</option>
                   {micDevices.map((d) => (
                     <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
                   ))}
@@ -616,20 +666,20 @@ export function App() {
             </div>
 
             <div className="campo">
-              <label>Cámara</label>
+              <label>{t('Cámara')}</label>
               <div className="fila">
                 <button className={camOn ? 'on' : ''} onClick={() => setCamOn(true)}>
-                  Con cámara
+                  {t('Con cámara')}
                 </button>
                 <button className={!camOn ? 'on' : ''} onClick={() => setCamOn(false)}>
-                  Sin cámara
+                  {t('Sin cámara')}
                 </button>
               </div>
               {camOn && (
                 <>
                   {camDevices.length > 1 && (
                     <select value={camDeviceId} onChange={(e) => setCamDeviceId(e.target.value)}>
-                      <option value="">Cámara predeterminada</option>
+                      <option value="">{t('Cámara predeterminada')}</option>
                       {camDevices.map((d) => (
                         <option key={d.deviceId} value={d.deviceId}>{d.label}</option>
                       ))}
@@ -641,8 +691,8 @@ export function App() {
                     <video ref={videoPreview} className="camara-previa"
                            autoPlay muted playsInline />
                     <p className="nota-formato">
-                      Se graba aparte del vídeo: luego puedes moverla, cambiar su
-                      tamaño o quitarla sin volver a grabar.
+                      {t('Se graba aparte del vídeo: luego puedes moverla, '
+                        + 'cambiar su tamaño o quitarla sin volver a grabar.')}
                     </p>
                   </div>
                 </>
@@ -651,7 +701,7 @@ export function App() {
           </section>
 
           <section className="tarjeta cristal">
-            <h2 className="titulo-panel"><IconoCarpeta /> Recientes</h2>
+            <h2 className="titulo-panel"><IconoCarpeta /> {t('Recientes')}</h2>
             {recientes.length > 0 ? (
               <Recientes
                 items={recientes}
@@ -660,8 +710,9 @@ export function App() {
               />
             ) : (
               <p className="nota-formato">
-                Aquí aparecerán tus grabaciones, con su imagen. También puedes
-                arrastrar una carpeta <code>.vitrina</code> hasta esta ventana.
+                {t('Aquí aparecerán tus grabaciones, con su imagen. También '
+                  + 'puedes arrastrar una carpeta')} <code>.vitrina</code>{' '}
+                {t('hasta esta ventana.')}
               </p>
             )}
           </section>
@@ -672,7 +723,7 @@ export function App() {
         {error && (
           <div className="aviso-flotante cristal flota" role="alert" onClick={() => setError('')}>
             {error}
-            <span>Toca para cerrar</span>
+            <span>{t('Toca para cerrar')}</span>
           </div>
         )}
 
@@ -693,6 +744,7 @@ function Editor(
     onRegrabar: (dir: string, desdeMs: number, conMicro: boolean) => void;
   },
 ) {
+  const t = useT();
   /**
    * Lo que se deshace es el estado de edicion ENTERO, no solo el proyecto.
    *
@@ -1398,7 +1450,7 @@ function Editor(
       <div className="fila-alta">
       <aside className="biblioteca cristal">
         <div className="grupo">
-          <h2 className="titulo-panel"><IconoGrabacion /> Grabación</h2>
+          <h2 className="titulo-panel"><IconoGrabacion /> {t('Grabación')}</h2>
           <p className="sutil">
             {datos.manifest.capture?.w ?? datos.manifest.viewport.w}×
             {datos.manifest.capture?.h ?? datos.manifest.viewport.h}
@@ -1415,7 +1467,7 @@ function Editor(
         </div>
 
         <div className="grupo">
-          <h3>Fondo</h3>
+          <h3>{t('Fondo')}</h3>
           <div className="muestras">
             {FONDOS.map((f) => (
               <button key={f.nombre} title={f.nombre}
@@ -1426,11 +1478,11 @@ function Editor(
           </div>
           <button onClick={() => void elegirImagen()}
                   className={project.background.kind === 'image' ? 'on' : ''}>
-            Imagen de fondo...
+            {t('Imagen de fondo...')}
           </button>
           {project.background.kind === 'image' && (
             <div className="deslizador">
-              <label>Desenfoque <b>{project.background.blur}px</b></label>
+              <label>{t('Desenfoque')} <b>{project.background.blur}px</b></label>
               <input type="range" min={0} max={40} value={project.background.blur}
                      onChange={(e) => setProject((p) => ({
                        ...p,
@@ -1442,75 +1494,75 @@ function Editor(
           )}
         </div>
         <div className="grupo">
-          <h3>Repetir</h3>
+          <h3>{t('Repetir')}</h3>
           <p className="sutil">
-            Vuelve a hacer esta misma demo sola, conservando los zooms y el
-            aspecto. Sirve para regrabarla con más resolución, o después de
-            arreglar algo que salía en el vídeo.
+            {t('Vuelve a hacer esta misma demo sola, conservando los zooms y '
+              + 'el aspecto. Sirve para regrabarla con más resolución, o después '
+              + 'de arreglar algo que salía en el vídeo.')}
           </p>
           <select value={calidadRepeticion} disabled={repitiendo}
                   onChange={(e) => setCalidadRepeticion(e.target.value)}>
-            <option value="">Misma calidad</option>
+            <option value="">{t('Misma calidad')}</option>
             {presetsCaptura.map((p) => (
               <option key={p.name} value={p.name}>{p.name}</option>
             ))}
           </select>
           <button onClick={() => void repetir()} disabled={repitiendo}>
-            {repitiendo ? 'Repitiendo...' : 'Repetir esta grabación'}
+            {repitiendo ? t('Repitiendo...') : t('Repetir esta grabación')}
           </button>
           {/* Regrabar desde la aguja: la mitad buena se conserva y solo se
               vuelve a hacer lo que salio mal. */}
           <button onClick={() => onRegrabar(datos.dir, tMs, !!pista)}
                   disabled={repitiendo}
-                  title="Vitrina repite sola la demo hasta aquí y después sigues tú">
-            Regrabar desde {(tMs / 1000).toFixed(1)}s
+                  title={t('Vitrina repite sola la demo hasta aquí y después sigues tú')}>
+            {t('Regrabar desde {seg}s', { seg: (tMs / 1000).toFixed(1) })}
           </button>
 
           <p className="sutil">
-            Lo que escribiste no se repite: se guarda que pulsaste una tecla,
-            nunca cuál.
-            {datos.manifest.tapado && ' Lo que tapaste se vuelve a tapar.'}
-            {pistaCam && ' La cámara no se repite: se repite la demo, no quien la cuenta.'}
+            {t('Lo que escribiste no se repite: se guarda que pulsaste una '
+              + 'tecla, nunca cuál.')}
+            {datos.manifest.tapado && ' ' + t('Lo que tapaste se vuelve a tapar.')}
+            {pistaCam && ' ' + t('La cámara no se repite: se repite la demo, no quien la cuenta.')}
           </p>
           {errorRepeticion && <p className="error">{errorRepeticion}</p>}
         </div>
 
         <div className="grupo">
-          <h3>Looks</h3>
+          <h3>{t('Looks')}</h3>
           {looks.length === 0 && (
             <p className="sutil">
-              Guarda el fondo, el marco y la marca de agua con un nombre para
-              usarlos en la siguiente demo.
+              {t('Guarda el fondo, el marco y la marca de agua con un nombre '
+                + 'para usarlos en la siguiente demo.')}
             </p>
           )}
           {looks.map((l) => (
             <div key={l.nombre} className="look">
-              <button onClick={() => usarLook(l)} title="Aplicar este look a la grabación abierta">
+              <button onClick={() => usarLook(l)} title={t('Aplicar este look a la grabación abierta')}>
                 {l.nombre}
               </button>
               <button className={`fijar${lookPorDefecto === l.nombre ? ' on' : ''}`}
-                      title="Usar este look en las grabaciones nuevas"
+                      title={t('Usar este look en las grabaciones nuevas')}
                       onClick={() => void marcarPorDefecto(
                         lookPorDefecto === l.nombre ? null : l.nombre)}>
                 ★
               </button>
             </div>
           ))}
-          <button onClick={() => void guardarLook()}>Guardar este look</button>
+          <button onClick={() => void guardarLook()}>{t('Guardar este look')}</button>
         </div>
 
         <div className="grupo">
-          <h3>Marca de agua</h3>
+          <h3>{t('Marca de agua')}</h3>
           <button onClick={() => void elegirMarca()}
                   className={project.watermark ? 'on' : ''}>
-            {project.watermark ? 'Cambiar imagen...' : 'Anadir imagen...'}
+            {project.watermark ? t('Cambiar imagen...') : t('Añadir imagen...')}
           </button>
           {project.watermark && (
             <>
               <div className="fila">
                 {(['no', 'ne', 'so', 'se'] as const).map((e) => (
                   <button key={e} className={project.watermark!.esquina === e ? 'on' : ''}
-                          title="Esquina"
+                          title={t('Esquina')}
                           onClick={() => setProject((p) => ({
                             ...p,
                             watermark: p.watermark ? { ...p.watermark, esquina: e } : null,
@@ -1520,7 +1572,7 @@ function Editor(
                 ))}
               </div>
               <div className="deslizador">
-                <label>Opacidad <b>{Math.round(project.watermark.opacity * 100)}%</b></label>
+                <label>{t('Opacidad')} <b>{Math.round(project.watermark.opacity * 100)}%</b></label>
                 <input type="range" min={10} max={100}
                        value={Math.round(project.watermark.opacity * 100)}
                        onChange={(e) => setProject((p) => ({
@@ -1540,7 +1592,7 @@ function Editor(
                        }))} />
               </div>
               <button onClick={() => setProject((p) => ({ ...p, watermark: null }))}>
-                Quitar marca
+                {t('Quitar marca')}
               </button>
             </>
           )}
@@ -1554,7 +1606,7 @@ function Editor(
             width={project.export.width}
             height={project.export.height}
             className={puedeEncuadrar ? 'encuadrable' : ''}
-            title={puedeEncuadrar ? 'Arrastra para reencuadrar este tramo' : ''}
+            title={puedeEncuadrar ? t('Arrastra para reencuadrar este tramo') : ''}
             onPointerDown={encuadrePointerDown}
             onPointerMove={encuadrePointerMove}
             onPointerUp={encuadreSoltar}
@@ -1567,19 +1619,20 @@ function Editor(
               porque un dibujo solo se adivina. */}
           <div className="transporte cristal flota">
             <button className="redondo primario"
-                    title={reproduciendo ? 'Pausar (Espacio)' : 'Reproducir (Espacio)'}
-                    aria-label={reproduciendo ? 'Pausar' : 'Reproducir'}
+                    title={reproduciendo ? t('Pausar (Espacio)') : t('Reproducir (Espacio)')}
+                    aria-label={reproduciendo ? t('Pausar') : t('Reproducir')}
                     onClick={() => setReproduciendo((r) => !r)}>
               {reproduciendo ? <IconoPausa /> : <IconoReproducir />}
             </button>
-            <button className="redondo" title="Volver al principio (Inicio)"
-                    aria-label="Volver al principio"
+            <button className="redondo" title={t('Volver al principio (Inicio)')}
+                    aria-label={t('Volver al principio')}
                     onClick={() => { setReproduciendo(false); setTMs(0); }}>
               <IconoInicio />
             </button>
             {audioUrl && (
-              <button className="redondo" title={mudo ? 'Oír la narración' : 'Silenciar la narración'}
-                      aria-label={mudo ? 'Oir la narracion' : 'Silenciar la narracion'}
+              <button className="redondo"
+                      title={mudo ? t('Oír la narración') : t('Silenciar la narración')}
+                      aria-label={mudo ? t('Oír la narración') : t('Silenciar la narración')}
                       onClick={() => setMudo((m) => !m)}>
                 {mudo ? <IconoSilencio /> : <IconoSonido />}
               </button>
@@ -1593,17 +1646,17 @@ function Editor(
           <div className={`atajos${atajos === 'cerrando' ? ' saliendo' : ''}`}
                onClick={cerrarAtajos}>
             <div className="hoja cristal modal" onClick={(e) => e.stopPropagation()}>
-              <h3>Atajos</h3>
+              <h3>{t('Atajos')}</h3>
               <dl>
-                <dt>Espacio</dt><dd>reproducir o parar</dd>
-                <dt>← →</dt><dd>un fotograma; con Mayús, un segundo</dd>
-                <dt>Inicio / Fin</dt><dd>al principio o al final</dd>
-                <dt>Supr</dt><dd>borrar el zoom seleccionado</dd>
-                <dt>Ctrl+Z</dt><dd>deshacer</dd>
-                <dt>Ctrl+Mayus+Z</dt><dd>rehacer</dd>
-                <dt>?</dt><dd>abrir y cerrar esta hoja</dd>
+                <dt>{t('Espacio')}</dt><dd>{t('reproducir o parar')}</dd>
+                <dt>← →</dt><dd>{t('un fotograma; con Mayús, un segundo')}</dd>
+                <dt>{t('Inicio / Fin')}</dt><dd>{t('al principio o al final')}</dd>
+                <dt>{t('Supr')}</dt><dd>{t('borrar el zoom seleccionado')}</dd>
+                <dt>Ctrl+Z</dt><dd>{t('deshacer')}</dd>
+                <dt>Ctrl+Mayús+Z</dt><dd>{t('rehacer')}</dd>
+                <dt>?</dt><dd>{t('abrir y cerrar esta hoja')}</dd>
               </dl>
-              <button onClick={cerrarAtajos}>Cerrar</button>
+              <button onClick={cerrarAtajos}>{t('Cerrar')}</button>
             </div>
           </div>
         )}
@@ -1620,21 +1673,21 @@ function Editor(
       </div>
 
       <aside className="panel cristal">
-        <h2 className="titulo-panel"><IconoAjustes /> Configuración</h2>
+        <h2 className="titulo-panel"><IconoAjustes /> {t('Configuración')}</h2>
         <div className="grupo">
-          <h3>Marco</h3>
+          <h3>{t('Marco')}</h3>
           <div className="deslizador">
-            <label>Tamaño <b>{Math.round(project.frame.fill * 100)}%</b></label>
+            <label>{t('Tamaño')} <b>{Math.round(project.frame.fill * 100)}%</b></label>
             <input type="range" min={40} max={100} value={project.frame.fill * 100}
                    onChange={(e) => setMarco({ fill: Number(e.target.value) / 100 })} />
           </div>
           <div className="deslizador">
-            <label>Esquinas <b>{project.frame.radius}px</b></label>
+            <label>{t('Esquinas')} <b>{project.frame.radius}px</b></label>
             <input type="range" min={0} max={40} value={project.frame.radius}
                    onChange={(e) => setMarco({ radius: Number(e.target.value) })} />
           </div>
           <div className="deslizador">
-            <label>Sombra <b>{project.frame.shadow}</b></label>
+            <label>{t('Sombra')} <b>{project.frame.shadow}</b></label>
             <input type="range" min={0} max={120} value={project.frame.shadow}
                    onChange={(e) => setMarco({ shadow: Number(e.target.value) })} />
           </div>
@@ -1642,15 +1695,15 @@ function Editor(
             {(['none', 'macos', 'windows', 'phone'] as const).map((c) => (
               <button key={c} className={project.frame.chrome === c ? 'on' : ''}
                       onClick={() => setMarco({ chrome: c })}>
-                {c === 'none' ? 'Sin marco' : c === 'macos' ? 'macOS'
-                  : c === 'windows' ? 'Windows' : 'Móvil'}
+                {c === 'none' ? t('Sin marco') : c === 'macos' ? 'macOS'
+                  : c === 'windows' ? 'Windows' : t('Móvil')}
               </button>
             ))}
           </div>
         </div>
 
         <div className="grupo">
-          <h3>Movimiento del zoom</h3>
+          <h3>{t('Movimiento del zoom')}</h3>
           <div className="fila">
             {(Object.keys(CAMERA_PRESETS) as CameraPresetName[]).map((c) => (
               <button key={c} className={camara === c ? 'on' : ''}
@@ -1658,27 +1711,30 @@ function Editor(
             ))}
           </div>
           <div className={`nota-calidad${presupuesto.maxSharpZoom < 1.15 ? ' aviso' : ''}`}>
-            <b>{describeBudget(presupuesto)}</b>
+            <b>{describeBudget(presupuesto, t)}</b>
           </div>
           {recortados > 0 && (
             <p className="aviso">
-              {recortados} {recortados === 1 ? 'tramo supera' : 'tramos superan'} el margen y se
-              muestran recortados. Afloja el marco para recuperar su ampliacion.
+              {t.plural(recortados,
+                '{n} tramo supera el margen y se muestra recortado.',
+                '{n} tramos superan el margen y se muestran recortados.')}{' '}
+              {t('Afloja el marco para recuperar su ampliación.')}
             </p>
           )}
         </div>
 
         <div className="grupo">
-          <h3>Tramos de zoom · {zooms.length}</h3>
+          <h3>{t('Tramos de zoom')} · {zooms.length}</h3>
 
           {sel && seleccion !== null ? (
             <>
               <p className="sutil">
-                Tramo {seleccion + 1}{sel.label ? ` · ${sel.label}` : ''} ·{' '}
+                {t('Tramo {n}', { n: seleccion + 1 })}
+                {sel.label ? ` · ${sel.label}` : ''} ·{' '}
                 {((sel.endMs - sel.startMs) / 1000).toFixed(1)}s
               </p>
               <div className="deslizador">
-                <label>Ampliación <b>{sel.scale.toFixed(2)}×</b></label>
+                <label>{t('Ampliación')} <b>{sel.scale.toFixed(2)}×</b></label>
                 <input type="range" min={100} max={Math.max(105, Math.round(presupuesto.maxSharpZoom * 100))}
                        value={Math.round(sel.scale * 100)}
                        onChange={(e) => setZooms((z) =>
@@ -1686,69 +1742,71 @@ function Editor(
               </div>
               <p className="sutil">
                 {puedeEncuadrar
-                  ? 'Arrastra sobre la imagen para mover el encuadre.'
-                  : 'Lleva la aguja dentro del tramo para poder reencuadrarlo.'}
+                  ? t('Arrastra sobre la imagen para mover el encuadre.')
+                  : t('Lleva la aguja dentro del tramo para poder reencuadrarlo.')}
               </p>
-              <button className="peligro" onClick={borrarSeleccion}>Borrar el zoom seleccionado</button>
+              <button className="peligro" onClick={borrarSeleccion}>
+                {t('Borrar el zoom seleccionado')}
+              </button>
             </>
           ) : (
             <p className="sutil">
-              Pincha un tramo para editarlo. Arrastra su cuerpo para moverlo y sus
-              bordes para alargarlo.
+              {t('Pincha un tramo para editarlo. Arrastra su cuerpo para '
+                + 'moverlo y sus bordes para alargarlo.')}
             </p>
           )}
 
           {editado && (
-            <button onClick={() => replanificar(camara)}>Volver al zoom automático</button>
+            <button onClick={() => replanificar(camara)}>{t('Volver al zoom automático')}</button>
           )}
         </div>
 
         <div className="grupo">
-          <h3>Recorte</h3>
+          <h3>{t('Recorte')}</h3>
           <p className="sutil">
             {recorteActivo
               ? `${(project.trimStartMs / 1000).toFixed(1)}s – ${((project.trimEndMs ?? duracion) / 1000).toFixed(1)}s`
-              : 'Arrastra las asas de los extremos para quitar el principio o el final'}
+              : t('Arrastra las asas de los extremos para quitar el principio o el final')}
           </p>
           {recorteActivo && (
             <button onClick={() => setProject((p) => ({ ...p, ...clampTrim(0, null, duracion) }))}>
-              Quitar el recorte
+              {t('Quitar el recorte')}
             </button>
           )}
         </div>
 
         <div className="grupo">
-          <h3>Audio</h3>
+          <h3>{t('Audio')}</h3>
           <p className="sutil">
             {pista
-              ? 'Narración grabada · se incluye en mp4, webm y mov (el gif no lleva sonido)'
-              : 'Esta grabación no tiene narración'}
+              ? t('Narración grabada · se incluye en mp4, webm y mov (el gif no lleva sonido)')
+              : t('Esta grabación no tiene narración')}
           </p>
 
           {pista && (
             <>
               <button onClick={() => void cortarSilencios()} disabled={buscando}>
-                {buscando ? 'Buscando silencios...' : 'Quitar los silencios'}
+                {buscando ? t('Buscando silencios...') : t('Quitar los silencios')}
               </button>
               {cortes.length > 0 && (
                 <>
                   <p className="sutil">
-                    {cortes.length} {cortes.length === 1 ? 'silencio' : 'silencios'} ·{' '}
+                    {t.plural(cortes.length, '{n} silencio', '{n} silencios')} ·{' '}
                     −{((duracion - mapa.outputDurationMs) / 1000).toFixed(1)}s
                   </p>
                   <button onClick={() => setProject((p) => ({ ...p, cuts: [] }))}>
-                    Volver a poner los silencios
+                    {t('Volver a poner los silencios')}
                   </button>
                 </>
               )}
-              {sinSilencios && <p className="sutil">No hay silencios que quitar.</p>}
+              {sinSilencios && <p className="sutil">{t('No hay silencios que quitar.')}</p>}
             </>
           )}
         </div>
 
         {pistaCam && (
           <div className="grupo">
-            <h3>Cámara web</h3>
+            <h3>{t('Cámara web')}</h3>
             {project.camara ? (
               <>
                 {/* Flechas y no texto: el inspector es estrecho y "Arriba
@@ -1756,10 +1814,14 @@ function Editor(
                     ponian lo mismo. El nombre entero va en el tooltip. */}
                 <div className="fila esquinas">
                   {([
-                    ['no', 'Arriba izq.', 'Arriba a la izquierda'],
-                    ['ne', 'Arriba der.', 'Arriba a la derecha'],
-                    ['so', 'Abajo izq.', 'Abajo a la izquierda'],
-                    ['se', 'Abajo der.', 'Abajo a la derecha'],
+                    // Traducidos AQUI y no al pintarlos: asi las frases estan
+                    // escritas literalmente en el codigo y el test que comprueba
+                    // el diccionario puede verlas. Con `t(titulo)` sobre una
+                    // variable, un escaneo estatico no encuentra nada.
+                    ['no', t('Arriba izq.'), t('Arriba a la izquierda')],
+                    ['ne', t('Arriba der.'), t('Arriba a la derecha')],
+                    ['so', t('Abajo izq.'), t('Abajo a la izquierda')],
+                    ['se', t('Abajo der.'), t('Abajo a la derecha')],
                   ] as const).map(([e, flecha, titulo]) => (
                     <button key={e} title={titulo}
                             className={project.camara?.esquina === e ? 'on' : ''}
@@ -1770,7 +1832,7 @@ function Editor(
                   ))}
                 </div>
                 <div className="deslizador">
-                  <label>Tamaño <b>{Math.round(project.camara.tamano * 100)}%</b></label>
+                  <label>{t('Tamaño')} <b>{Math.round(project.camara.tamano * 100)}%</b></label>
                   <input type="range" min={6} max={45} value={Math.round(project.camara.tamano * 100)}
                          onChange={(ev) => setProject((p) => (p.camara
                            ? { ...p, camara: { ...p.camara, tamano: Number(ev.target.value) / 100 } }
@@ -1780,32 +1842,32 @@ function Editor(
                   <button className={project.camara.forma === 'circulo' ? 'on' : ''}
                           onClick={() => setProject((p) => (p.camara
                             ? { ...p, camara: { ...p.camara, forma: 'circulo' } } : p))}>
-                    Circulo
+                    {t('Círculo')}
                   </button>
                   <button className={project.camara.forma === 'redondeada' ? 'on' : ''}
                           onClick={() => setProject((p) => (p.camara
                             ? { ...p, camara: { ...p.camara, forma: 'redondeada' } } : p))}>
-                    Redondeada
+                    {t('Redondeada')}
                   </button>
                 </div>
                 <button className={project.camara.espejo ? 'on' : ''}
                         onClick={() => setProject((p) => (p.camara
                           ? { ...p, camara: { ...p.camara, espejo: !p.camara.espejo } } : p))}>
-                  Espejo
+                  {t('Espejo')}
                 </button>
                 <p className="sutil">
-                  Con espejo te ves como en un espejo, que es a lo que estás
-                  acostumbrado. Sin espejo, el texto de tu camiseta se lee al
-                  derecho: es lo que espera quien mire el vídeo.
+                  {t('Con espejo te ves como en un espejo, que es a lo que '
+                    + 'estás acostumbrado. Sin espejo, el texto de tu camiseta se '
+                    + 'lee al derecho: es lo que espera quien mire el vídeo.')}
                 </p>
                 <button className="peligro"
                         onClick={() => setProject((p) => ({ ...p, camara: null }))}>
-                  Quitar la cámara del vídeo
+                  {t('Quitar la cámara del vídeo')}
                 </button>
               </>
             ) : (
               <>
-                <p className="sutil">Grabaste con cámara, pero ahora mismo no se ve en el vídeo.</p>
+                <p className="sutil">{t('Grabaste con cámara, pero ahora mismo no se ve en el vídeo.')}</p>
                 <button onClick={() => setProject((p) => ({
                   ...p,
                   camara: {
@@ -1813,7 +1875,7 @@ function Editor(
                     espejo: false, borde: 3, sombra: 24,
                   },
                 }))}>
-                  Poner la cámara en el vídeo
+                  {t('Poner la cámara en el vídeo')}
                 </button>
               </>
             )}
@@ -1821,28 +1883,28 @@ function Editor(
         )}
 
         <div className="grupo">
-          <h3>Doblar la voz</h3>
+          <h3>{t('Doblar la voz')}</h3>
           <p className="sutil">
-            Graba tu voz viendo el vídeo ya montado, en vez de narrar mientras
-            operas. La narración original se silencia mientras doblas.
+            {t('Graba tu voz viendo el vídeo ya montado, en vez de narrar '
+              + 'mientras operas. La narración original se silencia mientras doblas.')}
           </p>
           <button className={doblando ? 'peligro' : ''}
                   onClick={() => void (doblando ? pararDoblaje() : doblar())}>
-            {doblando ? 'Parar y guardar la voz' : 'Grabar mi voz'}
+            {doblando ? t('Parar y guardar la voz') : t('Grabar mi voz')}
           </button>
           {doblando && (
             <p className="sutil" style={{ color: 'var(--acc)' }}>
-              Grabando tu voz · el vídeo se está reproduciendo
+              {t('Grabando tu voz · el vídeo se está reproduciendo')}
             </p>
           )}
           {project.voz && !doblando && (
             <>
-              <p className="sutil">Qué se oye en el vídeo:</p>
+              <p className="sutil">{t('Qué se oye en el vídeo:')}</p>
               <div className="fila">
                 {([
-                  ['micro', 'Narración'],
-                  ['voz', 'Tu voz'],
-                  ['ninguna', 'Nada'],
+                  ['micro', t('Narración')],
+                  ['voz', t('Tu voz')],
+                  ['ninguna', t('Nada')],
                 ] as const).map(([v, texto]) => (
                   <button key={v} className={pistaElegida === v ? 'on' : ''}
                           disabled={v === 'micro' && !pista}
@@ -1856,49 +1918,52 @@ function Editor(
         </div>
 
         <div className="grupo">
-          <h3>Cursor</h3>
+          <h3>{t('Cursor')}</h3>
           <div className="fila">
             <button className={project.frame.cursor !== 'none' ? 'on' : ''}
-                    onClick={() => setMarco({ cursor: 'arrow' })}>Visible</button>
+                    onClick={() => setMarco({ cursor: 'arrow' })}>{t('Visible')}</button>
             <button className={project.frame.cursor === 'none' ? 'on' : ''}
-                    onClick={() => setMarco({ cursor: 'none' })}>Oculto</button>
+                    onClick={() => setMarco({ cursor: 'none' })}>{t('Oculto')}</button>
           </div>
-          <h3>Anotaciones</h3>
+          <h3>{t('Anotaciones')}</h3>
           <div className="fila">
             <button className={project.frame.labels ? 'on' : ''}
-                    title="Escribe en el vídeo el nombre del botón que pulsas"
-                    onClick={() => setMarco({ labels: !project.frame.labels })}>Rótulos</button>
+                    title={t('Escribe en el vídeo el nombre del botón que pulsas')}
+                    onClick={() => setMarco({ labels: !project.frame.labels })}>
+              {t('Rótulos')}
+            </button>
             <button className={project.frame.keys ? 'on' : ''}
-                    title="Muestra las teclas que pulsas. Las letras salen como un punto, nunca la letra"
-                    onClick={() => setMarco({ keys: !project.frame.keys })}>Teclas</button>
+                    title={t('Muestra las teclas que pulsas. Las letras salen como un punto, nunca la letra')}
+                    onClick={() => setMarco({ keys: !project.frame.keys })}>
+              {t('Teclas')}
+            </button>
           </div>
           <p className="sutil">
-            Salen de lo que pasó al grabar, no de los píxeles. Lo que escribes
-            nunca se enseña: cada letra sale como un punto.
+            {t('Salen de lo que pasó al grabar, no de los píxeles. Lo que '
+              + 'escribes nunca se enseña: cada letra sale como un punto.')}
           </p>
         </div>
 
         <div className="grupo">
-          <h3>Ritmo</h3>
+          <h3>{t('Ritmo')}</h3>
           <p className="sutil">
-            Las esperas —una carga, un formulario que se rellena— siguen en el
-            vídeo, pero pasan más deprisa.
+            {t('Las esperas —una carga, un formulario que se rellena— siguen '
+              + 'en el vídeo, pero pasan más deprisa.')}
           </p>
           <button onClick={acelerarEsperas} disabled={propuesta.length === 0}>
             {propuesta.length === 0
-              ? 'No hay esperas que acelerar'
-              : `Acelerar ${propuesta.length} ${propuesta.length === 1 ? 'espera' : 'esperas'}`
+              ? t('No hay esperas que acelerar')
+              : t.plural(propuesta.length, 'Acelerar {n} espera', 'Acelerar {n} esperas')
                 + ` · −${(ahorroDe(propuesta) / 1000).toFixed(1)}s`}
           </button>
           {(project.speeds ?? []).length > 0 && (
             <>
               <p className="sutil">
-                {project.speeds!.length} {project.speeds!.length === 1 ? 'tramo' : 'tramos'}
-                {' '}acelerado{project.speeds!.length === 1 ? '' : 's'} ·{' '}
+                {t.plural(project.speeds!.length, '{n} tramo acelerado', '{n} tramos acelerados')} ·{' '}
                 −{(ahorroDe(project.speeds!) / 1000).toFixed(1)}s
               </p>
               <button onClick={() => setProject((p) => ({ ...p, speeds: [] }))}>
-                Volver a la velocidad normal
+                {t('Volver a la velocidad normal')}
               </button>
             </>
           )}
@@ -1907,7 +1972,7 @@ function Editor(
         <Exportar dir={datos.dir} camara={camara} guardar={guardar} salida={project.export} />
 
         <div className="pie">
-          <button onClick={onSalir}>Nueva grabación</button>
+          <button onClick={onSalir}>{t('Nueva grabación')}</button>
         </div>
       </aside>
       </div>
@@ -1915,20 +1980,20 @@ function Editor(
       <div className="linea cristal">
         <div className="barra">
           <button onClick={() => setHist(deshacer)} disabled={!puedeDeshacer(hist)}
-                  title="Deshacer (Ctrl+Z)">Deshacer</button>
+                  title={t('Deshacer (Ctrl+Z)')}>{t('Deshacer')}</button>
           <button onClick={() => setHist(rehacer)} disabled={!puedeRehacer(hist)}
-                  title="Rehacer (Ctrl+Shift+Z)">Rehacer</button>
+                  title={t('Rehacer (Ctrl+Mayús+Z)')}>{t('Rehacer')}</button>
           <span className="separador" />
           <button className="con-icono" onClick={anadirTramo} disabled={dentroDeTramo}
                   title={dentroDeTramo
-                    ? 'La aguja está dentro de un tramo: muévela a un hueco'
-                    : 'Crea un tramo de zoom donde está la aguja'}>
-            <IconoAnadir /> Añadir zoom
+                    ? t('La aguja está dentro de un tramo: muévela a un hueco')
+                    : t('Crea un tramo de zoom donde está la aguja')}>
+            <IconoAnadir /> {t('Añadir zoom')}
           </button>
           <button className="con-icono" onClick={() => borrarSeleccion()}
                   disabled={seleccion === null}
-                  title="Borra el tramo de zoom seleccionado (Supr)">
-            <IconoBorrar /> Borrar zoom
+                  title={t('Borra el tramo de zoom seleccionado (Supr)')}>
+            <IconoBorrar /> {t('Borrar zoom')}
           </button>
           <span className="hueco" />
           <label className="escala">
@@ -1969,6 +2034,7 @@ function Exportar(
     salida: { width: number; height: number };
   },
 ) {
+  const t = useT();
   const [presets, setPresets] = useState<ExportPresetInfo[]>([]);
   const [elegido, setElegido] = useState('720p');
   const [progreso, setProgreso] = useState<ExportProgressMsg | null>(null);
@@ -2011,7 +2077,7 @@ function Exportar(
       // produciria un video con la version anterior y ningun aviso.
       await guardar();
       const r = await window.vitrina.runExport({ dir, preset: elegido, cameraPreset: camara, soft: false });
-      if (r && 'cancelled' in r) setError('Exportacion cancelada');
+      if (r && 'cancelled' in r) setError(t('Exportación cancelada'));
       else if (r) setResultado(r);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
@@ -2024,7 +2090,7 @@ function Exportar(
 
   return (
     <div className="grupo">
-      <h3>Exportar</h3>
+      <h3>{t('Exportar')}</h3>
       <div className="fila" style={{ flexWrap: 'wrap' }}>
         {presets.map((p) => (
           <button key={p.name} className={elegido === p.name ? 'on' : ''}
@@ -2043,25 +2109,27 @@ function Exportar(
           </div>
           <div className="progreso-txt">
             <span>{(progreso.fraction * 100).toFixed(0)}% · {progreso.fps.toFixed(0)} fps</span>
-            <span>faltan {Math.ceil(progreso.etaMs / 1000)}s</span>
+            <span>{t('faltan {seg}s', { seg: Math.ceil(progreso.etaMs / 1000) })}</span>
           </div>
-          <button className="peligro" onClick={() => void window.vitrina.cancelExport()}>Cancelar</button>
+          <button className="peligro" onClick={() => void window.vitrina.cancelExport()}>
+            {t('Cancelar')}
+          </button>
         </>
       ) : (
-        <button className="primario" onClick={() => void lanzar()}>Exportar</button>
+        <button className="primario" onClick={() => void lanzar()}>{t('Exportar')}</button>
       )}
 
       {/* La guia escrita sale del mismo log que el video: mismos pasos, mismas
           marcas de tiempo. Va aqui porque es otra forma de exportar la demo. */}
       <button className="con-icono" disabled={!!activo || guia === 'yendo'}
-              title="Escribe guia.md con los pasos y sus capturas, capitulos.txt y guia.srt"
+              title={t('Escribe guia.md con los pasos y sus capturas, capitulos.txt y guia.srt')}
               onClick={() => void escribirGuia()}>
-        {guia === 'yendo' ? 'Escribiendo la guía...' : 'Exportar guía escrita'}
+        {guia === 'yendo' ? t('Escribiendo la guía...') : t('Exportar guía escrita')}
       </button>
       {typeof guia === 'object' && (
         <p className="sutil">
-          Guía escrita · {guia.pasos} {guia.pasos === 1 ? 'paso' : 'pasos'} ·{' '}
-          guia.md, capitulos.txt y guia.srt en la carpeta
+          {t('Guía escrita')} · {t.plural(guia.pasos, '{n} paso', '{n} pasos')} ·{' '}
+          {t('guia.md, capitulos.txt y guia.srt en la carpeta')}
         </p>
       )}
 
@@ -2073,10 +2141,12 @@ function Exportar(
             {resultado.settings.width}×{resultado.settings.height}
             {' · '}{(resultado.durationMs / 1000).toFixed(1)}s
             {' · '}{(resultado.bytes / 1024 / 1024).toFixed(1)} MB
-            {' · '}{(resultado.elapsedMs / 1000).toFixed(1)}s en salir
+            {' · '}{t('{seg}s en salir', { seg: (resultado.elapsedMs / 1000).toFixed(1) })}
           </p>
           {resultado.warnings.map((w, i) => <p key={i} className="aviso">{w}</p>)}
-          <button onClick={() => void window.vitrina.reveal(resultado.file)}>Mostrar en la carpeta</button>
+          <button onClick={() => void window.vitrina.reveal(resultado.file)}>
+            {t('Mostrar en la carpeta')}
+          </button>
         </>
       )}
       {error && <p className="error">{error}</p>}

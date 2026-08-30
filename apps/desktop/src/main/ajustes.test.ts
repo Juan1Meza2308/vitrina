@@ -13,7 +13,7 @@ describe('normalizarAjustes', () => {
     // salen con su valor de fabrica en vez de romper el resto. Es el caso que
     // vive cualquiera que actualice la app.
     expect(normalizarAjustes(guardado)).toEqual({
-      ...guardado, bienvenidaVista: '', ffmpegPath: '',
+      ...guardado, bienvenidaVista: '', ffmpegPath: '', idioma: 'es',
     });
   });
 
@@ -49,6 +49,14 @@ describe('normalizarAjustes', () => {
 
   it('el id de microfono vacio es valido: significa "el predeterminado"', () => {
     expect(normalizarAjustes({ micDeviceId: '' }).micDeviceId).toBe('');
+  });
+
+  it('el idioma guardado se respeta, y lo raro cae en espanol', () => {
+    expect(normalizarAjustes({ idioma: 'en' }).idioma).toBe('en');
+    expect(normalizarAjustes({ idioma: 'fr' }).idioma).toBe('es');
+    // Sin nada guardado tambien sale espanol; quien decide entonces es el
+    // proceso principal, que si puede preguntarle el idioma al sistema.
+    expect(normalizarAjustes({}).idioma).toBe('es');
   });
 
   it('sin marca de bienvenida, la bienvenida se ensena', () => {
