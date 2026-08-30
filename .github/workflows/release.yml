@@ -22,6 +22,10 @@ permissions:
 jobs:
   # ¿Hay versión nueva que publicar? Si el tag ya existe, no hay nada que hacer:
   # un commit que toca package.json por otra cosa no debe republicar.
+  #
+  # Y si la hay, aquí se crea la Release COMO BORRADOR, antes de compilar nada.
+  # Esa es la pieza que quita las carreras: los trabajos que vienen después ya no
+  # tienen que crear nada, solo subir sus ficheros.
   decidir:
     runs-on: ubuntu-latest
     outputs:
@@ -42,6 +46,44 @@ jobs:
             echo "publicar=no" >> "$GITHUB_OUTPUT"
           else
             echo "publicar=si" >> "$GITHUB_OUTPUT"
+          fi
+
+      # El borrador, creado UNA vez y desde un solo sitio.
+      #
+      # Esto existe por lo que pasó en la v0.1.0 y otra vez en la v0.1.1:
+      # electron-builder lanza un publicador POR FICHERO —el .exe y su
+      # .blockmap—, y los dos intentaban crear la Release a la vez. El segundo se
+      # estrellaba contra un 422 «Published releases must have a valid tag»,
+      # porque una Release publicada exige un tag que todavía no existía. Un
+      # borrador no lo exige, y además ya está creado cuando llegan.
+      #
+      # Hay una segunda razón, y es la que hace que esto no se pueda arreglar a
+      # posteriori: electron-builder SE NIEGA a subir ficheros a una Release
+      # «publicada hace más de dos horas», y lo hace saliendo con código 0. Al
+      # relanzar el trabajo de Windows de la v0.1.1 se leyó esto:
+      #
+      #   • skipped publishing  file=latest.yml
+      #     reason=existing release published more than 2 hours ago
+      #
+      # Trabajo en verde, cero ficheros subidos. Mientras la Release es un
+      # borrador esa regla no aplica, así que un reintento sí sube lo que falta.
+      - name: Preparar el borrador de la Release
+        if: steps.v.outputs.publicar == 'si'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          V: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/$GITHUB_REPOSITORY/releases"
+          hay=$(curl -sS -H "Authorization: Bearer $GH_TOKEN" "$api" \
+            | jq -r --arg t "v$V" '[.[] | select(.tag_name==$t)] | length')
+          if [ "$hay" = "0" ]; then
+            curl -sS -X POST -H "Authorization: Bearer $GH_TOKEN" "$api" \
+              -d "$(jq -n --arg t "v$V" --arg n "$V" --arg c "$GITHUB_SHA" \
+                    '{tag_name:$t, name:$n, target_commitish:$c, draft:true}')" \
+              -o /dev/null -w 'borrador creado (%{http_code})\n'
+          else
+            echo "El borrador de v$V ya existía; se reutiliza."
           fi
 
   construir:
@@ -88,10 +130,51 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx electron-builder --projectDir apps/desktop --config electron-builder.yml --publish always
 
+  # Publicar el borrador, y solo si está COMPLETO.
+  #
+  # La v0.1.1 se publicó sin `latest.yml` y nadie se enteró: el trabajo de macOS
+  # acabó en verde y la Release parecía entera. Un instalador que no puede
+  # actualizarse es de los fallos que se descubren dos versiones después, en la
+  # máquina de otro. Así que aquí se cuenta lo que tiene que haber, y si falta
+  # algo el borrador se queda sin publicar.
+  publicar:
+    needs: [decidir, construir]
+    if: needs.decidir.outputs.publicar == 'si' && needs.construir.result == 'success'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comprobar que la Release está completa y publicarla
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          V: ${{ needs.decidir.outputs.version }}
+        run: |
+          set -euo pipefail
+          api="https://api.github.com/repos/$GITHUB_REPOSITORY/releases"
+          rel=$(curl -sS -H "Authorization: Bearer $GH_TOKEN" "$api" \
+            | jq -r --arg t "v$V" 'first(.[] | select(.tag_name==$t))')
+          id=$(jq -r '.id' <<<"$rel")
+          nombres=$(jq -r '.assets[].name' <<<"$rel")
+          echo "Ficheros en la Release:"; echo "$nombres" | sed 's/^/  · /'
+
+          # Lo que hace falta para que la descarga Y la actualización funcionen
+          # en las dos plataformas.
+          faltan=""
+          for patron in "Vitrina-Setup-$V.exe" "latest.yml" "Vitrina-$V.dmg" \
+                        "Vitrina-$V-arm64.dmg" "latest-mac.yml"; do
+            echo "$nombres" | grep -qxF "$patron" || faltan="$faltan $patron"
+          done
+          if [ -n "$faltan" ]; then
+            echo "::error::La Release está incompleta; falta:$faltan"
+            echo "El borrador se queda sin publicar." >&2
+            exit 1
+          fi
+
+          curl -sS -X PATCH -H "Authorization: Bearer $GH_TOKEN" "$api/$id" \
+            -d '{"draft":false}' -o /dev/null -w 'publicada (%{http_code})\n'
+
   # Un resumen legible en la propia ejecución: si algo salió a medias, se ve sin
   # abrir los registros.
   resumen:
-    needs: [decidir, construir]
+    needs: [decidir, construir, publicar]
     if: always() && needs.decidir.outputs.publicar == 'si'
     runs-on: ubuntu-latest
     steps:
@@ -100,6 +183,7 @@ jobs:
             echo "## Vitrina v${{ needs.decidir.outputs.version }}"
             echo ""
             echo "Instaladores: ${{ needs.construir.result }}"
+            echo "Publicación: ${{ needs.publicar.result }}"
             echo ""
             echo "La aplicación no está firmada digitalmente: Windows avisa con"
             echo "SmartScreen (Más información → Ejecutar de todas formas) y macOS"
