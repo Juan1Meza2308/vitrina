@@ -97,6 +97,7 @@ habitual, apunta `VITRINA_BROWSER` a él.
 - [El editor](docs/editor.md) — línea de tiempo, deshacer, looks, marca de agua
 - [Narración, cámara y rehacer trozos](docs/narracion-y-camara.md)
 - [Privacidad](docs/privacidad.md) — qué se graba y qué no
+- [Seguridad](SECURITY.md) — el modelo de amenazas y cómo está cerrada la app
 - [Cómo está hecho](docs/arquitectura.md) — cámara, compositor, exportador
 - [Desarrollo](docs/desarrollo.md) — ejecutar, verificar, empaquetar
 

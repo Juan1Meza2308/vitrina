@@ -97,6 +97,43 @@ que caza lo que el diccionario no puede: un texto que nunca llegó a pasar por
 Los demás flujos fijan el idioma en español antes de arrancar, porque
 seleccionan elementos por su texto (`textContent === 'Grabar'`).
 
+## La ventana, cerrada por fuera
+
+```bash
+node tools/verificar-app.ts --seguridad
+```
+
+Comprueba lo que la ventana **hace**, no lo que dice su configuración: que no
+navega fuera de la app, que `window.open` no abre nada, que el renderer no
+alcanza Node y que un `<script>` inyectado no llega a ejecutarse. Quitando las
+guardas a propósito fallan tres de las cinco, incluida la de la CSP —al salir de
+la página de la app se sale también de su política—, que es lo que explica por
+qué una navegación no es un fallo aislado.
+
+La configuración en sí la fija `apps/desktop/src/main/seguridad.test.ts`, que la
+lee del fuente y falla en `npm test` sin necesitar pantalla. Hacen falta las dos:
+una dice que el ajuste está puesto, la otra que sirve.
+
+> La comprobación de la CSP inyecta un `<script>` en el DOM en vez de llamar a
+> `eval`. Chrome exime de la política a lo que se evalúa desde el depurador, así
+> que un `eval()` lanzado por CDP se ejecuta aunque esté prohibido: mediría el
+> depurador, no la página.
+
+## Lo que se lee cuando algo falla
+
+```bash
+node tools/verificar-app.ts --errores
+```
+
+Provoca un fallo de verdad —abrir una `.vitrina` que no existe— y mira lo que
+queda en pantalla, en los dos idiomas: que el aviso dice qué pasó, que no enseña
+la ruta del disco, y que el mensaje original sigue estando plegado debajo.
+
+Los avisos guardan **qué** pasó, no la frase (`renderer/errores.ts`); la frase se
+compone al pintar. Traducir al fallar dejaba el mensaje congelado en el idioma de
+ese instante, y con la app recién abierta ese instante es antes de que carguen
+los ajustes: en inglés salía en español. Lo encontró este flujo.
+
 ## Empaquetar y publicar
 
 ```bash

@@ -97,6 +97,7 @@ it ships in English and Spanish, and picks your system language on first launch.
 - [El editor](docs/editor.md) — timeline, undo, looks, watermark
 - [Narración, cámara y rehacer trozos](docs/narracion-y-camara.md)
 - [Privacidad](docs/privacidad.md) — what is recorded and what is not
+- [Security](SECURITY.md) — the threat model, and how the app is locked down
 - [Cómo está hecho](docs/arquitectura.md) — camera, compositor, exporter
 - [Desarrollo](docs/desarrollo.md) — running, verifying, packaging
 
