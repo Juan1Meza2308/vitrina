@@ -1697,6 +1697,74 @@ async function verificarInicio(): Promise<void> {
 }
 
 /**
+ * Verifica que la ventana esta cerrada por fuera.
+ *
+ * Lo que se mira no es la configuracion —eso ya lo comprueba un test leyendo el
+ * fuente— sino lo que la ventana HACE cuando se le pide salir: si `will-navigate`
+ * dejara de estar, aqui la pagina se iria a example.com y se veria. Es la
+ * diferencia entre "el ajuste esta puesto" y "el ajuste sirve".
+ */
+async function verificarSeguridad(): Promise<void> {
+  console.log('  la ventana de la app\n');
+  const child = spawn(ELECTRON, [APP, `--remote-debugging-port=${PORT}`],
+    { stdio: ['ignore', 'ignore', 'inherit'] });
+  const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+  await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+  await sleep(2500);
+
+  const casa = await ev<string>(client, 'location.href');
+
+  // --- no se sale de la app -----------------------------------------------
+  await ev<string>(client, "(() => { location.href = 'https://example.com/'; return '' })()");
+  await sleep(1500);
+  const despues = await ev<string>(client, 'location.href');
+  check('la ventana no navega fuera de la app', despues === casa,
+    despues === casa ? 'sigue en su sitio' : `se fue a ${despues}`);
+
+  // --- ni abre ventanas nuevas --------------------------------------------
+  const abierta = await ev<boolean>(client, `
+    (() => { try { return window.open('https://example.com/') !== null; }
+             catch { return false; } })()
+  `);
+  check('window.open no abre nada', abierta === false);
+
+  // --- el renderer no ve Node ---------------------------------------------
+  const node = await ev<string>(client, `
+    ['require','process','module','__dirname']
+      .filter(n => typeof globalThis[n] !== 'undefined').join(',') || 'ninguno'
+  `);
+  check('el renderer no alcanza Node', node === 'ninguno', node);
+
+  // --- y la CSP no deja colar un script -----------------------------------
+  // Se inyecta desde la PAGINA, no con `eval` por el depurador: a la consola de
+  // DevTools Chrome la exime de la CSP, asi que un `eval()` de aqui se ejecuta
+  // aunque la politica lo prohiba y no mediria nada. Meter un <script> en el
+  // DOM si pasa por la CSP, y ademas es la forma que tendria un XSS de verdad.
+  const inyecta = await ev<string>(client, `
+    (() => {
+      window.__csp = 'no ejecuto';
+      const s = document.createElement('script');
+      s.textContent = 'window.__csp = "ejecuto"';
+      document.head.appendChild(s);
+      s.remove();
+      return window.__csp;
+    })()
+  `);
+  check('la CSP no deja ejecutar un script inyectado', inyecta === 'no ejecuto', inyecta);
+
+  // --- y con todo eso, el puente sigue ahi --------------------------------
+  // Un cierre que ademas rompiera la app pasaria estas comprobaciones.
+  const puente = await ev<boolean>(client, "typeof window.vitrina?.ajustes === 'function'");
+  check('y la app sigue teniendo su puente al proceso principal', puente);
+
+  await client.close();
+  child.kill();
+  await sleep(800);
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}\n`);
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
  * Verifica regrabar desde un punto.
  *
  * Lo que se comprueba es lo unico que puede fallar sin dar la cara: que la
@@ -2605,7 +2673,8 @@ async function verificarSilencios(): Promise<void> {
   process.exit(fallos === 0 ? 0 : 1);
 }
 
-const flujo = process.argv.includes('--silencios') ? verificarSilencios
+const flujo = process.argv.includes('--seguridad') ? verificarSeguridad
+  : process.argv.includes('--silencios') ? verificarSilencios
   : process.argv.includes('--vertical') ? verificarVertical
   : process.argv.includes('--bienvenida') ? verificarBienvenida   // se encarga el flujo
   : process.argv.includes('--actualizacion') ? verificarActualizacion

@@ -533,6 +533,25 @@ function createWindow(): void {
 
   const devUrl = process.env['ELECTRON_RENDERER_URL'];
 
+  /*
+   * De esta ventana no se sale.
+   *
+   * Hoy el renderer no carga nada remoto, asi que no hay como provocar una
+   * navegacion: esto no tapa un agujero, sostiene a los demas. El dia que un
+   * texto venido de una pagina grabada —el titulo, la etiqueta de un boton—
+   * acabe dentro de un `href`, la ventana se iria a ese dominio CON el puente
+   * IPC colgando: con acceso a tus grabaciones, a tus ajustes y a ffmpeg.
+   *
+   * Denegar por defecto cuesta cuatro lineas y no depende de que ese dia
+   * estemos mirando. Los enlaces legitimos no pasan por aqui: van por
+   * `sistema:abrir`, que tiene lista blanca y los abre fuera.
+   */
+  const propio = devUrl ?? 'app://vitrina/';
+  win.webContents.on('will-navigate', (e, url) => {
+    if (!url.startsWith(propio)) e.preventDefault();
+  });
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
   if (devUrl) void win.loadURL(devUrl);
   else void win.loadURL('app://vitrina/index.html');
 }
