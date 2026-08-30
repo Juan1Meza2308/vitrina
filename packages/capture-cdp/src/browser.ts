@@ -12,6 +12,7 @@
 import { spawn, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
+import { conIdioma, type T } from '@vitrina/core';
 
 export interface BrowserInfo {
   path: string;
@@ -169,14 +170,19 @@ export function findBrowser(plataforma: Plataforma = process.platform): BrowserI
 }
 
 /** Que instalar cuando no se encuentra ninguno, dicho en concreto. */
-export function comoInstalarNavegador(plataforma: Plataforma = process.platform): string {
+export function comoInstalarNavegador(
+  plataforma: Plataforma = process.platform,
+  t: T = conIdioma('es'),
+): string {
   return plataforma === 'darwin'
-    ? 'Vitrina necesita un navegador Chromium. Instala Google Chrome desde google.com/chrome '
-      + '(Safari no sirve: no expone screencast por DevTools Protocol).'
+    ? t('Vitrina necesita un navegador Chromium. Instala Google Chrome desde '
+      + 'google.com/chrome (Safari no sirve: no expone screencast por DevTools '
+      + 'Protocol).')
     : plataforma === 'win32'
-      ? 'Vitrina necesita Edge o Chrome, y no se encontro ninguno ejecutable.'
-      : 'Vitrina necesita Chrome o Chromium, y no se encontro ninguno ejecutable. '
-        + 'Si lo tienes en una ruta poco habitual, apunta VITRINA_BROWSER a el.';
+      ? t('Vitrina necesita Edge o Chrome, y no se encontró ninguno ejecutable.')
+      : t('Vitrina necesita Chrome o Chromium, y no se encontró ninguno '
+        + 'ejecutable. Si lo tienes en una ruta poco habitual, apunta '
+        + 'VITRINA_BROWSER a él.');
 }
 
 /**

@@ -86,10 +86,12 @@ your browser lives somewhere unusual, point `VITRINA_BROWSER` at it.
 | **Redo just a piece** | Re-record from any point, keeping everything before it |
 | **Self-documenting** | Exports a written guide of the demo, with a screenshot per step |
 | **Export** | MP4, WebM, GIF, and ProRes with alpha |
+| **English and Spanish** | The interface follows your system language, and switches with one click |
 
 ## Docs
 
-Written in Spanish, which is the language of the codebase.
+Written in Spanish, which is the language of the codebase. The app itself is not:
+it ships in English and Spanish, and picks your system language on first launch.
 
 - [Grabar](docs/grabar.md) — quality, vertical mode, backgrounds
 - [El editor](docs/editor.md) — timeline, undo, looks, watermark

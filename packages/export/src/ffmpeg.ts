@@ -9,7 +9,8 @@
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import type { ExportSettings } from '@vitrina/core';
+import type { ExportSettings, T } from '@vitrina/core';
+import { conIdioma } from '@vitrina/core';
 import { supportsAudio } from '@vitrina/core';
 
 /** Ultimas lineas de stderr que se guardan para poder explicar un fallo. */
@@ -111,12 +112,15 @@ export function origenDeFfmpeg(
 }
 
 /** Como instalarlo, dicho en concreto para el sistema que corresponde. */
-export function comoInstalarFfmpeg(plataforma: NodeJS.Platform = process.platform): string {
+export function comoInstalarFfmpeg(
+  plataforma: NodeJS.Platform = process.platform,
+  t: T = conIdioma('es'),
+): string {
   return plataforma === 'darwin'
-    ? 'Vitrina trae su propio ffmpeg; si no aparece, instalalo con '
-      + '`brew install ffmpeg` o senala el ejecutable a mano.'
-    : 'Vitrina trae su propio ffmpeg; si no aparece, descargalo de ffmpeg.org y '
-      + 'dejalo en C:/ffmpeg/bin, o senala el ejecutable a mano.';
+    ? t('Vitrina trae su propio ffmpeg; si no aparece, instálalo con '
+      + '`brew install ffmpeg` o señala el ejecutable a mano.')
+    : t('Vitrina trae su propio ffmpeg; si no aparece, descárgalo de ffmpeg.org '
+      + 'y déjalo en C:/ffmpeg/bin, o señala el ejecutable a mano.');
 }
 
 /** Pista de audio ya alineada, lista para pasar a ffmpeg. */

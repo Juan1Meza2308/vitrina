@@ -21,10 +21,15 @@ const RAIZ = path.resolve(import.meta.dirname, '../../..');
 
 /** Ficheros donde se piden traducciones. */
 function fuentes(): string[] {
+  // Todos los sitios que piden traducciones, incluidos los paquetes: la guia
+  // que exporta una demo se arma en `packages/export`, y sus textos se ven
+  // tanto como los de la interfaz.
   const dirs = [
     'apps/desktop/src/renderer',
     'apps/desktop/src/main',
     'packages/core/src',
+    'packages/export/src',
+    'packages/capture-cdp/src',
   ];
   const out: string[] = [];
   for (const d of dirs) {

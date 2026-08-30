@@ -52,6 +52,10 @@ Some concrete habits that follow from it:
 - Spanish is the language of the code and its comments. The README and the
   GitHub-facing files are in English so people can find the project; you are
   welcome to write in either.
+- **The app ships in English and Spanish.** User-visible text goes through
+  `t('…')`, keyed by the Spanish phrase, and needs an entry in
+  `packages/core/src/textos-en.ts`. A test fails if one is missing — or left
+  over. See [docs/desarrollo.md](docs/desarrollo.md).
 
 ## Reporting something
 

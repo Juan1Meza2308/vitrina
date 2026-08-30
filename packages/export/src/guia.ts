@@ -16,9 +16,9 @@ import { createCanvas, loadImage } from '@napi-rs/canvas';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
 import {
-  FrameIndex, TimeMap, pasosDe, capitulosDe, srtDe, guiaMarkdown, reloj,
+  FrameIndex, TimeMap, pasosDe, capitulosDe, srtDe, guiaMarkdown, reloj, conIdioma,
 } from '@vitrina/core';
-import type { InputEvent, Manifest, Paso, Project, Rect, Idioma } from '@vitrina/core';
+import type { InputEvent, Manifest, Paso, Project, Rect, Idioma, T } from '@vitrina/core';
 
 export interface OpcionesGuia {
   /** Carpeta `.vitrina`. */
@@ -136,7 +136,8 @@ export async function exportarGuia(opts: OpcionesGuia): Promise<ResultadoGuia> {
     }
   }
 
-  const titulo = opts.titulo ?? `Cómo se hace en ${hostDe(manifest.url)}`;
+  const t = conIdioma(opts.idioma ?? 'es');
+  const titulo = opts.titulo ?? t('Cómo se hace en {donde}', { donde: hostDe(manifest.url, t) });
   const md = guiaMarkdown({ titulo, url: manifest.url, pasos, capturas, idioma: opts.idioma });
   await fsp.writeFile(path.join(root, 'guia.md'), md);
   ficheros.push('guia.md');
@@ -153,10 +154,17 @@ export async function exportarGuia(opts: OpcionesGuia): Promise<ResultadoGuia> {
   return { pasos, ficheros };
 }
 
-function hostDe(url: string): string {
+/**
+ * El host de la url grabada, o un nombre generico.
+ *
+ * El generico se traduce porque acaba en el TITULO de la guia: un `file://` o
+ * un `localhost` sin host dejaba «How to do it in tu app» en la version
+ * inglesa, que es de las cosas que delatan una traduccion a medias.
+ */
+function hostDe(url: string, t: T): string {
   try {
-    return new URL(url).host || 'tu app';
+    return new URL(url).host || t('tu app');
   } catch {
-    return 'tu app';
+    return t('tu app');
   }
 }

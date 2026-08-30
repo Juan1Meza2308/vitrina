@@ -95,15 +95,23 @@ function ficheroDeAjustes(): string {
 }
 
 /**
- * Marca la bienvenida como vista (o como no vista) antes de arrancar.
+ * Deja los ajustes como los necesita un flujo, antes de arrancar la app.
  *
- * Hace falta porque la bienvenida sale ANTES que cualquier otra pantalla: sin
- * esto, el primer flujo que se ejecutara en una maquina limpia se quedaria
- * mirandola y todos los demas fallarian con "no encuentro el boton Grabar", que
- * no dice nada de lo que pasa. Se escribe el fichero directamente porque es un
- * JSON y esto es la herramienta de verificacion, no la app.
+ * Dos cosas dependen de esto y las dos romperian TODOS los flujos si no:
+ *
+ *  - La bienvenida sale ANTES que cualquier otra pantalla. Sin darla por vista,
+ *    el primer flujo que corriera en una maquina limpia se quedaria mirandola y
+ *    los demas fallarian con "no encuentro el boton Grabar", que no dice nada
+ *    de lo que pasa.
+ *  - El idioma. Esta herramienta selecciona 43 elementos por su TEXTO en
+ *    espanol (`textContent === 'Grabar'`), asi que en una maquina con el
+ *    sistema en ingles la app arrancaria en ingles y no encontraria nada. Se
+ *    fija en espanol y los flujos siguen comprobando lo que se ve.
+ *
+ * Se escribe el fichero directamente porque es un JSON y esto es la herramienta
+ * de verificacion, no la app.
  */
-function marcarBienvenida(vista: boolean): void {
+function ajustarAntesDeArrancar(cambios: Record<string, unknown>): void {
   const f = ficheroDeAjustes();
   let datos: Record<string, unknown> = {};
   try {
@@ -111,9 +119,7 @@ function marcarBienvenida(vista: boolean): void {
   } catch {
     datos = {};
   }
-  // Cualquier version vale para darla por vista: la app compara con la suya y
-  // lo unico que mira es si coinciden.
-  datos['bienvenidaVista'] = vista ? 'verificacion' : '';
+  Object.assign(datos, cambios);
   fs.mkdirSync(path.dirname(f), { recursive: true });
   fs.writeFileSync(f, JSON.stringify(datos, null, 2));
 }
@@ -385,7 +391,9 @@ async function main(): Promise<void> {
   check('la linea de tiempo muestra los tramos de zoom', tramos > 0, `${tramos} tramos`);
 
   const calidad = await ev<string>(client, 'document.querySelector(".nota-calidad")?.textContent ?? ""');
-  check('el indicador de calidad esta presente', /zoom nitido/i.test(calidad), calidad.trim());
+  // Con tilde: el texto paso por el diccionario de idiomas y ahi se escribe
+  // como se lee, no como se teclea sin acentos en el codigo.
+  check('el indicador de calidad esta presente', /zoom nítido/i.test(calidad), calidad.trim());
 
   await capturar(client, 'apps/desktop/captura-editor.png');
 
@@ -950,6 +958,99 @@ async function verificarGrabacion(): Promise<void> {
 }
 
 /**
+ * Verifica que la app se puede usar en ingles.
+ *
+ * Lo que ningun test unitario puede comprobar: que al pulsar el boton cambia la
+ * interfaz DE VERDAD —incluido el editor, que es otro arbol de componentes—,
+ * que no queda ningun texto en espanol por medio, y que la eleccion sobrevive a
+ * cerrar la app.
+ *
+ * El diccionario ya tiene su test, y es el que caza las traducciones que faltan.
+ * Este caza lo otro: un texto que nunca llego a pasar por `t()` y que por tanto
+ * el diccionario no puede saber que existe.
+ */
+async function verificarIdioma(): Promise<void> {
+  console.log('  idioma\n');
+  ajustarAntesDeArrancar({ bienvenidaVista: 'verificacion', idioma: 'es' });
+
+  const abrir = async (args: string[] = []) => {
+    const child = spawn(ELECTRON, [
+      APP, ...args,
+      `--remote-debugging-port=${PORT}`,
+      '--use-fake-device-for-media-stream',
+      '--use-fake-ui-for-media-stream',
+    ], { stdio: ['ignore', 'ignore', 'inherit'] });
+    const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+    await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+    return { child, client };
+  };
+
+  /** Textos visibles que siguen sonando a espanol. */
+  const restosEnEspanol = async (client: Cliente): Promise<string[]> => JSON.parse(
+    await ev<string>(client, `
+      (() => {
+        const malas = [];
+        for (const el of document.querySelectorAll(
+          'button, label, h1, h2, h3, p, span, small, option, summary, dt, dd, b')) {
+          if (el.children.length > 0) continue;
+          const x = (el.textContent || '').trim();
+          // La palabra «Español» es del propio boton de idioma: un selector
+          // ensena el idioma AL QUE se cambia, en ese idioma.
+          if (x === 'Español') continue;
+          if (x.length > 2 && /[áéíóúñ¿¡]|\\b(el|la|los|las|una|con|sin|para|que|más|vídeo|cámara|grabación|zoom nítido)\\b/i.test(x)) {
+            malas.push(x.slice(0, 70));
+          }
+        }
+        return JSON.stringify([...new Set(malas)]);
+      })()
+    `),
+  ) as string[];
+
+  let { child, client } = await abrir();
+  check('la app arranca en espanol',
+    await esperarA(client,
+      "[...document.querySelectorAll('button')].some(b => b.textContent === 'Grabar')",
+      'pantalla de inicio'));
+
+  await ev(client, `[...document.querySelectorAll('button')].find(b => b.textContent === 'English')?.click()`);
+  await sleep(800);
+  check('al pulsar English la pantalla cambia',
+    await ev<boolean>(client,
+      "[...document.querySelectorAll('button')].some(b => b.textContent === 'Record')"));
+
+  const restosInicio = await restosEnEspanol(client);
+  check('y no queda nada en espanol en el inicio', restosInicio.length === 0,
+    restosInicio.slice(0, 3).join(' · '));
+  await capturar(client, path.join(APP, 'captura-ingles.png'));
+
+  await client.close();
+  child.kill();
+  await sleep(1200);
+
+  // El editor es otro arbol de componentes: que el inicio este en ingles no
+  // dice nada de el.
+  ({ child, client } = await abrir([grabacion]));
+  check('el editor tambien abre en ingles',
+    await esperarA(client,
+      "[...document.querySelectorAll('button')].some(b => b.textContent === 'Export')",
+      'editor en ingles', 30_000));
+  const restosEditor = await restosEnEspanol(client);
+  check('y tampoco queda nada en espanol en el editor', restosEditor.length === 0,
+    restosEditor.slice(0, 3).join(' · '));
+
+  check('la eleccion de idioma sobrevive a cerrar la app',
+    await ev<boolean>(client, "window.vitrina.ajustes().then(a => a.idioma === 'en')"));
+
+  await client.close();
+  child.kill();
+  await sleep(800);
+  ajustarAntesDeArrancar({ idioma: 'es' });
+
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}\n`);
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
  * Verifica el aviso de version nueva, con una version fingida.
  *
  * Sin esto solo se podria comprobar publicando una Release de verdad, es decir,
@@ -1034,7 +1135,7 @@ async function verificarActualizacion(): Promise<void> {
  */
 async function verificarBienvenida(): Promise<void> {
   console.log('  bienvenida\n');
-  marcarBienvenida(false);
+  ajustarAntesDeArrancar({ bienvenidaVista: '', idioma: 'es' });
 
   const abrir = async () => {
     const child = spawn(ELECTRON, [
@@ -2493,6 +2594,7 @@ const flujo = process.argv.includes('--silencios') ? verificarSilencios
   : process.argv.includes('--vertical') ? verificarVertical
   : process.argv.includes('--bienvenida') ? verificarBienvenida   // se encarga el flujo
   : process.argv.includes('--actualizacion') ? verificarActualizacion
+  : process.argv.includes('--idioma') ? verificarIdioma
   : process.argv.includes('--rendimiento') ? verificarRendimiento
   : process.argv.includes('--cristal') ? verificarCristal
   : process.argv.includes('--inicio') ? verificarInicio
@@ -2506,7 +2608,10 @@ const flujo = process.argv.includes('--silencios') ? verificarSilencios
 // menos el suyo la dan por vista antes de arrancar. Sin esto, en una maquina
 // limpia el primer flujo se quedaria mirandola y fallaria diciendo "no
 // encuentro el boton Grabar", que no explica nada de lo que pasa.
-if (!process.argv.includes('--bienvenida')) marcarBienvenida(true);
+// Cualquier valor vale como "bienvenida vista": la app solo mira si esta vacio.
+if (!process.argv.includes('--bienvenida')) {
+  ajustarAntesDeArrancar({ bienvenidaVista: 'verificacion', idioma: 'es' });
+}
 
 flujo().catch((e: unknown) => {
   console.error('FALLO:', e instanceof Error ? e.message : String(e));

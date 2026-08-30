@@ -92,6 +92,7 @@ export interface EstadoSistema {
  * exportar, cuando ya hay una demo grabada y editada detras.
  */
 async function estadoDelSistema(): Promise<EstadoSistema> {
+  const t = await traductor();
   const nav = findBrowser();
   const ruta = findFfmpeg();
   let ffmpegOk = false;
@@ -105,13 +106,13 @@ async function estadoDelSistema(): Promise<EstadoSistema> {
     version: app.getVersion(),
     navegador: nav
       ? { ok: true, detalle: nav.label }
-      : { ok: false, detalle: comoInstalarNavegador() },
+      : { ok: false, detalle: comoInstalarNavegador(process.platform, t) },
     ffmpeg: {
       ok: ffmpegOk,
       // De donde salio importa para lo que se lee: "viene con la app" y "lo
       // tienes tu instalado" llevan a decisiones distintas si algo va mal.
       origen: origenDeFfmpeg(ruta),
-      detalle: ffmpegOk ? ruta : comoInstalarFfmpeg(),
+      detalle: ffmpegOk ? ruta : comoInstalarFfmpeg(process.platform, t),
     },
   };
 }

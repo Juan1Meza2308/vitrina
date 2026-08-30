@@ -375,6 +375,29 @@ export const TEXTOS_EN: Record<string, string> = {
   'Todos': 'All files',
   'Imagen de fondo': 'Background image',
 
+  // --- que hacer cuando falta algo ------------------------------------------
+  ['Vitrina trae su propio ffmpeg; si no aparece, instálalo con '
+  + '`brew install ffmpeg` o señala el ejecutable a mano.']:
+    'Vitrina ships its own ffmpeg; if it is missing, install it with '
+    + '`brew install ffmpeg` or point at the executable yourself.',
+  ['Vitrina trae su propio ffmpeg; si no aparece, descárgalo de ffmpeg.org '
+  + 'y déjalo en C:/ffmpeg/bin, o señala el ejecutable a mano.']:
+    'Vitrina ships its own ffmpeg; if it is missing, download it from ffmpeg.org '
+    + 'and drop it in C:/ffmpeg/bin, or point at the executable yourself.',
+  ['Vitrina necesita un navegador Chromium. Instala Google Chrome desde '
+  + 'google.com/chrome (Safari no sirve: no expone screencast por DevTools '
+  + 'Protocol).']:
+    'Vitrina needs a Chromium browser. Install Google Chrome from '
+    + 'google.com/chrome (Safari will not do: it exposes no screencast over the '
+    + 'DevTools Protocol).',
+  'Vitrina necesita Edge o Chrome, y no se encontró ninguno ejecutable.':
+    'Vitrina needs Edge or Chrome, and neither was found.',
+  ['Vitrina necesita Chrome o Chromium, y no se encontró ninguno '
+  + 'ejecutable. Si lo tienes en una ruta poco habitual, apunta '
+  + 'VITRINA_BROWSER a él.']:
+    'Vitrina needs Chrome or Chromium, and neither was found. If yours lives in '
+    + 'an unusual place, point VITRINA_BROWSER at it.',
+
   // --- la guia escrita que exporta una demo --------------------------------
   //
   // Sale en imperativo, como un tutorial: «Click "Save"», no «Clicked Save».
@@ -388,4 +411,6 @@ export const TEXTOS_EN: Record<string, string> = {
     'Guide generated from a demo recorded at {url}.',
   'del vídeo': 'into the video',
   'Paso {n}': 'Step {n}',
+  'Cómo se hace en {donde}': 'How to do it in {donde}',
+  'tu app': 'your app',
 };
