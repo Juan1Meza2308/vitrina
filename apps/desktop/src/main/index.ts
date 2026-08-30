@@ -502,6 +502,21 @@ function createWindow(): void {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      /*
+       * El renderer, encerrado en el sandbox del sistema operativo.
+       *
+       * `contextIsolation` y `nodeIntegration: false` ya impedian que la
+       * interfaz llegara a Node, pero el PROCESO seguia teniendo los permisos
+       * de quien abrio la app: un fallo de Chromium se convertia en acceso a
+       * tus ficheros en vez de quedarse encerrado donde nacio.
+       *
+       * Se puede porque el preload no necesita Node: compila a CommonJS con un
+       * unico `require('electron')` y usa `contextBridge`, `ipcRenderer` y
+       * `webUtils`, que es justo lo que un preload en sandbox tiene permitido.
+       * Si alguien le anade una dependencia de Node, la app deja de abrir; eso
+       * es lo que se quiere que pase, y `--inicio` lo ve al momento.
+       */
+      sandbox: true,
     },
   });
 
@@ -517,6 +532,7 @@ function createWindow(): void {
   });
 
   const devUrl = process.env['ELECTRON_RENDERER_URL'];
+
   if (devUrl) void win.loadURL(devUrl);
   else void win.loadURL('app://vitrina/index.html');
 }
