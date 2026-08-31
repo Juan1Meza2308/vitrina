@@ -86,6 +86,34 @@ jobs:
             echo "El borrador de v$V ya existía; se reutiliza."
           fi
 
+      # El tag git que la Release referencia, creado y empujado ANTES de que el
+      # publicador toque nada.
+      #
+      # Esta es la pieza que faltaba: el borrador nace con `tag_name: v$V`, pero
+      # nadie creaba el TAG de verdad. Al publicar el borrador con `PATCH
+      # draft:false`, GitHub exige que ese tag exista, y si no, responde 422. El
+      # curl no trataba el 422 como error, así que el workflow acababa en VERDE
+      # con la Release sin publicar — y la app instalada no veía `latest.yml` y
+      # no avisaba. Justo lo que pasó en la v0.2.0.
+      #
+      # Se hace aquí, en el job más temprano que ya conoce la versión y sacó el
+      # historial, para que cuando `construir` suba sus ficheros y `publicar`
+      # haga el PATCH, el tag ya esté en el remoto.
+      - name: Crear y empujar el tag de la versión
+        if: steps.v.outputs.publicar == 'si'
+        env:
+          V: ${{ steps.v.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name  "Juan1Meza2308"
+          git config user.email "juan1meza2308@gmail.com"
+          if ! git rev-parse -q --verify "refs/tags/v$V" >/dev/null; then
+            git tag "v$V"
+          else
+            echo "El tag v$V ya existía; se reutiliza."
+          fi
+          git push origin "v$V"
+
   construir:
     needs: decidir
     if: needs.decidir.outputs.publicar == 'si'
@@ -168,8 +196,29 @@ jobs:
             exit 1
           fi
 
-          curl -sS -X PATCH -H "Authorization: Bearer $GH_TOKEN" "$api/$id" \
-            -d '{"draft":false}' -o /dev/null -w 'publicada (%{http_code})\n'
+          # Publicar el borrador. El `-w` deja el código HTTP a la vista, y se
+          # comprueba que sea 2xx: esto falló una vez devolviendo 422 (porque el
+          # tag no existía) y el workflow salió en verde con la Release sin
+          # publicar. Desde que este step comprueba el código, un borrador que
+          # no se consigue publicar deja el workflow en ROJO.
+          http=$(curl -sS -X PATCH -H "Authorization: Bearer $GH_TOKEN" "$api/$id" \
+            -d '{"draft":false}' -o /dev/null -w '%{http_code}')
+          echo "publicando borrador (HTTP $http)"
+          if [ "$http" -lt 200 ] || [ "$http" -ge 300 ]; then
+            echo "::error::No se pudo publicar la Release: HTTP $http"
+            exit 1
+          fi
+
+          # Control negativo: que la Release haya salido DE VERDAD de borrador.
+          # Devolver 2xx no basta si algo se interpuso; esto mira el estado de
+          # nuevo y, si sigue siendo borrador, no se da por publicada.
+          ahora=$(curl -sS -H "Authorization: Bearer $GH_TOKEN" "$api/$id" \
+            | jq -r '.draft')
+          echo "Release tras publicar: draft=$ahora"
+          if [ "$ahora" != "false" ]; then
+            echo "::error::La Release sigue en borrador tras el PATCH exitoso"
+            exit 1
+          fi
 
   # Un resumen legible en la propia ejecución: si algo salió a medias, se ve sin
   # abrir los registros.
