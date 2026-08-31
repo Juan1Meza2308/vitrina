@@ -321,9 +321,12 @@ button.primario {
   background: var(--acc); border-color: var(--acc); color: var(--acc-fg);
   font-weight: 600; box-shadow: var(--sombra-1);
 }
-button.primario:hover:not(:disabled) { filter: brightness(1.08); }
+button.primario:hover:not(:disabled) { filter: brightness(1.08); background: var(--acc); }
 button.peligro { border-color: #4a2b28; color: var(--peligro); }
+button.peligro:hover:not(:disabled) { background: rgba(220, 90, 80, .12); }
 button.on { border-color: var(--acc); color: var(--acc); background: var(--acc-suave); }
+button.on:hover:not(:disabled) { filter: brightness(1.1); background: var(--acc-suave); }
+button.preset:hover:not(:disabled) { background: var(--capa); }
 
 input[type="text"] {
   font: inherit;
@@ -893,8 +896,39 @@ select:focus {
 }
 .atajos dd { color: var(--dim); font-size: 13px; }
 
-/* El interruptor de tema vive en la marca, discreto y a la derecha. */
-.marca .tema { margin-left: auto; padding: 5px 12px; font-size: 12px; }
+/*
+ * La guia rapida usa la misma capa y el mismo viaje que la hoja de atajos: una
+ * capa que cierra al pulsar fuera, la hoja de cristal y la salida por donde
+ * entro. Solo cambian los bloques que carga.
+ */
+.guia {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(0, 0, 0, .5);
+  backdrop-filter: blur(2px);
+  display: flex; align-items: center; justify-content: center;
+  animation: velo-entra .22s var(--curva);
+}
+.guia.saliendo { animation: velo-entra .18s var(--curva) reverse forwards; }
+.guia .hoja {
+  padding: 22px 24px; min-width: 420px; max-width: 480px;
+  display: flex; flex-direction: column; gap: 12px;
+  animation: hoja-entra .32s var(--curva);
+}
+.guia.saliendo .hoja { animation: hoja-entra .18s var(--curva) reverse forwards; }
+.guia h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .07em; color: var(--dim); }
+.guia-bloque h4 { font-size: 13px; font-weight: 600; color: var(--fg); }
+.guia-bloque p { font-size: 13px; line-height: 1.5; color: var(--dim); }
+.guia-pie {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-top: 2px; padding-top: 14px; border-top: 1px solid var(--linea);
+}
+
+/* Los ajustes de la app (aspecto, idioma, guia) viven juntos, a la derecha de
+   la marca. El margen automatico va en el GRUPO y no en cada boton: dos
+   margenes automaticos en un flex se reparten el hueco y separarian los botones
+   entre si en vez de pegarlos al borde. */
+.ajustes-cabecera { margin-left: auto; display: flex; gap: 6px; }
+.marca .tema { padding: 5px 12px; font-size: 12px; }
 
 /* Aviso flotante: informa sin mover un solo campo de sitio. */
 .aviso-flotante {

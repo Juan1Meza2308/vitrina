@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import type { EstadoSistema } from '../preload/index.ts';
 import { useT } from './idioma.tsx';
 import type { Idioma, T } from '@vitrina/core';
+import { IconoIdioma } from './Iconos.tsx';
+import { GuiaRapida } from './GuiaRapida.tsx';
 
 /**
  * Lo que se ve la primera vez que se abre Vitrina.
@@ -35,6 +37,7 @@ export function Bienvenida(
   const t = useT();
   const [estado, setEstado] = useState<EstadoSistema | null>(null);
   const [buscando, setBuscando] = useState(false);
+  const [guiaAbierta, setGuiaAbierta] = useState(false);
 
   useEffect(() => {
     void window.vitrina.estadoDelSistema().then(setEstado);
@@ -50,6 +53,7 @@ export function Bienvenida(
   };
 
   return (
+    <>
     <div className="bienvenida-fondo" role="dialog" aria-modal="true"
          aria-label={t('Bienvenida a Vitrina')}>
       <div className="bienvenida cristal modal">
@@ -59,8 +63,9 @@ export function Bienvenida(
           {/* El idioma, arriba del todo y no en un menu: es la primera pantalla
               que ve alguien que quiza no lea español, y de poco sirve explicarle
               nada antes de dejarle cambiarlo. */}
-          <button className="tema idioma" title={t('Cambiar el idioma de la app')}
+          <button className="tema idioma con-icono" title={t('Cambiar el idioma de la app')}
                   onClick={() => onIdioma(idioma === 'es' ? 'en' : 'es')}>
+            <IconoIdioma />
             {idioma === 'es' ? 'English' : 'Español'}
           </button>
           <p className="sutil">
@@ -131,12 +136,14 @@ export function Bienvenida(
           <button className="primario" onClick={onEmpezar} autoFocus>
             {t('Empezar')}
           </button>
-          <button className="enlace" onClick={() => window.vitrina.abrirEnlace('guia')}>
-            {t('Ver la documentación')}
+          <button className="enlace" onClick={() => setGuiaAbierta(true)}>
+            {t('Ver la guía rápida')}
           </button>
         </footer>
       </div>
     </div>
+    {guiaAbierta && <GuiaRapida onCerrar={() => setGuiaAbierta(false)} />}
+    </>
   );
 }
 

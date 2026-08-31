@@ -1697,6 +1697,123 @@ async function verificarInicio(): Promise<void> {
 }
 
 /**
+ * Verifica que posar el cursor no vuelve ilegible un boton.
+ *
+ * El fallo: la regla generica `button:hover` pintaba un velo translucido sobre
+ * TODO boton, y como ganaba a la especificidad de `.primario`, `.on` y
+ * `.preset`, los dejaba con el fondo del material de detras —en claro, blanco
+ * sobre blanco con texto blanco: ilegible.
+ *
+ * Se mide el contraste real (WCAG) entre el texto del boton y su fondo
+ * efectivo con el cursor DE VERDAD posado encima, en los dos temas. Lo que se
+ * mira es el boton que manda (Grabar, `.primario`) y que las fichas de calidad
+ * no se deshagan en el cristal al posar.
+ */
+async function verificarHover(): Promise<void> {
+  console.log('  el cursor no borra los botones\n');
+
+  // AYUDA_CONTRASTE es un fragmento que se inyecta en la pagina y devuelve el
+  // contraste WCAG (el fondo efectivo, compuesto sobre el fondo de la ventana).
+  const AYUDA_CONTRASTE = `
+    (() => {
+      const lum = (rgb) => {
+        const f = (c) => { c /= 255;
+          return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4); };
+        return 0.2126 * f(rgb[0]) + 0.7152 * f(rgb[1]) + 0.0722 * f(rgb[2]);
+      };
+      const partes = (s) => {
+        const m = (s || '').match(/[\\d.]+/g);
+        if (!m) return [0, 0, 0, 1];
+        const [r, g, b] = [+m[0], +m[1], +m[2]];
+        return [r, g, b, m.length > 3 ? +m[3] : 1];
+      };
+      const sobre = (fg, bg) => {
+        const [r, g, b, a] = fg;
+        return [Math.round(r * a + bg[0] * (1 - a)),
+                Math.round(g * a + bg[1] * (1 - a)),
+                Math.round(b * a + bg[2] * (1 - a))];
+      };
+      const contraste = (a, b) => {
+        const l1 = lum(a), l2 = lum(b);
+        const hi = Math.max(l1, l2), lo = Math.min(l1, l2);
+        return (hi + 0.05) / (lo + 0.05);
+      };
+      const pageBg = partes(getComputedStyle(document.body).backgroundColor);
+      const medir = (sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return { contraste: -1, alfa: -1 };
+        const cs = getComputedStyle(el);
+        const fondo = sobre(partes(cs.backgroundColor), pageBg);
+        const texto = partes(cs.color);
+        const alfa = partes(cs.backgroundColor)[3];
+        return { contraste: +contraste(texto, fondo).toFixed(2), alfa: +alfa.toFixed(2) };
+      };
+      const centro = (sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return null;
+        const r = el.getBoundingClientRect();
+        return { x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2) };
+      };
+      globalThis.__hover = { medir, centro };
+      return 'ok';
+    })()
+  `;
+
+  for (const tema of ['oscuro', 'claro'] as const) {
+    ajustarAntesDeArrancar({ tema });
+    const child = spawn(ELECTRON, [
+      APP, `--remote-debugging-port=${PORT}`,
+      '--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream',
+    ], { stdio: ['ignore', 'ignore', 'inherit'] });
+    const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+    await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+    await sleep(2500);
+    if (!await esperarA(client, '!!document.querySelector(".primario")', 'la pantalla de inicio')) {
+      await client.close(); child.kill();
+      console.log('\n  FALLO: no aparece el boton Grabar en la pantalla de inicio\n');
+      process.exit(1);
+    }
+    await ev<void>(client, AYUDA_CONTRASTE);
+
+    // Grabar, la que manda: sin activa en tema oscuro (verde lima + texto
+    // oscuro) ni claro (verde + texto blanco). En claro, posar dejaba blanco
+    // sobre blanco.
+    const grabar = JSON.parse(await ev<string>(client,
+      'JSON.stringify(__hover.centro(".primario"))')) as { x: number; y: number };
+    await client.Input.dispatchMouseEvent({ type: 'mouseMoved', x: grabar.x, y: grabar.y });
+    await sleep(250);
+    const cPrimario = JSON.parse(await ev<string>(client,
+      'JSON.stringify(__hover.medir(".primario"))')) as { contraste: number; alfa: number };
+    check(`[${tema}] boton Grabar conserva el contraste al posar`,
+      cPrimario.contraste >= 3, `contraste ${cPrimario.contraste}`);
+
+    // Las fichas de calidad no deben deshacerse en el cristal: la generica
+    // posaba un velo al 3.5% y aplastaba la superficie solida.
+    for (const sel of ['.preset.on', '.preset:not(.on)']) {
+      const c = JSON.parse(await ev<string>(client,
+        `JSON.stringify(__hover.centro("${sel}"))`)) as { x: number; y: number };
+      if (!c) { await client.close(); child.kill(); process.exit(1); }
+      await client.Input.dispatchMouseEvent({ type: 'mouseMoved', x: c.x, y: c.y });
+      await sleep(250);
+      const m = JSON.parse(await ev<string>(client,
+        `JSON.stringify(__hover.medir("${sel}"))`)) as { contraste: number; alfa: number };
+      check(`[${tema}] la ficha "${sel.replace(/[^a-z]+/g, ' ').trim()}" sigue solida al posar`,
+        m.alfa >= 0.9, `alfa ${m.alfa}`);
+      check(`[${tema}] y conserva el contraste de su texto`, m.contraste >= 3,
+        `contraste ${m.contraste}`);
+    }
+
+    await client.close();
+    child.kill();
+    await sleep(800);
+  }
+
+  ajustarAntesDeArrancar({ tema: 'oscuro' });
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}\n`);
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
  * Verifica lo que se lee cuando algo falla.
  *
  * Se provoca un fallo de verdad —abrir una .vitrina que no existe, que es el
@@ -2774,6 +2891,7 @@ const flujo = process.argv.includes('--errores') ? verificarErrores
   : process.argv.includes('--rendimiento') ? verificarRendimiento
   : process.argv.includes('--cristal') ? verificarCristal
   : process.argv.includes('--inicio') ? verificarInicio
+  : process.argv.includes('--hover') ? verificarHover
   : process.argv.includes('--regrabar') ? verificarRegrabar
   : process.argv.includes('--doblar') ? verificarDoblaje
   : process.argv.includes('--pausa') ? verificarPausa
