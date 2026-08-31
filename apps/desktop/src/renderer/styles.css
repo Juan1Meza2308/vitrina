@@ -321,9 +321,12 @@ button.primario {
   background: var(--acc); border-color: var(--acc); color: var(--acc-fg);
   font-weight: 600; box-shadow: var(--sombra-1);
 }
-button.primario:hover:not(:disabled) { filter: brightness(1.08); }
+button.primario:hover:not(:disabled) { filter: brightness(1.08); background: var(--acc); }
 button.peligro { border-color: #4a2b28; color: var(--peligro); }
+button.peligro:hover:not(:disabled) { background: rgba(220, 90, 80, .12); }
 button.on { border-color: var(--acc); color: var(--acc); background: var(--acc-suave); }
+button.on:hover:not(:disabled) { filter: brightness(1.1); background: var(--acc-suave); }
+button.preset:hover:not(:disabled) { background: var(--capa); }
 
 input[type="text"] {
   font: inherit;
