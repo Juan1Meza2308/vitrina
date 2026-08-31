@@ -67,3 +67,41 @@ traducción en `packages/core/src/textos-en.ts`. Un test de cobertura
 (`packages/core/src/idioma.test.ts`) falla si falta una traducción o si sobra
 una entrada muerta. No escribas texto suelto en un JSX: el test lo cazará, pero
 más tarde de lo necesario.
+
+## Versiones y releases
+
+Cada bug, error, fallo o feature que se trabaje se **versiona y se publica en
+GitHub Releases**. No se queda en un commit: se sube la versión, se etiqueta y
+se publica el release.
+
+La versión vive en dos sitios que deben ir al mismo número:
+
+- `package.json` (raíz)
+- `apps/desktop/package.json`
+
+La convención del repo (releases `0.1.1`, `0.1.2`): la etiqueta git lleva
+prefijo `v` (`v0.1.3`); el nombre del release va sin `v` (`0.1.3`). No hay
+herramienta de release automatizada ni CHANGELOG: el cuerpo del release es el
+registro.
+
+Subida de versión según semver:
+
+- arreglo de un fallo → patch (`0.1.2` → `0.1.3`)
+- feature nueva → minor (`0.1.2` → `0.2.0`)
+- cambio que rompe → major
+
+Flujo, tras tener el commit del cambio ya verificado (`npm test`,
+`typecheck`, el flujo de CDP que aplique):
+
+```bash
+# 1. Subir la versión en los dos package.json (y el lockfile)
+# 2. Commit en español: «Alcanza la 0.1.3»
+# 3. Etiquetar y empujar commit y etiqueta
+git tag v0.1.3
+git push origin master --follow-tags
+# 4. Publicar el release, con el cuerpo contando qué se arregló o añadió
+gh release create v0.1.3 --title "0.1.3" --notes "…"
+```
+
+El cuerpo del release dice qué cambia para quien usa la app, y si arregla algo
+que se publicó, cómo se descubrió (la misma norma que el mensaje de commit).
