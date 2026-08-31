@@ -1,6 +1,6 @@
 {
   "name": "@vitrina/desktop",
-  "version": "0.1.2",
+  "version": "0.2.0",
   "private": true,
   "description": "App de escritorio de Vitrina",
   "main": "out/main/index.js",
