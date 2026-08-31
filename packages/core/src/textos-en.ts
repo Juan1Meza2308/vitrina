@@ -385,8 +385,32 @@ export const TEXTOS_EN: Record<string, string> = {
   'al grabar': 'while recording',
   ': no llega a existir en el vídeo.': ': it never exists in the video at all.',
   'Empezar': 'Get started',
-  'Ver la documentación': 'Read the docs',
+  'Ver la guía rápida': 'See the quick guide',
   'comprobando…': 'checking…',
+
+  // --- la guía rápida dentro de la app --------------------------------------
+  'Guía': 'Guide',
+  'Guía rápida': 'Quick guide',
+  'Qué graba': 'What it records',
+  'Tu app web, desde dentro del navegador y con el zoom pegándose a tus clics. No captura el escritorio ni una videollamada.':
+    'Your web app, from inside the browser and with the zoom following your '
+    + 'clicks. It does not capture your desktop or a video call.',
+  'Tu primera demo': 'Your first demo',
+  'Pega la dirección, elige la calidad y pulsa Grabar. Haz clic como lo haría quien mira: el zoom te sigue.':
+    'Paste the address, pick a quality and hit Record. Click the way a viewer '
+    + 'would: the zoom follows you.',
+  'El editor': 'The editor',
+  'Los zooms se planifican solos. Después se editan uno a uno: reordénalos, quita un silencio o corta lo que sobre.':
+    'The zooms are planned for you. Afterwards you edit them one by one: reorder, '
+    + 'cut a silence or trim what is left.',
+  'Tapar datos': 'Masking data',
+  'Señala un saldo o un correo y Vitrina lo difumina al grabar: no llega a existir en el vídeo.':
+    'Point at a balance or an email and Vitrina blurs it while recording: it '
+    + 'never exists in the video itself.',
+  'Vídeo para compartir, o la guía escrita con los pasos y sus capturas para quien lo vaya a repetir.':
+    'A video to share, or the written guide with its steps and screenshots for '
+    + 'whoever will follow along.',
+  'Documentación completa': 'Full documentation',
 
   // --- dialogos del sistema -------------------------------------------------
   'Elige el ejecutable de ffmpeg': 'Choose the ffmpeg executable',

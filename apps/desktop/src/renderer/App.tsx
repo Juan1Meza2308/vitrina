@@ -17,6 +17,7 @@ import { Preview, makeTrack } from './preview.ts';
 import { Timeline } from './Timeline.tsx';
 import { Recientes } from './Recientes.tsx';
 import { Bienvenida } from './Bienvenida.tsx';
+import { GuiaRapida } from './GuiaRapida.tsx';
 import { ProveedorIdioma, useT } from './idioma.tsx';
 import { explicar, aviso, textoDe, type Aviso } from './errores.ts';
 import { AvisoActualizacion } from './Actualizacion.tsx';
@@ -24,7 +25,7 @@ import { instalarReflejo } from './reflejo.ts';
 import {
   IconoGrabacion, IconoAjustes, IconoRepetir, IconoImagen, IconoReproducir,
   IconoPausa, IconoInicio, IconoSonido, IconoSilencio, IconoAnadir, IconoBorrar,
-  IconoCarpeta,
+  IconoCarpeta, IconoTema, IconoIdioma, IconoGuia,
 } from './Iconos.tsx';
 import {
   grabarMicrofono, listarMicrofonos,
@@ -136,6 +137,7 @@ function Contenido({ idioma, onIdioma }: { idioma: Idioma; onIdioma: (i: Idioma)
   const [arrastrando, setArrastrando] = useState(false);
   const [tema, setTema] = useState<'oscuro' | 'claro'>('oscuro');
   const [detalleVertical, setDetalleVertical] = useState(false);
+  const [guiaAbierta, setGuiaAbierta] = useState(false);
 
   useEffect(() => {
     void window.vitrina.capturePresets().then(setPresets);
@@ -533,25 +535,35 @@ function Contenido({ idioma, onIdioma }: { idioma: Idioma; onIdioma: (i: Idioma)
          onDragOver={(e) => { e.preventDefault(); setArrastrando(true); }}
          onDragLeave={() => setArrastrando(false)}
          onDrop={soltar}>
+      {guiaAbierta && <GuiaRapida onCerrar={() => setGuiaAbierta(false)} />}
       {avisoVersion}
       <div className="inicio">
         <div className="marca">
           <h1>Vitrina</h1>
           <span>{t('demos de apps web con zoom automático')}</span>
-          <button className="tema" title={t('Cambiar el aspecto de la app')}
-                  onClick={() => {
-                    const otro = tema === 'oscuro' ? 'claro' : 'oscuro';
-                    setTema(otro);
-                    void window.vitrina.guardarAjustes({ tema: otro });
-                  }}>
-            {tema === 'oscuro' ? t('Claro') : t('Oscuro')}
-          </button>
-          {/* El idioma, al lado del aspecto: son las dos cosas que cambian como
-              se ve la app entera y no tienen que ver con la grabacion. */}
-          <button className="tema idioma" title={t('Cambiar el idioma de la app')}
-                  onClick={() => onIdioma(idioma === 'es' ? 'en' : 'es')}>
-            {idioma === 'es' ? 'English' : 'Español'}
-          </button>
+          <div className="ajustes-cabecera">
+            <button className="tema con-icono" title={t('Cambiar el aspecto de la app')}
+                    onClick={() => {
+                      const otro = tema === 'oscuro' ? 'claro' : 'oscuro';
+                      setTema(otro);
+                      void window.vitrina.guardarAjustes({ tema: otro });
+                    }}>
+              <IconoTema aClaro={tema === 'oscuro'} />
+              {tema === 'oscuro' ? t('Claro') : t('Oscuro')}
+            </button>
+            {/* El idioma, al lado del aspecto: son las dos cosas que cambian como
+                se ve la app entera y no tienen que ver con la grabacion. */}
+            <button className="tema idioma con-icono" title={t('Cambiar el idioma de la app')}
+                    onClick={() => onIdioma(idioma === 'es' ? 'en' : 'es')}>
+              <IconoIdioma />
+              {idioma === 'es' ? 'English' : 'Español'}
+            </button>
+            <button className="tema con-icono" title={t('Ver la guía rápida')}
+                    onClick={() => setGuiaAbierta(true)}>
+              <IconoGuia />
+              {t('Guía')}
+            </button>
+          </div>
         </div>
 
         {/* Columna izquierda: lo que hay que decidir para grabar, y el boton

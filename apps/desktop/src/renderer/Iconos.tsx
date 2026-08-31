@@ -111,3 +111,35 @@ export const IconoCarpeta = ({ size = 16 }: Props) => (
     <path d="M1.6 4.4a1.4 1.4 0 0 1 1.4-1.4h2.9l1.5 1.8h5.2a1.4 1.4 0 0 1 1.4 1.4v5.4a1.4 1.4 0 0 1-1.4 1.4H3a1.4 1.4 0 0 1-1.4-1.4z" />
   </svg>
 );
+
+/**
+ * El aspecto al que se va a cambiar, sol o luna: el boton dice «Claro» y
+ * enseña el sol hacia el que se va, y «Oscuro» con la luna. El icono muestra a
+ * donde se viaja, no donde se esta.
+ */
+export const IconoTema = ({ size = 16, aClaro }: Props & { aClaro: boolean }) => (
+  <svg {...base(size)}>
+    {aClaro
+      ? (<>
+          <circle cx="8" cy="8" r="2.6" />
+          <path d="M8 1.8v1.5M8 12.7v1.5M14.2 8h-1.5M3.3 8H1.8M12.3 3.7l-1.1 1.1M4.8 11.2l-1.1 1.1M12.3 12.3l-1.1-1.1M4.8 4.8 3.7 3.7" />
+        </>)
+      : <path d="M12.2 9.4A4.6 4.6 0 0 1 6.6 3.6 4.5 4.5 0 1 0 12.2 9.4Z" />}
+  </svg>
+);
+
+/** El idioma: un globo con su ecuador y sus meridianos. */
+export const IconoIdioma = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <circle cx="8" cy="8" r="5.8" />
+    <path d="M2.2 8h11.6M8 2.2c-1.9 1.7-1.9 8.1 0 11.6M8 2.2c1.9 1.7 1.9 8.1 0 11.6" />
+  </svg>
+);
+
+/** La guia rapida: un libro abierto. */
+export const IconoGuia = ({ size = 16 }: Props) => (
+  <svg {...base(size)}>
+    <path d="M2 4.6a2.4 2.4 0 0 1 2.4-2.4H7v9.4H4.4A2.4 2.4 0 0 0 2 14v-3.8z" />
+    <path d="M14 4.6a2.4 2.4 0 0 0-2.4-2.4H9v9.4h2.6A2.4 2.4 0 0 1 14 14v-3.8z" />
+  </svg>
+);
