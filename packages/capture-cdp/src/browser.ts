@@ -193,6 +193,12 @@ export function comoInstalarNavegador(
  * despues en el compositor, vectorial y tematizable, en vez de capturarse.
  */
 export function launchFlags(opts: {
+  /**
+   * Puerto CDP. **0 es lo correcto salvo que haya una razon para lo otro**: el
+   * navegador coge uno libre y lo escribe en `DevToolsActivePort`, dentro del
+   * perfil. Un puerto fijo se puede estar usando ya —9222 sobre todo— y
+   * entonces se acaba hablando con el navegador de otro. Ver `descubrirPuerto`.
+   */
   port: number;
   profileDir: string;
   windowWidth: number;

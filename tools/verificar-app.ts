@@ -880,7 +880,7 @@ async function verificarGrabacion(): Promise<void> {
 
   // Sin interaccion no hay zoom, y con razon: el motor de camara encuadra
   // clicks. Hay que pulsar de verdad dentro de la pagina grabada, no solo
-  // dejar correr el tiempo. Vitrina expone ese navegador en el puerto 9222.
+  // dejar correr el tiempo. Ese navegador escucha en un puerto propio.
   await interactuarConLoGrabado();
   await sleep(1500);
 
@@ -1697,6 +1697,137 @@ async function verificarInicio(): Promise<void> {
 }
 
 /**
+ * Verifica lo que se lee cuando algo falla.
+ *
+ * Se provoca un fallo de verdad —abrir una .vitrina que no existe, que es el
+ * camino de `recording:error`— y se mira lo que queda en pantalla. Lo que
+ * importa no es que salga un aviso, sino QUE dice: antes salia el mensaje del
+ * sistema con la ruta del disco de quien lo sufre, y no decia ni que paso ni
+ * que hacer.
+ *
+ * Se comprueba en los dos idiomas porque cinco de esos mensajes estaban
+ * escritos a pelo en espanol y en ingles salian en espanol.
+ */
+async function verificarErrores(): Promise<void> {
+  console.log('  lo que se lee cuando algo falla\n');
+  const inexistente = path.join(os.tmpdir(), 'no-existe-esta-grabacion.vitrina');
+
+  for (const idioma of ['es', 'en'] as const) {
+    // La camara apagada: en una maquina sin camara el fallo de la camara se
+    // adelanta al que se quiere medir, y es otro camino.
+    ajustarAntesDeArrancar({ idioma, bienvenidaVista: 'verificacion', camOn: false, micOn: false });
+    const child = spawn(ELECTRON, [APP, `--remote-debugging-port=${PORT}`, inexistente],
+      { stdio: ['ignore', 'ignore', 'inherit'] });
+    const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+    await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+    await sleep(2500);
+
+    // Lo que se ve SIN desplegar nada.
+    const visible = await ev<string>(client, `
+      (() => {
+        const e = document.querySelector('.error, .aviso-flotante');
+        if (!e) return '';
+        const d = e.querySelector('details');
+        return e.textContent.replace(d ? d.textContent : '', '').trim();
+      })()
+    `);
+    const esperado = idioma === 'es' ? 'No se pudo abrir' : 'could not be opened';
+    check(`[${idioma}] el aviso dice que paso, en su idioma`,
+      visible.includes(esperado), visible.slice(0, 70));
+    check(`[${idioma}] y no ensena la ruta del disco`,
+      !visible.includes(inexistente) && !visible.includes('ENOENT'), visible.slice(0, 70));
+
+    // Y el detalle sigue estando, plegado.
+    const detalle = await ev<string>(client, `
+      (() => {
+        const d = document.querySelector('.detalle-tecnico');
+        if (!d) return 'NO HAY';
+        d.open = true;
+        return d.querySelector('code')?.textContent ?? 'VACIO';
+      })()
+    `);
+    check(`[${idioma}] el mensaje original sigue ahi para reportarlo`,
+      detalle.includes('no-existe-esta-grabacion'), detalle.slice(0, 70));
+
+    await client.close();
+    child.kill();
+    await sleep(800);
+  }
+
+  ajustarAntesDeArrancar({ idioma: 'es' });
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}\n`);
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
+ * Verifica que la ventana esta cerrada por fuera.
+ *
+ * Lo que se mira no es la configuracion —eso ya lo comprueba un test leyendo el
+ * fuente— sino lo que la ventana HACE cuando se le pide salir: si `will-navigate`
+ * dejara de estar, aqui la pagina se iria a example.com y se veria. Es la
+ * diferencia entre "el ajuste esta puesto" y "el ajuste sirve".
+ */
+async function verificarSeguridad(): Promise<void> {
+  console.log('  la ventana de la app\n');
+  const child = spawn(ELECTRON, [APP, `--remote-debugging-port=${PORT}`],
+    { stdio: ['ignore', 'ignore', 'inherit'] });
+  const client = (await CDP({ port: PORT, target: await esperarPagina() })) as unknown as Cliente;
+  await Promise.all([client.Page.enable(), client.Runtime.enable()]);
+  await sleep(2500);
+
+  const casa = await ev<string>(client, 'location.href');
+
+  // --- no se sale de la app -----------------------------------------------
+  await ev<string>(client, "(() => { location.href = 'https://example.com/'; return '' })()");
+  await sleep(1500);
+  const despues = await ev<string>(client, 'location.href');
+  check('la ventana no navega fuera de la app', despues === casa,
+    despues === casa ? 'sigue en su sitio' : `se fue a ${despues}`);
+
+  // --- ni abre ventanas nuevas --------------------------------------------
+  const abierta = await ev<boolean>(client, `
+    (() => { try { return window.open('https://example.com/') !== null; }
+             catch { return false; } })()
+  `);
+  check('window.open no abre nada', abierta === false);
+
+  // --- el renderer no ve Node ---------------------------------------------
+  const node = await ev<string>(client, `
+    ['require','process','module','__dirname']
+      .filter(n => typeof globalThis[n] !== 'undefined').join(',') || 'ninguno'
+  `);
+  check('el renderer no alcanza Node', node === 'ninguno', node);
+
+  // --- y la CSP no deja colar un script -----------------------------------
+  // Se inyecta desde la PAGINA, no con `eval` por el depurador: a la consola de
+  // DevTools Chrome la exime de la CSP, asi que un `eval()` de aqui se ejecuta
+  // aunque la politica lo prohiba y no mediria nada. Meter un <script> en el
+  // DOM si pasa por la CSP, y ademas es la forma que tendria un XSS de verdad.
+  const inyecta = await ev<string>(client, `
+    (() => {
+      window.__csp = 'no ejecuto';
+      const s = document.createElement('script');
+      s.textContent = 'window.__csp = "ejecuto"';
+      document.head.appendChild(s);
+      s.remove();
+      return window.__csp;
+    })()
+  `);
+  check('la CSP no deja ejecutar un script inyectado', inyecta === 'no ejecuto', inyecta);
+
+  // --- y con todo eso, el puente sigue ahi --------------------------------
+  // Un cierre que ademas rompiera la app pasaria estas comprobaciones.
+  const puente = await ev<boolean>(client, "typeof window.vitrina?.ajustes === 'function'");
+  check('y la app sigue teniendo su puente al proceso principal', puente);
+
+  await client.close();
+  child.kill();
+  await sleep(800);
+  console.log(`\n  ${fallos === 0 ? 'TODO OK' : fallos + ' comprobaciones fallaron'}\n`);
+  process.exit(fallos === 0 ? 0 : 1);
+}
+
+/**
  * Verifica regrabar desde un punto.
  *
  * Lo que se comprueba es lo unico que puede fallar sin dar la cara: que la
@@ -2422,6 +2553,33 @@ async function medirVideo(file: string): Promise<string> {
  * coordenadas escritas a ojo pulsarian el vacio y la comprobacion diria "sin
  * zoom" sin que nada estuviera roto.
  */
+/**
+ * El puerto CDP del navegador que la app tiene grabando.
+ *
+ * Ya no es 9222: la app pide un puerto libre para no acabar hablando con el
+ * navegador que cualquiera tenga abierto en depuracion. El numero lo escribe el
+ * propio navegador en `DevToolsActivePort`, dentro de su perfil temporal, y de
+ * ahi se lee — el mas reciente, que es el de esta grabacion.
+ */
+async function puertoDelNavegadorGrabado(): Promise<number> {
+  const tmp = os.tmpdir();
+  const perfiles = (await fsp.readdir(tmp))
+    .filter((d) => d.startsWith('vitrina-') && !d.startsWith('vitrina-export'))
+    .map((d) => path.join(tmp, d));
+  let mejor: { puerto: number; cuando: number } | null = null;
+  for (const dir of perfiles) {
+    const f = path.join(dir, 'DevToolsActivePort');
+    const st = await fsp.stat(f).catch(() => null);
+    if (!st) continue;
+    const puerto = Number.parseInt((await fsp.readFile(f, 'utf8')).split('\n')[0] ?? '', 10);
+    if (Number.isInteger(puerto) && (!mejor || st.mtimeMs > mejor.cuando)) {
+      mejor = { puerto, cuando: st.mtimeMs };
+    }
+  }
+  if (!mejor) throw new Error('No se encontro el navegador de la grabacion');
+  return mejor.puerto;
+}
+
 async function interactuarConLoGrabado(selectores?: string[]): Promise<void> {
   interface Entrada {
     Input: {
@@ -2437,12 +2595,13 @@ async function interactuarConLoGrabado(selectores?: string[]): Promise<void> {
     close(): Promise<void>;
   }
 
-  const lista = (await (await fetch('http://127.0.0.1:9222/json/list')).json()) as
+  const puerto = await puertoDelNavegadorGrabado();
+  const lista = (await (await fetch(`http://127.0.0.1:${puerto}/json/list`)).json()) as
     { type: string; id: string }[];
   const page = lista.find((t) => t.type === 'page');
   if (!page) throw new Error('El navegador de grabacion no expuso una pagina');
 
-  const input = (await CDP({ port: 9222, target: page.id })) as unknown as Entrada;
+  const input = (await CDP({ port: puerto, target: page.id })) as unknown as Entrada;
 
   let puntos: { x: number; y: number }[];
   if (selectores) {
@@ -2605,7 +2764,9 @@ async function verificarSilencios(): Promise<void> {
   process.exit(fallos === 0 ? 0 : 1);
 }
 
-const flujo = process.argv.includes('--silencios') ? verificarSilencios
+const flujo = process.argv.includes('--errores') ? verificarErrores
+  : process.argv.includes('--seguridad') ? verificarSeguridad
+  : process.argv.includes('--silencios') ? verificarSilencios
   : process.argv.includes('--vertical') ? verificarVertical
   : process.argv.includes('--bienvenida') ? verificarBienvenida   // se encarga el flujo
   : process.argv.includes('--actualizacion') ? verificarActualizacion

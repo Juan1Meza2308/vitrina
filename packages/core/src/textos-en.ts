@@ -102,8 +102,10 @@ export const TEXTOS_EN: Record<string, string> = {
   'tu web a {px} px': 'your site at {px} px',
   'Opciones avanzadas': 'Advanced options',
   'Tapar datos sensibles': 'Mask sensitive data',
-  'Selectores CSS de lo que no debe salir. Se difuminan':
-    'CSS selectors for whatever must not be shown. They are blurred',
+  ['Selectores CSS de lo que no debe salir —en tu app, clic derecho sobre el dato → '
+    + 'Inspeccionar te dice su id o su clase—. Se difuminan']:
+    'CSS selectors for whatever must not be shown — in your app, right-click the '
+    + 'data → Inspect tells you its id or class. They are blurred',
   'mientras grabas': 'while you record',
   [', así que el dato nunca llega al vídeo ni queda en la carpeta. Se difuminan en vez de '
   + 'ocultarse para no mover nada de sitio.']:
@@ -151,10 +153,22 @@ export const TEXTOS_EN: Record<string, string> = {
 
   // --- editor: looks y marca de agua ---------------------------------------
   'Looks': 'Looks',
-  ['Guarda el fondo, el marco y la marca de agua con un nombre para usarlos en la '
-  + 'siguiente demo.']:
-    'Saves the background, the frame and the watermark under a name, ready for '
-    + 'your next demo.',
+  ['Un look es el fondo, el marco y la marca de agua guardados con un nombre, para '
+    + 'dejar la siguiente demo igual de un clic.']:
+    'A look is the background, the frame and the watermark saved under a name, so '
+    + 'the next demo comes out the same in one click.',
+  ['Cómo se ve la ventana grabada dentro del vídeo: lo grande que sale, sus esquinas '
+    + 'y su sombra.']:
+    'How the recorded window looks inside the video: how big it is, its corners '
+    + 'and its shadow.',
+  ['Cuánto se acerca la cámara sola en cada click. Los tramos que planifica se editan '
+    + 'uno a uno más abajo.']:
+    'How far the camera zooms in on each click, on its own. The segments it plans '
+    + 'are edited one by one below.',
+  ['Más resolución se ve mejor y ocupa más. Si dudas, deja el de en medio: es el que '
+    + 'aguanta los fps en la mayoría de equipos.']:
+    'More resolution looks better and weighs more. When in doubt, keep the middle '
+    + 'one: it is the one that holds its frame rate on most machines.',
   'Aplicar este look a la grabación abierta': 'Apply this look to the open recording',
   'Usar este look en las grabaciones nuevas': 'Use this look for new recordings',
   'Guardar este look': 'Save this look',
@@ -418,4 +432,36 @@ export const TEXTOS_EN: Record<string, string> = {
   'Paso {n}': 'Step {n}',
   'Cómo se hace en {donde}': 'How to do it in {donde}',
   'tu app': 'your app',
+
+  // --- cuando algo falla ---------------------------------------------------
+  'No se pudo encender la cámara.': 'The camera would not turn on.',
+  'No se pudo encender el micrófono.': 'The microphone would not turn on.',
+  'No se pudo grabar la voz.': 'The voice-over could not be recorded.',
+  'No se pudo empezar a grabar.': 'Recording could not start.',
+  'No se pudo exportar el vídeo.': 'The video could not be exported.',
+  'No se pudo crear la guía.': 'The written guide could not be created.',
+  'No se pudo abrir la grabación.': 'That recording could not be opened.',
+  'Algo no ha salido bien.': 'Something went wrong.',
+  ['El sistema no dio permiso. Búscalo en los ajustes de privacidad '
+    + 'de tu equipo y vuelve a intentarlo.']:
+    'Your system denied permission. Grant it in your privacy settings and try '
+    + 'again.',
+  'No hay ninguno conectado, o el que elegiste ya no está.':
+    'There is none connected, or the one you picked is gone.',
+  'Otro programa lo está usando. Ciérralo y vuelve a intentarlo.':
+    'Another program is using it. Close that program and try again.',
+  'No queda espacio en el disco.': 'The disk is full.',
+  'El sistema no dejó escribir ahí. Prueba con otra carpeta.':
+    'Your system would not let Vitrina write there. Try another folder.',
+  ['Falta ffmpeg, que es lo que escribe el vídeo. Vitrina trae el '
+    + 'suyo; si no aparece, señálalo a mano desde la pantalla de inicio.']:
+    'FFmpeg is missing, and it is what writes the video. Vitrina ships its own; '
+    + 'if it does not show up, point to it by hand from the start screen.',
+  ['El navegador no llegó a abrirse. Si tienes uno abierto en modo '
+    + 'depuración, ciérralo y vuelve a intentarlo.']:
+    'The browser never opened. If you have one running in debugging mode, close '
+    + 'it and try again.',
+  'Detalles técnicos': 'Technical details',
+  'Eso no es una carpeta .vitrina. Suelta la carpeta entera, no un frame.':
+    'That is not a .vitrina folder. Drop the whole folder, not a single frame.',
 };

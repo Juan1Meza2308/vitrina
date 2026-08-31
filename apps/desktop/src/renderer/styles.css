@@ -1161,3 +1161,27 @@ button.enlace:hover:not(:disabled) { filter: brightness(1.15); background: none;
   flex: none;
 }
 .aviso-version button { padding: 5px 12px; font-size: 12.5px; }
+
+/*
+ * El detalle tecnico de un error, plegado.
+ *
+ * Va dentro del aviso y en pequeno a proposito: quien solo quiere seguir no
+ * tiene que leerlo, y quien va a reportar el fallo lo tiene a un clic. Con
+ * `word-break` porque lo que sale de ahi son rutas y ordenes largas, y sin el
+ * ensanchan el aviso hasta sacarlo de la ventana.
+ */
+.detalle-tecnico { margin-top: 6px; }
+.detalle-tecnico > summary {
+  cursor: pointer; list-style: none; color: var(--dim);
+  font-size: 11px; user-select: none;
+}
+.detalle-tecnico > summary::-webkit-details-marker { display: none; }
+.detalle-tecnico > summary::before { content: '›'; display: inline-block; margin-right: 5px; }
+.detalle-tecnico[open] > summary::before { transform: rotate(90deg); }
+.detalle-tecnico > summary:hover { color: var(--fg); }
+.detalle-tecnico > code {
+  display: block; margin-top: 5px; padding: 6px 8px;
+  background: rgba(0, 0, 0, .25); border-radius: 6px;
+  color: var(--dim); font-size: 10.5px; line-height: 1.45;
+  word-break: break-all; white-space: pre-wrap;
+}

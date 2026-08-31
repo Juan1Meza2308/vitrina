@@ -502,6 +502,21 @@ function createWindow(): void {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      /*
+       * El renderer, encerrado en el sandbox del sistema operativo.
+       *
+       * `contextIsolation` y `nodeIntegration: false` ya impedian que la
+       * interfaz llegara a Node, pero el PROCESO seguia teniendo los permisos
+       * de quien abrio la app: un fallo de Chromium se convertia en acceso a
+       * tus ficheros en vez de quedarse encerrado donde nacio.
+       *
+       * Se puede porque el preload no necesita Node: compila a CommonJS con un
+       * unico `require('electron')` y usa `contextBridge`, `ipcRenderer` y
+       * `webUtils`, que es justo lo que un preload en sandbox tiene permitido.
+       * Si alguien le anade una dependencia de Node, la app deja de abrir; eso
+       * es lo que se quiere que pase, y `--inicio` lo ve al momento.
+       */
+      sandbox: true,
     },
   });
 
@@ -517,6 +532,26 @@ function createWindow(): void {
   });
 
   const devUrl = process.env['ELECTRON_RENDERER_URL'];
+
+  /*
+   * De esta ventana no se sale.
+   *
+   * Hoy el renderer no carga nada remoto, asi que no hay como provocar una
+   * navegacion: esto no tapa un agujero, sostiene a los demas. El dia que un
+   * texto venido de una pagina grabada —el titulo, la etiqueta de un boton—
+   * acabe dentro de un `href`, la ventana se iria a ese dominio CON el puente
+   * IPC colgando: con acceso a tus grabaciones, a tus ajustes y a ffmpeg.
+   *
+   * Denegar por defecto cuesta cuatro lineas y no depende de que ese dia
+   * estemos mirando. Los enlaces legitimos no pasan por aqui: van por
+   * `sistema:abrir`, que tiene lista blanca y los abre fuera.
+   */
+  const propio = devUrl ?? 'app://vitrina/';
+  win.webContents.on('will-navigate', (e, url) => {
+    if (!url.startsWith(propio)) e.preventDefault();
+  });
+  win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+
   if (devUrl) void win.loadURL(devUrl);
   else void win.loadURL('app://vitrina/index.html');
 }
@@ -709,6 +744,33 @@ ipcMain.handle('record:start', async (
 });
 
 /**
+ * Conexion a la pagina del navegador que ESTE grabador tiene abierto, para
+ * enviarle la entrada grabada.
+ *
+ * El puerto se le pregunta al grabador en vez de darlo por sabido: desde que se
+ * pide un puerto libre en lugar de 9222, cada grabacion escucha en uno
+ * distinto. Con el numero fijo esto habria acabado mandando clicks al navegador
+ * que otro programa tuviera abierto en depuracion.
+ *
+ * Va al target de la pagina y con `local: true`: conectar en medio del
+ * screencast sin eso se come mas de quince segundos, y esos segundos
+ * desplazarian el guion entero respecto a la grabacion.
+ */
+async function entradaDelNavegador(
+  grabador: Recorder,
+  queEs: string,
+): Promise<Parameters<typeof reproducir>[0] & { close(): Promise<void> }> {
+  const puerto = grabador.puerto;
+  const objetivos = (await (await fetch(`http://127.0.0.1:${puerto}/json/list`)).json()) as
+    { type: string; id: string }[];
+  const pagina = objetivos.find((t) => t.type === 'page');
+  if (!pagina) throw new Error(`El navegador de ${queEs} no expuso una pagina`);
+  return (await CDP({
+    port: puerto, target: pagina.id, local: true,
+  })) as unknown as Parameters<typeof reproducir>[0] & { close(): Promise<void> };
+}
+
+/**
  * Repite una grabacion: vuelve a ejecutar su log de entrada y guarda otra nueva.
  *
  * Es lo que evita la dolencia de siempre —un fallo a los tres minutos obliga a
@@ -766,16 +828,7 @@ ipcMain.handle('record:repeat', async (
     await recorder.launch();
     await recorder.start();
 
-    // Al target de la pagina y con `local: true`: conectar en medio del
-    // screencast sin eso se come mas de quince segundos, y aqui esos segundos
-    // desplazarian el guion entero respecto a la grabacion.
-    const objetivos = (await (await fetch('http://127.0.0.1:9222/json/list')).json()) as
-      { type: string; id: string }[];
-    const pagina = objetivos.find((t) => t.type === 'page');
-    if (!pagina) throw new Error('El navegador de repeticion no expuso una pagina');
-    const input = (await CDP({
-      port: 9222, target: pagina.id, local: true,
-    })) as unknown as Parameters<typeof reproducir>[0] & { close(): Promise<void> };
+    const input = await entradaDelNavegador(recorder, 'repeticion');
 
     await reproducir(input, guion, { relleno: opts.texto ?? '' });
     await input.close();
@@ -893,13 +946,7 @@ ipcMain.handle('record:retake', async (_e, opts: { dir: string; desdeMs: number 
     await recorder.start();
     const arranque = Date.now();
 
-    const objetivos = (await (await fetch('http://127.0.0.1:9222/json/list')).json()) as
-      { type: string; id: string }[];
-    const pagina = objetivos.find((t) => t.type === 'page');
-    if (!pagina) throw new Error('El navegador de regrabacion no expuso una pagina');
-    const input = (await CDP({
-      port: 9222, target: pagina.id, local: true,
-    })) as unknown as Parameters<typeof reproducir>[0] & { close(): Promise<void> };
+    const input = await entradaDelNavegador(recorder, 'regrabacion');
 
     await reproducir(input, cabeza);
     await input.close();

@@ -8,6 +8,14 @@ llega a los ficheros no se puede filtrar después.
 - Lo que tapas se difumina dentro del navegador, así que no llega a existir en
   los fotogramas.
 
+Y una tercera que no se ve: **el navegador que Vitrina graba no es el tuyo**.
+Se lanza aparte, con un perfil temporal que se borra al parar —sin tus sesiones,
+sin tus cookies, sin tus extensiones— y escuchando en un puerto libre elegido por
+él. Antes ese puerto era el 9222, el de todos los tutoriales, y con un Chrome ya
+abierto ahí en modo depuración Vitrina se enganchaba a **ese**: grababa el
+navegador de verdad de quien la abriera. Lo cuenta entero
+[SECURITY.md](../SECURITY.md), y lo comprueba un test con un navegador señuelo.
+
 [← Volver al README](../README.es.md)
 
 ---
