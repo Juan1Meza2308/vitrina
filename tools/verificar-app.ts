@@ -40,7 +40,9 @@ const grabacion = path.resolve(
 /** En macOS el ejecutable vive dentro del bundle; lanzar el .app no vale. */
 const ELECTRON = path.resolve(process.platform === 'darwin'
   ? 'node_modules/electron/dist/Electron.app/Contents/MacOS/Electron'
-  : 'node_modules/electron/dist/electron.exe');
+  : process.platform === 'win32'
+    ? 'node_modules/electron/dist/electron.exe'
+    : 'node_modules/electron/dist/electron');
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
