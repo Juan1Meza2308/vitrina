@@ -12,7 +12,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {
   buildCameraTrack, cameraConfigForBudget, computeQualityBudget,
-  CAMERA_PRESETS, FrameIndex, audioAlignment, audioTimeFor, supportsAudio, TimeMap,
+  CAMERA_PRESETS, FrameIndex, frameKey, audioAlignment, audioTimeFor, supportsAudio, TimeMap,
 } from '@vitrina/core';
 import type {
   CameraPresetName, ExportSettings, InputEvent, Manifest, Project, QualityBudget, ZoomSegment,
@@ -21,6 +21,7 @@ import { composite, CursorSource, OverlaySource } from '@vitrina/renderer';
 import type { Ctx, ImageLike } from '@vitrina/renderer';
 import { findFfmpeg, startEncoder, extraerFrames, type AudioInput } from './ffmpeg.ts';
 import { extensionFor, resolvePreset, type ExportPreset } from './presets.ts';
+import { leerFrame } from './leer-frame.ts';
 
 /**
  * Frames por segundo a los que se extrae la camara.
@@ -311,7 +312,7 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
   const durationSec = (totalFrames + 0.5) / settings.fps;
   const encoder = startEncoder(findFfmpeg(), settings, file, audio, durationSec);
 
-  let cachedFile = '';
+  let cachedKey = '';
   let cachedImg: Awaited<ReturnType<typeof loadImage>> | null = null;
   let camFile = '';
   let camImg: Awaited<ReturnType<typeof loadImage>> | null = null;
@@ -379,14 +380,17 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
       // El instante de la salida no es el de la grabacion: el recorte desplaza
       // el origen y cada corte adelanta todo lo que viene detras.
       const tMs = map.sourceAt((i / settings.fps) * 1000);
-      const frameFile = index.at(tMs);
-      if (frameFile && (frameFile !== cachedFile || !cachedImg)) {
-        const t = ahora();
-        const pedida = enVuelo.get(frameFile);
-        enVuelo.delete(frameFile);
-        cachedImg = await (pedida ?? loadImage(path.join(root, 'frames', frameFile)));
-        cachedFile = frameFile;
-        sumar('decode', t);
+      const frame = index.at(tMs);
+      if (frame) {
+        const clave = frameKey(frame);
+        if (clave !== cachedKey || !cachedImg) {
+          const t = ahora();
+          const pedida = enVuelo.get(clave);
+          enVuelo.delete(clave);
+          cachedImg = await (pedida ?? leerFrame(root, frame).then((b) => loadImage(b)));
+          cachedKey = clave;
+          sumar('decode', t);
+        }
       }
       if (!cachedImg) continue;
 
@@ -395,12 +399,14 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
       // MISMO fichero: buscar solo el de al lado no adelantaria casi nunca.
       for (let k = 1; enVuelo.size < ADELANTO && k <= settings.fps * 2; k++) {
         const f = index.at(map.sourceAt(((i + k) / settings.fps) * 1000));
-        if (!f || f === cachedFile || enVuelo.has(f)) continue;
-        const img = loadImage(path.join(root, 'frames', f));
+        if (!f) continue;
+        const clave = frameKey(f);
+        if (clave === cachedKey || enVuelo.has(clave)) continue;
+        const img = leerFrame(root, f).then((b) => loadImage(b));
         // El error se recoge en la vuelta que la espera; esto es solo para que
         // no quede como rechazo sin dueno si el export se aborta antes.
         img.catch(() => {});
-        enVuelo.set(f, img);
+        enVuelo.set(clave, img);
       }
 
       // La camara se muestrea por el MISMO instante de material que el video,

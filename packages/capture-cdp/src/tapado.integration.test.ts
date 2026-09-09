@@ -25,6 +25,8 @@ import path from 'node:path';
 import os from 'node:os';
 import { pathToFileURL } from 'node:url';
 import { Recorder, type RecordingResult } from './recorder.ts';
+import type { Frame } from '@vitrina/core';
+import { leerFrame } from '@vitrina/export';
 
 const fixture = (nombre: string) => pathToFileURL(
   path.resolve(import.meta.dirname, '../../../spikes', nombre),
@@ -54,9 +56,10 @@ interface InputClient {
  * cosas sin depender de que diga la fuente.
  */
 async function contraste(
-  file: string, x: number, y: number, w: number, h: number,
+  root: string, frame: Frame,
+  x: number, y: number, w: number, h: number,
 ): Promise<number> {
-  const img = await loadImage(await fsp.readFile(file));
+  const img = await loadImage(await leerFrame(root, frame));
   const c = createCanvas(img.width, img.height);
   const ctx = c.getContext('2d');
   ctx.drawImage(img, 0, 0);
@@ -138,9 +141,8 @@ describe.each([
     // La prueba de que se tapa AL GRABAR: lo que hay en la carpeta ya va
     // difuminado, sin pasar por el editor ni por el exportador.
     const ultimo = result.manifest.frames.at(-1)!;
-    const file = path.join(outDir, 'frames', ultimo.file);
-    const tapado = await contraste(file, FILA.x, SECRETO_Y, FILA.ancho, FILA.alto);
-    const control = await contraste(file, FILA.x, CONTROL_Y, FILA.ancho, FILA.alto);
+    const tapado = await contraste(outDir, ultimo, FILA.x, SECRETO_Y, FILA.ancho, FILA.alto);
+    const control = await contraste(outDir, ultimo, FILA.x, CONTROL_Y, FILA.ancho, FILA.alto);
 
     // El control asegura que se esta midiendo texto y no una region vacia: sin
     // esto, un fixture que no cargara daria "tapado" con las dos filas a cero.

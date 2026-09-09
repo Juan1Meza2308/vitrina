@@ -8,7 +8,7 @@ export {
   paraOrientacion, orientacionDe,
 } from './quality.ts';
 export type { QualityBudget, CapturePreset, Orientacion } from './quality.ts';
-export { FrameIndex } from './frames.ts';
+export { FrameIndex, frameKey, frameURL } from './frames.ts';
 export { pasosDe, capitulosDe, srtDe, guiaMarkdown, reloj } from './guia.ts';
 export { traducir, plural, conIdioma, idiomaDe } from './idioma.ts';
 export type { Idioma, T, Datos } from './idioma.ts';

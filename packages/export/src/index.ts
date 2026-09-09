@@ -1,5 +1,6 @@
 export { exportRecording, clampZooms, ExportAbortedError } from './exporter.ts';
 export type { ExportOptions, ExportProgress, ExportResult } from './exporter.ts';
+export { leerFrame } from './leer-frame.ts';
 export { EXPORT_PRESETS, resolvePreset, extensionFor } from './presets.ts';
 export type { ExportPreset, ExportPresetName } from './presets.ts';
 // Vive en core porque lo comparten el exportador y el preview del editor,

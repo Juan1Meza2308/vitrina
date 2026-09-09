@@ -18,8 +18,8 @@ import {
   buildCameraTrack, computeQualityBudget, cameraConfigForBudget,
   CAMERA_PRESETS, viewRect,
 } from '@vitrina/core';
-import { findFfmpeg } from '@vitrina/export';
-import type { InputEvent, Manifest, Project } from '@vitrina/core';
+import { findFfmpeg, leerFrame } from '@vitrina/export';
+import type { Frame, InputEvent, Manifest, Project } from '@vitrina/core';
 
 const run = promisify(execFile);
 const FFMPEG = findFfmpeg();
@@ -34,14 +34,14 @@ const readJson = async <T,>(p: string): Promise<T> =>
   JSON.parse(await fsp.readFile(p, 'utf8')) as T;
 
 /** Frame cuyo timestamp esta mas cerca del instante pedido. */
-function nearestFrame(manifest: Manifest, tMs: number): string | null {
-  let best: string | null = null;
+function nearestFrame(manifest: Manifest, tMs: number): Frame | null {
+  let best: Frame | null = null;
   let bestDelta = Infinity;
   for (const f of manifest.frames) {
     const delta = Math.abs(f.t * 1000 - (manifest.startedAt + tMs));
     if (delta < bestDelta) {
       bestDelta = delta;
-      best = f.file;
+      best = f;
     }
   }
   return best;
@@ -82,8 +82,8 @@ async function main(): Promise<void> {
   const tiles: string[] = [];
 
   for (const [i, m] of picked.entries()) {
-    const file = nearestFrame(manifest, m.tMs);
-    if (!file) continue;
+    const frame = nearestFrame(manifest, m.tMs);
+    if (!frame) continue;
     const cam = track.sampleAt(m.tMs);
     const v = viewRect(cam, viewport);
 
@@ -93,10 +93,15 @@ async function main(): Promise<void> {
     const w = Math.min(viewport.w - x, Math.round(v.w));
     const h = Math.min(viewport.h - y, Math.round(v.h));
 
+    // ffmpeg lee un FICHERO, no un segmento de frames.bin: el frame se vuelca
+    // a un temporal y se le pasa ese.
+    const origen = path.join(tmp, `src${i}.jpg`);
+    await fsp.writeFile(origen, await leerFrame(root, frame));
+
     const out = path.join(tmp, `tile${i}.jpg`);
     await run(FFMPEG, [
       '-y', '-loglevel', 'error',
-      '-i', path.join(root, 'frames', file),
+      '-i', origen,
       '-vf', `drawbox=x=${x}:y=${y}:w=${w}:h=${h}:color=#c3f53c@0.95:t=5,scale=640:360`,
       out,
     ]);

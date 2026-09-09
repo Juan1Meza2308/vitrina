@@ -13,6 +13,7 @@ import { createCanvas, loadImage } from '@napi-rs/canvas';
 import { FrameIndex, buildCameraTrack, CAMERA_PRESETS } from '@vitrina/core';
 import type { InputEvent, Manifest, Project } from '@vitrina/core';
 import { composite, CursorSource, OverlaySource } from '@vitrina/renderer';
+import { leerFrame } from '@vitrina/export';
 
 const flag = (n: string, d: string) => {
   const hit = process.argv.find((a) => a.startsWith(`--${n}=`));
@@ -32,10 +33,10 @@ const events = await leer<InputEvent[]>('events.json');
 const source = manifest.capture ?? manifest.viewport;
 
 const indice = new FrameIndex(manifest);
-const fichero = indice.at(tMs);
-if (!fichero) throw new Error(`No hay frame en t=${tMs}ms`);
+const frame = indice.at(tMs);
+if (!frame) throw new Error(`No hay frame en t=${tMs}ms`);
 
-const img = await loadImage(path.join(dir, 'frames', fichero));
+const img = await loadImage(await leerFrame(dir, frame));
 const canvas = createCanvas(project.export.width, project.export.height);
 
 const track = buildCameraTrack({

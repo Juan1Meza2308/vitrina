@@ -3,10 +3,16 @@
  *
  * Una grabacion es una carpeta `<nombre>.vitrina` autocontenida:
  *
- *   frames/        000001.jpg ...
+ *   frames.bin       JPEGs concatenados (grabaciones nuevas)
  *   manifest.json  Manifest  - que se capturo y cuando
  *   events.json    InputEvent[] - que hizo el usuario
  *   project.json   Project   - como se compone y exporta (lo escribe el editor)
+ *
+ * Guardar los frames en un solo fichero no es una mania: el formato viejo
+ * escribia un JPEG por frame (`frames/000001.jpg`...), y una demo de diez
+ * minutos son quince mil ficheros mascando el filesystem y la copia a
+ * cualquier sitio. El manifest lleva el indice —offset dentro de `frames.bin`
+ * y longitud—, asi que un frame se lee con una sola lectura posicionada.
  *
  * Separar manifest (inmutable, lo produce la captura) de project (mutable, lo
  * produce el editor) permite reeditar sin volver a grabar, y volver al material
@@ -69,9 +75,22 @@ export interface InputEvent {
 }
 
 export interface Frame {
-  file: string;
+  /**
+   * Grabaciones VIEJAS: nombre del JPEG dentro de `frames/`. Ausente en las
+   * nuevas, que guardan todo en `frames.bin`. Las dos conviven en el mismo
+   * tipo a proposito: es lo que permite seguir leyendo carpetas grabadas con
+   * la version anterior sin migracion.
+   */
+  file?: string;
+  /**
+   * Grabaciones NUEVAS: offset en bytes del JPEG dentro de `frames.bin`.
+   * Con `bytes` describe el segmento completo: se lee con una sola lectura
+   * posicionada y sin abrir cientos de ficheros.
+   */
+  offset?: number;
   /** Epoch en segundos, tal cual lo entrega `metadata.timestamp` del screencast. */
   t: number;
+  /** Longitud en bytes del JPEG. */
   bytes: number;
 }
 

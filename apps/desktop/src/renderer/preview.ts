@@ -10,10 +10,11 @@
  * como ImageBitmap. Sin cache, arrastrar la aguja de la linea de tiempo
  * volveria a decodificar el mismo JPEG decenas de veces por segundo.
  */
-import { buildCameraTrack, FrameIndex } from '@vitrina/core';
+import { buildCameraTrack, FrameIndex, frameKey, frameURL } from '@vitrina/core';
 import type { CameraTrack, InputEvent, Manifest, Project } from '@vitrina/core';
 import { composite, CursorSource, OverlaySource } from '@vitrina/renderer';
 import type { Ctx, ImageLike } from '@vitrina/renderer';
+import type { Frame } from '@vitrina/core';
 
 /** Frames decodificados que se conservan. Suficiente para un scrub suave sin
  *  que la memoria crezca con la duracion de la grabacion. */
@@ -115,7 +116,7 @@ export class Preview {
   /** Cargas en vuelo ahora mismo. */
   private enCurso = 0;
   /** El pedido que no cupo. Solo uno: el ultimo, los intermedios sobran. */
-  private cola: string | null = null;
+  private cola: Frame | null = null;
   /** Ultimo instante dibujado, para saber hacia donde se va. */
   private anterior = 0;
 
@@ -179,8 +180,9 @@ export class Preview {
    * todos (M13).
    */
   async draw(canvas: HTMLCanvasElement, tMs: number, project: Project): Promise<void> {
-    const file = this.index.at(tMs);
-    if (!file) return;
+    const frame = this.index.at(tMs);
+    if (!frame) return;
+    const file = frameKey(frame);
     this.pedido = file;
 
     const medir = midiendo();
@@ -193,7 +195,7 @@ export class Preview {
     if (img) { this.cache.delete(file); this.cache.set(file, img); }
     // Si el pedido no cabe ahora, `pedir` resuelve a null y se compone con el
     // anterior: al arrastrar, ir un fotograma por detras es mejor que parpadear.
-    if (!img) img = (await this.pedir(file)) ?? this.ultimo;
+    if (!img) img = (await this.pedir(frame)) ?? this.ultimo;
 
     this.adelantar(tMs);
     this.anterior = tMs;
@@ -268,7 +270,7 @@ export class Preview {
     if (avance <= 0 || avance > ADELANTO_MS) return;
     for (let d = avance; d <= ADELANTO_MS; d += Math.max(20, avance)) {
       const f = this.index.at(tMs + d);
-      if (f && !this.cache.has(f) && !this.pendientes.has(f)) void this.pedir(f);
+      if (f && !this.cache.has(frameKey(f)) && !this.pendientes.has(frameKey(f))) void this.pedir(f);
     }
   }
 
@@ -279,18 +281,20 @@ export class Preview {
    * esperaba— y se resuelve con lo que haya. Quien llama no se queda colgado:
    * `draw` compone con el fotograma anterior y repinta cuando llegue el bueno.
    */
-  private pedir(file: string): Promise<ImageBitmap | null> {
-    const yaVa = this.pendientes.get(file);
+  private pedir(fr: Frame): Promise<ImageBitmap | null> {
+    const key = frameKey(fr);
+    const yaVa = this.pendientes.get(key);
     if (yaVa) return yaVa;
     if (this.enCurso >= CARGAS_A_LA_VEZ) {
-      this.cola = file;
+      this.cola = fr;
       return Promise.resolve(null);
     }
-    return this.load(file);
+    return this.load(fr);
   }
 
-  private load(file: string): Promise<ImageBitmap | null> {
-    const enCurso = this.pendientes.get(file);
+  private load(fr: Frame): Promise<ImageBitmap | null> {
+    const key = frameKey(fr);
+    const enCurso = this.pendientes.get(key);
     if (enCurso) return enCurso;
     this.enCurso++;
     if (midiendo()) marcaMaxima(this.enCurso);
@@ -298,32 +302,33 @@ export class Preview {
     const promesa = (async () => {
       const t0 = midiendo() ? performance.now() : 0;
       try {
-        const res = await fetch(`vitrina://frames/${file}`);
+        const res = await fetch(`vitrina://${frameURL(fr)}`);
         const bitmap = await createImageBitmap(await res.blob());
         if (t0) apuntar('msDecode', performance.now() - t0);
-        this.cache.set(file, bitmap);
+        this.cache.set(key, bitmap);
         this.limpiar();
         // Solo se avisa si es el fotograma que hace falta ahora: al soltar un
         // arrastre pueden quedar varias cargas en vuelo, y repintar por cada
         // una seria trabajo para ensenar imagenes que ya pasaron.
-        if (file === this.pedido) this.aviso?.();
+        if (key === this.pedido) this.aviso?.();
         return bitmap;
       } catch {
         return null;
       } finally {
-        this.pendientes.delete(file);
+        this.pendientes.delete(key);
         this.enCurso--;
         // Al liberarse un hueco entra el ultimo pedido, y solo si sigue siendo
         // el que hace falta: durante un arrastre lo demas ya ha caducado.
         const siguiente = this.cola;
         this.cola = null;
-        if (siguiente && siguiente === this.pedido && !this.cache.has(siguiente)) {
+        if (siguiente && frameKey(siguiente) === this.pedido
+          && !this.cache.has(frameKey(siguiente))) {
           void this.load(siguiente);
         }
       }
     })();
 
-    this.pendientes.set(file, promesa);
+    this.pendientes.set(key, promesa);
     return promesa;
   }
 

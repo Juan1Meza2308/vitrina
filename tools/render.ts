@@ -15,11 +15,12 @@ import path from 'node:path';
 import os from 'node:os';
 import {
   buildCameraTrack, cameraConfigForBudget, computeQualityBudget, CAMERA_PRESETS, FrameIndex,
+  frameKey,
 } from '@vitrina/core';
 import type { InputEvent, Manifest, Project } from '@vitrina/core';
 import { composite, CursorSource, OverlaySource } from '@vitrina/renderer';
 import type { Ctx, ImageLike } from '@vitrina/renderer';
-import { findFfmpeg } from '@vitrina/export';
+import { findFfmpeg, leerFrame } from '@vitrina/export';
 
 // La resolucion de ffmpeg vive en @vitrina/export y ya conoce las rutas de
 // cada sistema. Repetirla aqui es como se colaron rutas de Windows en una
@@ -73,15 +74,16 @@ async function main(): Promise<void> {
   // Cache de un frame: a 60 fps de salida sobre captura VFR, varios instantes
   // consecutivos caen en el mismo frame de origen y decodificarlo de nuevo es
   // el gasto dominante del render.
-  let cachedFile = '';
+  let cachedKey = '';
   let cachedImg: Awaited<ReturnType<typeof loadImage>> | null = null;
 
   const drawAt = async (tMs: number): Promise<void> => {
-    const file = index.at(tMs);
-    if (!file) return;
-    if (file !== cachedFile || !cachedImg) {
-      cachedImg = await loadImage(path.join(root, 'frames', file));
-      cachedFile = file;
+    const frame = index.at(tMs);
+    if (!frame) return;
+    const clave = frameKey(frame);
+    if (clave !== cachedKey || !cachedImg) {
+      cachedImg = await loadImage(await leerFrame(root, frame));
+      cachedKey = clave;
     }
     const img = cachedImg;
     composite({

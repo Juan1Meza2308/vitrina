@@ -32,7 +32,7 @@ import type {
 } from '@vitrina/core';
 import {
   exportRecording, exportarGuia, EXPORT_PRESETS, ExportAbortedError, findFfmpeg,
-  comoInstalarFfmpeg, origenDeFfmpeg,
+  comoInstalarFfmpeg, origenDeFfmpeg, leerFrame,
 } from '@vitrina/export';
 import { findBrowser, comoInstalarNavegador } from '@vitrina/capture-cdp';
 import { normalizarAjustes, aplicarLook, type Ajustes } from './ajustes.ts';
@@ -267,10 +267,10 @@ async function fotogramas(
   const index = new FrameIndex(m);
   const salida: string[] = [];
   for (const ms of instantes) {
-    const file = index.at(ms);
-    if (!file) continue;
+    const frame = index.at(ms);
+    if (!frame) continue;
     try {
-      const img = await loadImage(path.join(dir, 'frames', file));
+      const img = await loadImage(await leerFrame(dir, frame));
       const h = Math.max(1, Math.round(ancho * (img.height / img.width)));
       const c = createCanvas(ancho, h);
       c.getContext('2d').drawImage(img, 0, 0, ancho, h);
@@ -581,10 +581,38 @@ app.whenReady().then(() => {
       .replace(/^\/+/, '')
       .replace(/\/+$/, '');
     if (!servedDir || rel.includes('..')) return new Response('no', { status: 403 });
+    const headers = new Headers({ 'Access-Control-Allow-Origin': '*' });
+
+    // Las grabaciones nuevas piden el frame como un segmento de `frames.bin`
+    // (`?offset=X&bytes=Y`), no como un fichero aparte. No hay forma de servir
+    // ese segmento con `file://` y un net.fetch, asi que se lee posicionado y
+    // el renderer no necesita saber nada del formato de la carpeta.
+    if (rel === 'frames.bin') {
+      const offset = Number(url.searchParams.get('offset'));
+      const bytes = Number(url.searchParams.get('bytes'));
+      const ruta = path.join(servedDir, 'frames.bin');
+      try {
+        const { size } = await fsp.stat(ruta);
+        if (!Number.isInteger(offset) || !Number.isInteger(bytes)
+          || offset < 0 || bytes <= 0 || offset + bytes > size) {
+          return new Response('fuera de rango', { status: 416, headers });
+        }
+        const fd = await fsp.open(ruta, 'r');
+        try {
+          const buf = Buffer.alloc(bytes);
+          await fd.read(buf, 0, bytes, offset);
+          return new Response(buf, { headers });
+        } finally {
+          await fd.close();
+        }
+      } catch {
+        return new Response('no esta', { status: 404, headers });
+      }
+    }
+
     const res = await net.fetch(pathToFileURL(path.join(servedDir, rel)).toString());
     // El preview lee los frames con fetch desde el origen `app://`, asi que la
     // respuesta tiene que permitirlo explicitamente.
-    const headers = new Headers(res.headers);
     headers.set('Access-Control-Allow-Origin', '*');
     return new Response(res.body, { status: res.status, headers });
   });

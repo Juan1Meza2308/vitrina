@@ -19,6 +19,7 @@ import {
   FrameIndex, TimeMap, pasosDe, capitulosDe, srtDe, guiaMarkdown, reloj, conIdioma,
 } from '@vitrina/core';
 import type { InputEvent, Manifest, Paso, Project, Rect, Idioma, T } from '@vitrina/core';
+import { leerFrame } from './leer-frame.ts';
 
 export interface OpcionesGuia {
   /** Carpeta `.vitrina`. */
@@ -111,11 +112,11 @@ export async function exportarGuia(opts: OpcionesGuia): Promise<ResultadoGuia> {
   const ficheros: string[] = [];
 
   for (const [i, paso] of pasos.entries()) {
-    const file = index.at(paso.tFuenteMs);
-    if (!file) { capturas.push(null); continue; }
+    const frame = index.at(paso.tFuenteMs);
+    if (!frame) { capturas.push(null); continue; }
 
     try {
-      const img = await loadImage(path.join(root, 'frames', file));
+      const img = await loadImage(await leerFrame(root, frame));
       const caja = encuadreDePaso(paso.rect, marco);
       // Nunca se amplia: una captura estirada se ve peor que una mas pequena, y
       // en una guia la nitidez es lo que hace reconocible el boton.

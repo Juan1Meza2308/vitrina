@@ -18,7 +18,7 @@ import fsp from 'node:fs/promises';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
-import { FrameIndex } from '@vitrina/core';
+import { FrameIndex, frameKey, frameURL } from '@vitrina/core';
 import type { Manifest, Project, QualityBudget, ZoomSegment } from '@vitrina/core';
 import { clampZooms, exportRecording, ExportAbortedError } from './exporter.ts';
 import { EXPORT_PRESETS, extensionFor, resolvePreset } from './presets.ts';
@@ -46,22 +46,38 @@ describe('FrameIndex', () => {
 
   it('sostiene el frame vigente entre capturas', () => {
     // Un hueco de 800ms no es un fallo: el screencast no emite si nada cambia.
-    expect(idx.at(150)).toBe('000002.jpg');
-    expect(idx.at(880)).toBe('000002.jpg');
-    expect(idx.at(900)).toBe('000003.jpg');
+    expect(idx.at(150)?.file).toBe('000002.jpg');
+    expect(idx.at(880)?.file).toBe('000002.jpg');
+    expect(idx.at(900)?.file).toBe('000003.jpg');
   });
 
   it('antes del primer frame devuelve el primero', () => {
     // Un recorte que empiece en 0 no puede quedarse sin imagen.
-    expect(idx.at(-500)).toBe('000001.jpg');
+    expect(idx.at(-500)?.file).toBe('000001.jpg');
   });
 
   it('despues del ultimo sostiene el ultimo', () => {
-    expect(idx.at(99_999)).toBe('000004.jpg');
+    expect(idx.at(99_999)?.file).toBe('000004.jpg');
   });
 
   it('una grabacion sin frames no revienta', () => {
     expect(new FrameIndex(manifestWith([])).at(0)).toBeNull();
+  });
+});
+
+describe('frameKey y frameURL', () => {
+  it('distingue las dos grabaciones sin parecerse', () => {
+    const vieja = { file: '000001.jpg', t: 0, bytes: 10 };
+    const nueva = { offset: 10, t: 0, bytes: 10 };
+    expect(frameKey(vieja)).toBe('000001.jpg');
+    expect(frameKey(nueva)).toBe('f10');
+  });
+
+  it('pide el segmento a las nuevas y el fichero a las viejas', () => {
+    const vieja = { file: '000001.jpg', t: 0, bytes: 10 };
+    const nueva = { offset: 10, t: 0, bytes: 10 };
+    expect(frameURL(vieja)).toBe('frames/000001.jpg');
+    expect(frameURL(nueva)).toBe('frames.bin?offset=10&bytes=10');
   });
 });
 

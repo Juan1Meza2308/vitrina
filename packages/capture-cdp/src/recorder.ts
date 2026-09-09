@@ -127,8 +127,12 @@ export class Recorder {
 
   private frames: Frame[] = [];
   private events: InputEvent[] = [];
-  private pendingWrites = 0;
-  private seq = 0;
+  /** Escribir los frames concatenados en orden: cada JPEG va al final del que
+   *  falto. En paralelo no se puede: los offsets del manifest apuntarian a
+   *  trozos que no son los suyos. */
+  private colaEscritura: Promise<void> = Promise.resolve();
+  /** Bytes acumulados de los frames ya metidos en `frames.bin`. */
+  private totalBytes = 0;
   private startedAt = 0;
   private expected: CaptureSize | null = null;
   private sizeMismatches = 0;
@@ -163,7 +167,7 @@ export class Recorder {
     }
     this.browser = browser;
 
-    await fsp.mkdir(path.join(this.opts.outDir, 'frames'), { recursive: true });
+    await fsp.mkdir(this.opts.outDir, { recursive: true });
     this.profileDir = await fsp.mkdtemp(path.join(os.tmpdir(), 'vitrina-'));
 
     // La ventana fisica no tiene que coincidir con el viewport emulado: puede
@@ -355,16 +359,16 @@ export class Recorder {
       this.sizeMismatches++;
     }
 
-    const file = String(++this.seq).padStart(6, '0') + '.jpg';
-    this.frames.push({ file, t: timestamp, bytes: buf.length });
+    // Todos los JPEGs van a `frames.bin`, concatenados en orden de llegada, y
+    // el manifest guarda el offset de cada uno. Un solo fichero en vez de
+    // quince mil: antes, una demo de diez minutos machacaba el filesystem con
+    // un archivo por frame y copiar la carpeta era un suplicio.
+    this.frames.push({ t: timestamp, offset: this.totalBytes, bytes: buf.length });
+    this.totalBytes += buf.length;
 
-    this.pendingWrites++;
-    void fsp
-      .writeFile(path.join(this.opts.outDir, 'frames', file), buf)
-      .catch(() => {})
-      .finally(() => {
-        this.pendingWrites--;
-      });
+    this.colaEscritura = this.colaEscritura
+      .then(() => fsp.appendFile(path.join(this.opts.outDir, 'frames.bin'), buf))
+      .catch(() => {});
 
     this.opts.onProgress?.({
       frames: this.frames.length,
@@ -383,8 +387,8 @@ export class Recorder {
     const durationMs = Date.now() - this.startedAt;
 
     // No cerrar hasta que el ultimo frame este en disco, o el manifest
-    // referenciaria ficheros que no existen.
-    while (this.pendingWrites > 0) await sleep(50);
+    // referenciaria trozos de `frames.bin` que todavia no existen.
+    await this.colaEscritura;
 
     const manifest: Manifest = {
       version: 1,
