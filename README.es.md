@@ -3,7 +3,7 @@
 # Vitrina
 
 **Demos de tu app web, con zoom automático en cada click.**
-Alternativa open source a Screen Studio, para Windows y macOS.
+Alternativa open source a Screen Studio, para Windows, macOS y Linux.
 
 [Descargar](https://github.com/Juan1Meza2308/vitrina/releases/latest) ·
 [Documentación](docs/) ·
@@ -38,12 +38,14 @@ el vídeo.
 
 Descarga el instalador de
 [Releases](https://github.com/Juan1Meza2308/vitrina/releases/latest) —`.exe` para
-Windows, `.dmg` para macOS— y ábrelo. ffmpeg viene dentro, así que no hay nada
-más que instalar.
+Windows, `.dmg` para macOS, `.AppImage` y `.deb` para Linux— y ábrelo. ffmpeg
+viene dentro, así que no hay nada más que instalar.
 
 La app no está firmada digitalmente (firmar pide una cuenta de desarrollador de
 pago en cada plataforma), así que la primera vez sale un aviso: en Windows, *Más
-información → Ejecutar de todas formas*; en macOS, clic derecho → *Abrir*.
+información → Ejecutar de todas formas*; en macOS, clic derecho → *Abrir*. En
+Linux el `.deb` no pide nada; el AppImage necesita FUSE2 (`sudo apt install
+libfuse2`).
 
 <details>
 <summary>O ejecutarla desde el código</summary>
@@ -57,8 +59,8 @@ npm run app
 
 Hace falta Node 22.18+ y un navegador Chromium (en Windows, Edge ya está).
 
-Esto también funciona en **Linux**: no hay instalador todavía, pero grabar y
-exportar sí van —la integración continua graba una demo de verdad, con un
+Linux genera los mismos instaladores que descargas de Releases —grabar y exportar
+también van ahí: la integración continua graba una demo de verdad, con un
 navegador de verdad, en cada push—. Si tu navegador está en una ruta poco
 habitual, apunta `VITRINA_BROWSER` a él.
 

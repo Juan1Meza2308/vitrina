@@ -3,7 +3,7 @@
 # Vitrina
 
 **Product demos of your web app, with automatic zoom on every click.**
-An open source alternative to Screen Studio, for Windows and macOS.
+An open source alternative to Screen Studio, for Windows, macOS and Linux.
 
 [Download](https://github.com/Juan1Meza2308/vitrina/releases/latest) ·
 [Docs](docs/) ·
@@ -36,12 +36,13 @@ you mask is blurred **while recording**, so it never exists in the video.
 
 Download the installer from
 [Releases](https://github.com/Juan1Meza2308/vitrina/releases/latest) — `.exe` for
-Windows, `.dmg` for macOS — and open it. FFmpeg ships inside, so there is nothing
-else to install.
+Windows, `.dmg` for macOS, `.AppImage` and `.deb` for Linux — and open it. FFmpeg
+ships inside, so there is nothing else to install.
 
 The app is not code-signed (that needs a paid developer account on both
 platforms), so the first launch shows a warning: on Windows, *More info → Run
-anyway*; on macOS, right-click → *Open*.
+anyway*; on macOS, right-click → *Open*. On Linux the `.deb` asks nothing; the
+AppImage needs FUSE2 (`sudo apt install libfuse2`).
 
 <details>
 <summary>Or run it from source</summary>
@@ -55,9 +56,9 @@ npm run app
 
 Needs Node 22.18+ and a Chromium browser (Edge is already there on Windows).
 
-This also works on **Linux** — there is no Linux installer yet, but recording and
-exporting run there: CI records a real demo with a real browser on every push. If
-your browser lives somewhere unusual, point `VITRINA_BROWSER` at it.
+Linux makes the same installers you download from Releases — recording and
+exporting run there too: CI records a real demo with a real browser on every
+push. If your browser lives somewhere unusual, point `VITRINA_BROWSER` at it.
 
 </details>
 

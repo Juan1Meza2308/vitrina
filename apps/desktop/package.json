@@ -4,6 +4,7 @@
   "private": true,
   "description": "App de escritorio de Vitrina",
   "main": "out/main/index.js",
+  "desktopName": "dev.vitrina.app",
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
@@ -14,5 +15,7 @@
     "chrome-remote-interface": "^0.33.3",
     "electron-updater": "^6.8.9"
   },
-  "author": "Vitrina"
+  "author": "Vitrina",
+  "homepage": "https://github.com/Juan1Meza2308/vitrina",
+  "license": "MIT"
 }

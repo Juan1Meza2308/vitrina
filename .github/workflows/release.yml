@@ -137,6 +137,8 @@ jobs:
             nombre: Windows
           - so: macos-latest
             nombre: macOS
+          - so: ubuntu-latest
+            nombre: Linux
     runs-on: ${{ matrix.so }}
     steps:
       - uses: actions/checkout@v4
@@ -184,10 +186,11 @@ jobs:
           echo "Ficheros en la Release:"; echo "$nombres" | sed 's/^/  · /'
 
           # Lo que hace falta para que la descarga Y la actualización funcionen
-          # en las dos plataformas.
+          # en las tres plataformas.
           faltan=""
           for patron in "Vitrina-Setup-$V.exe" "latest.yml" "Vitrina-$V.dmg" \
-                        "Vitrina-$V-arm64.dmg" "latest-mac.yml"; do
+                        "Vitrina-$V-arm64.dmg" "latest-mac.yml" \
+                        "Vitrina-$V.AppImage" "Vitrina-$V.deb" "latest-linux.yml"; do
             echo "$nombres" | grep -qxF "$patron" || faltan="$faltan $patron"
           done
           if [ -n "$faltan" ]; then
@@ -237,4 +240,6 @@ jobs:
             echo "La aplicación no está firmada digitalmente: Windows avisa con"
             echo "SmartScreen (Más información → Ejecutar de todas formas) y macOS"
             echo "pide abrirla con clic derecho → Abrir la primera vez."
+            echo "En Linux, el .deb no pide nada; el AppImage necesita FUSE2"
+            echo "(`sudo apt install libfuse2`)."
           } >> "$GITHUB_STEP_SUMMARY"

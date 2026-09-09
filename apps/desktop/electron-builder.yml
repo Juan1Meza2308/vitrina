@@ -95,6 +95,36 @@ mac:
     # DevTools Protocol. Por eso no declara NSScreenCaptureUsageDescription ni
     # dispara el permiso de grabacion de pantalla.
 
+linux:
+  category: Utility
+  # En un workspace npm, electron-builder deriva el nombre del binario del
+  # package (`@vitrina/desktop`), que lleva caracteres que no sobreviven como
+  # ruta ni como `*.desktop`. Se fija el de la app.
+  executableName: vitrina
+  # `desktopName` en package.json + esto asocian la ventana con su entrada en el
+  # escritorio (app_id de Wayland / WM_CLASS): sin ello el escritorio no sabe
+  # qué lanzador abrió la ventana.
+  syncDesktopName: true
+  vendor: Vitrina
+  maintainer: Vitrina <juan1meza2308@gmail.com>
+  target:
+    # x64 por ahora: no hay runners arm64 alojados por GitHub y `ffmpeg-static`
+    # baja el binario de la plataforma donde se compila. Con un runner arm64
+    # (self-hosted) basta con añadir la arquitectura aqui —el resto del fichero
+    # ya lo cubre—.
+    - target: AppImage
+      arch: [x64]
+    - target: deb
+      arch: [x64]
+  extraResources:
+    - from: ../../node_modules/ffmpeg-static/ffmpeg
+      to: ffmpeg
+  # Electron necesita FUSE2 para montar un AppImage; el .deb no. Se documenta en
+  # docs/desarrollo.md, y el fallo del AppImage no tumba la entrega del .deb.
+  description: >-
+    Vitrina graba demos de tus apps web: zoom automatico en cada click, fondo
+    cinematografico y narracion. Una alternativa libre a Screen Studio.
+
 win:
   target: nsis
   extraResources:

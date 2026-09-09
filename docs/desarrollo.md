@@ -140,12 +140,26 @@ los ajustes: en inglés salía en español. Lo encontró este flujo.
 npm run app:dist
 ```
 
-Genera un instalador en `dist/`. **Cada instalador se compila en su sistema**:
-electron-builder necesita las herramientas del sistema para el `.dmg`, y además
-`ffmpeg-static` descarga el binario de la plataforma donde se instala, así que un
-`.exe` hecho desde Linux llevaría el ffmpeg equivocado. Eso último no hay que
-recordarlo: un hook `afterPack` comprueba que ffmpeg entró en el paquete **y**
+Genera un instalador en `dist/` — `.exe`, `.dmg` y, desde Linux, `.AppImage`
+y `.deb`. **Cada instalador se compila en su sistema**: electron-builder necesita
+las herramientas del sistema para el `.dmg`, el `.deb` de un Ubuntu moderno, y
+además `ffmpeg-static` descarga el binario de la plataforma donde se instala, así
+que un `.exe` hecho desde Linux llevaría el ffmpeg equivocado. Eso último no hay
+que recordarlo: un hook `afterPack` comprueba que ffmpeg entró en el paquete **y**
 que trae sus códecs, y para el build si no.
+
+En Linux el AppImage necesita **FUSE2** para ejecutarse (`sudo apt install
+libfuse2` o `sudo apt install libfuse2t64` en Ubuntu 24+); el `.deb` no pide
+nada. La app trae su propio ffmpeg, así que no hay dependencias de código de
+vídeo: lo que distingue a un Linux de otro es el navegador Chromium, el mismo que
+hace falta para grabar desde el código (`VITRINA_BROWSER` lo resuelve).
+
+Una rareza al compilar el `.deb` en casa: la herramienta de la que se sirve
+electron-builder viene en un Ruby que exige `libcrypt.so.1`. El Ubuntu del CI lo
+tiene; distribuciones que solo traen `libcrypt.so.2` (Arch) fallan al generar
+`solo` el `.deb` —el AppImage sale bien—. No es un fallo de Vitrina: la misma
+Release que da el `.deb` del CI da el AppImage compilado en el anuncio de la
+compilación.
 
 Publicar no se hace a mano. Al empujar a `master` un commit que sube `version` en
 `package.json` —y en `apps/desktop/package.json`, que un test obliga a mantener
@@ -153,10 +167,11 @@ igual—, el flujo `.github/workflows/release.yml` hace esto, en este orden:
 
 1. **Crea la Release como borrador**, antes de compilar nada. Un borrador no
    necesita tag, y así ningún trabajo posterior tiene que crearla.
-2. **Compila Windows y macOS**, de uno en uno, y cada uno **solo sube** sus
+2. **Compila Windows, macOS y Linux**, de uno en uno, y cada uno **solo sube** sus
    ficheros al borrador.
-3. **Comprueba que están todos** —el `.exe`, los dos `.dmg` y los dos
-   `latest*.yml`— y solo entonces publica el borrador, que es lo que crea el tag.
+3. **Comprueba que están todos** —el `.exe`, los dos `.dmg`, el `.AppImage` y el
+   `.deb`, y los tres `latest*.yml`— y solo entonces publica el borrador, que es
+   lo que crea el tag.
 
 Los dos primeros puntos no son manías: la v0.1.0 y la v0.1.1 salieron a medias
 porque varios publicadores intentaban crear la Release a la vez y chocaban con un
