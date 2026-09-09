@@ -107,6 +107,10 @@ linux:
   syncDesktopName: true
   vendor: Vitrina
   maintainer: Vitrina <juan1meza2308@gmail.com>
+  # Sin esto el .deb se llamaria `@vitrina/desktop_0.2.0_amd64.deb`, derivado
+  # del paquete del workspace, y no `Vitrina-0.2.0.deb` como espera el flujo y
+  # los enlaces del README. El AppImage ya salia bien por productName.
+  artifactName: Vitrina-${version}.${ext}
   target:
     # x64 por ahora: no hay runners arm64 alojados por GitHub y `ffmpeg-static`
     # baja el binario de la plataforma donde se compila. Con un runner arm64
