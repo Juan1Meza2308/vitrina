@@ -382,3 +382,39 @@ Por eso los interruptores: `data-cristal`, `data-preview`, `data-medir`,
 `VITRINA_SIN_SOLAPE`, `VITRINA_MEDIR`. Este contenedor da 40 s o 60 s para el
 mismo export según el rato, así que un antes/después que no sea en el mismo
 minuto no vale nada.
+
+---
+
+## M14 · La transcripción en español se puede medir: WER sobre voz real
+
+**Pregunta:** los subtítulos de la voz (los que leen la narración, no los de
+acción de `guia.srt`) dependen de un motor de reconocimiento que el producto no
+empaqueta hoy. Antes de decidir modelo y empaquetado hay que saber, con números,
+cuánto se equivoca **con voz real en español**, que es el idioma en el que se
+va a probar primero.
+
+**Banco de pruebas:** el prólogo de «Platero y yo» leído para LibriVox (CC0;
+dominio público). El audio es público y el texto exacto está completo en
+Project Gutenberg (#39209), así que se transcribe lo que se lee y se cuenta.
+`node spikes/m12-stt-es.mjs` baja el audio y el texto, transcribe con
+`whisper-cli` y mide el WER (distancia de edición sobre palabras sin acentos ni
+puntuación —whisper omite los acentos, no es un fallo—).
+
+En la máquina de este contenedor, con whisper.cpp 1.8.4 (Vulkan):
+
+| Modelo | tamaño | WER |
+|---|---|---|
+| `ggml-base.bin` | 148 MB | 18.9 % |
+| `ggml-small.bin` | 488 MB | 15.4 % |
+
+**La transcripción se entiende perfectamente.** Con `small`, errores típicos de
+tipo «incentido» por «sin sentido» o «Londra» por «alondra»: el texto poético
+se lee sin trabas. El 15 % no es un techo del modelo sino del pasaje —palabras
+arcaicas («Aguedilla», «gualdas»)—; en español hablado normal será menor.
+
+**Lección para el empaquetado:** el modelo no puede ser un fichero más del
+repo (488 MB no commitea): se baja y se empaqueta como `extraResource`, igual
+que ffmpeg, y el spike lo pasa por variable de entorno. Queda por decidir si
+el WER justifica `small` frente a `base` —a 15 % la narración se sigue leyendo;
+el objetivo de los subtítulos es que se puedan leer, no una transcripción
+perfecta—.
