@@ -215,7 +215,7 @@ export function capitulosDe(pasos: Paso[], separacionMs = 20_000): Capitulo[] {
 }
 
 /** `00:00:01,500`, que es como los quiere SRT. */
-function tiempoSrt(ms: number): string {
+export function tiempoSrt(ms: number): string {
   const t = Math.max(0, Math.round(ms));
   const dos = (n: number) => String(n).padStart(2, '0');
   return `${dos(Math.floor(t / 3600000))}:${dos(Math.floor(t / 60000) % 60)}`

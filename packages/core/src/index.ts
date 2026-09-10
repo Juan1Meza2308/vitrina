@@ -9,11 +9,13 @@ export {
 } from './quality.ts';
 export type { QualityBudget, CapturePreset, Orientacion } from './quality.ts';
 export { FrameIndex, frameKey, frameURL } from './frames.ts';
-export { pasosDe, capitulosDe, srtDe, guiaMarkdown, reloj } from './guia.ts';
+export { pasosDe, capitulosDe, srtDe, guiaMarkdown, reloj, tiempoSrt } from './guia.ts';
 export { traducir, plural, conIdioma, idiomaDe } from './idioma.ts';
 export type { Idioma, T, Datos } from './idioma.ts';
 export type { Paso, TipoPaso, Capitulo, OpcionesGuia } from './guia.ts';
 export { audioAlignment, audioTimeFor, supportsAudio } from './audio.ts';
+export { subtitulosDeVoz, srtDeVoz } from './transcripcion.ts';
+export type { SegmentoVoz, Rotulo } from './transcripcion.ts';
 export { TimeMap } from './timemap.ts';
 export { parseSilenceReport, silenceFilter, UMBRAL_DB, MIN_SILENCIO_S, MARGEN_MS } from './silence.ts';
 export { tramosSinActividad, ahorroDe, IDLE_MIN_MS, IDLE_OBJETIVO_MS, IDLE_MARGEN_MS } from './idle.ts';
