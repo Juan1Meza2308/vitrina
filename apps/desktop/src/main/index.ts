@@ -48,6 +48,21 @@ const ejecutar = promisify(execFile);
 
 const RECORDINGS = path.join(app.getPath('videos'), 'Vitrina');
 
+/**
+ * Carpeta de grabacion nueva, con nombre unico.
+ *
+ * El nombre es una fecha legible (`2026-09-10T01-23-45`) seguida de un sufijo
+ * corto aleatorio: dos grabaciones lanzadas en el mismo segundo con el nombre
+ * solo, la segunda habria sobreescrito a la primera sin que nadie preguntara.
+ * El sufijo ademas quita la necesidad de comprobar antes si la carpeta existe.
+ */
+function carpetaDeGrabacion(motivo: 'nueva' | 'repetida' | 'regrabada'): string {
+  const sello = Math.floor(Date.now() / 1000);
+  const fecha = new Date(sello * 1000).toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const azar = Math.random().toString(36).slice(2, 6);
+  return path.join(RECORDINGS, `${fecha}-${azar}-${motivo}.vitrina`);
+}
+
 /** Un JSON en `userData`: son cinco campos, no hace falta una dependencia. */
 const ficheroAjustes = () => path.join(app.getPath('userData'), 'ajustes.json');
 
@@ -742,8 +757,7 @@ ipcMain.handle('presets:camera', () => Object.keys(CAMERA_PRESETS));
  * en memoria hasta saber la ruta.
  */
 ipcMain.handle('record:prepare', async () => {
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  recordingDir = path.join(RECORDINGS, `${stamp}.vitrina`);
+  recordingDir = carpetaDeGrabacion('nueva');
   await fsp.mkdir(recordingDir, { recursive: true });
   return recordingDir;
 });
@@ -794,8 +808,7 @@ ipcMain.handle('record:start', async (
   // valiendo, y el encuadre sale con proporcion de movil.
   const preset = paraOrientacion(elegido, opts.orientacion ?? 'horizontal');
   if (!recordingDir) {
-    const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    recordingDir = path.join(RECORDINGS, `${stamp}.vitrina`);
+    recordingDir = carpetaDeGrabacion('nueva');
   }
   await fsp.mkdir(recordingDir, { recursive: true });
 
@@ -886,8 +899,7 @@ ipcMain.handle('record:repeat', async (
     ? paraOrientacion(elegido, fuenteVieja.h > fuenteVieja.w ? 'vertical' : 'horizontal')
     : null;
 
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const destino = path.join(RECORDINGS, `${stamp}-repetida.vitrina`);
+  const destino = carpetaDeGrabacion('repetida');
   await fsp.mkdir(destino, { recursive: true });
 
   const guion = guionDe(events, manifest.startedAt, {
@@ -1006,8 +1018,7 @@ ipcMain.handle('record:retake', async (_e, opts: { dir: string; desdeMs: number 
   const events = JSON.parse(
     await fsp.readFile(path.join(origen, 'events.json'), 'utf8')) as InputEvent[];
 
-  const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const destino = path.join(RECORDINGS, `${stamp}-regrabada.vitrina`);
+  const destino = carpetaDeGrabacion('regrabada');
   await fsp.mkdir(destino, { recursive: true });
 
   const guion = guionDe(events, manifest.startedAt, {
