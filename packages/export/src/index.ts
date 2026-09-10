@@ -12,3 +12,9 @@ export {
 export type { Encoder } from './ffmpeg.ts';
 export { exportarGuia, encuadreDePaso } from './guia.ts';
 export type { OpcionesGuia as OpcionesExportarGuia, ResultadoGuia } from './guia.ts';
+export {
+  findWhisper, findModeloWhisper, transcribirNarracion,
+} from './whisper.ts';
+export type {
+  OpcionesTranscripcion as OpcionesTranscribir, ResultadoTranscripcion,
+} from './whisper.ts';
