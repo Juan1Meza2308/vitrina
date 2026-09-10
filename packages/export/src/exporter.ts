@@ -14,8 +14,9 @@ import {
   buildCameraTrack, cameraConfigForBudget, computeQualityBudget,
   CAMERA_PRESETS, FrameIndex, frameKey, audioAlignment, audioTimeFor, supportsAudio, TimeMap,
 } from '@vitrina/core';
+import { leerManifest, leerProyecto, leerEventos } from '@vitrina/core/persistencia';
 import type {
-  CameraPresetName, ExportSettings, InputEvent, Manifest, Project, QualityBudget, ZoomSegment,
+  CameraPresetName, ExportSettings, Project, QualityBudget, ZoomSegment,
 } from '@vitrina/core';
 import { composite, CursorSource, OverlaySource } from '@vitrina/renderer';
 import type { Ctx, ImageLike } from '@vitrina/renderer';
@@ -74,9 +75,6 @@ export class ExportAbortedError extends Error {
   }
 }
 
-const readJson = async <T,>(p: string): Promise<T> =>
-  JSON.parse(await fsp.readFile(p, 'utf8')) as T;
-
 async function exists(p: string): Promise<boolean> {
   try {
     await fsp.access(p);
@@ -91,9 +89,9 @@ export async function exportRecording(opts: ExportOptions): Promise<ExportResult
   const preset = typeof opts.preset === 'string' ? resolvePreset(opts.preset) : opts.preset;
   if (!preset) throw new Error(`Preset de exportacion desconocido: ${String(opts.preset)}`);
 
-  const manifest = await readJson<Manifest>(path.join(root, 'manifest.json'));
-  const events = await readJson<InputEvent[]>(path.join(root, 'events.json'));
-  const project = await readJson<Project>(path.join(root, 'project.json'));
+  const manifest = await leerManifest(path.join(root, 'manifest.json'));
+  const events = await leerEventos(path.join(root, 'events.json'));
+  const project = await leerProyecto(path.join(root, 'project.json'));
 
   const sourceSize = manifest.capture ?? manifest.viewport;
   const settings: ExportSettings = {
