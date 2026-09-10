@@ -349,6 +349,7 @@ function cachearPrevia(carpeta: string, tira: string[]): void {
 
 ipcMain.handle('recordings:preview', async (_e, dir: string): Promise<string[]> => {
   const carpeta = path.resolve(dir);
+  if (!(await esRutaDeGrabacion(carpeta))) return [];
   const cacheada = cachePrevia.get(carpeta);
   if (cacheada) {
     // Tocar la clave la marca como la mas reciente.
@@ -675,6 +676,37 @@ app.on('window-all-closed', () => {
 const readJson = async <T,>(p: string): Promise<T> =>
   JSON.parse(await fsp.readFile(p, 'utf8')) as T;
 
+/**
+ * Que una ruta venida del renderer sea realmente una grabacion.
+ *
+ * Los handlers IPC reciben carpetas que la interfaz no deberia poder inventar:
+ * sin esta comprobacion, un renderer comprometido podria leer y escribir
+ * ficheros JSON donde quisiera apuntando a un directorio ajeno. La regla es
+ * que la ruta resuelta caiga dentro de RECORDINGS —las grabaciones propias— o
+ * que sea una carpeta con `manifest.json`, que es lo que permite abrir desde
+ * el disco una grabacion guardada en cualquier sitio.
+ */
+async function esRutaDeGrabacion(dir: string): Promise<boolean> {
+  const root = path.resolve(dir);
+  if (root.startsWith(`${RECORDINGS}${path.sep}`) || root === RECORDINGS) return true;
+  try {
+    await fsp.access(path.join(root, 'manifest.json'));
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Lo mismo para un FICHERO, no una carpeta: el caso es el video exportado, que
+ * vive dentro de la grabacion. Solo hace falta para `shell:reveal`.
+ */
+async function esRutaRevelable(target: string): Promise<boolean> {
+  const resolved = path.resolve(target);
+  if (resolved.startsWith(`${RECORDINGS}${path.sep}`)) return true;
+  return esRutaDeGrabacion(path.dirname(resolved));
+}
+
 interface RecordingData {
   dir: string;
   manifest: Manifest;
@@ -684,6 +716,9 @@ interface RecordingData {
 
 async function loadRecording(dir: string): Promise<RecordingData> {
   const root = path.resolve(dir);
+  if (!(await esRutaDeGrabacion(root))) {
+    throw new Error('Esa carpeta no es una grabacion de Vitrina.');
+  }
   const [manifest, events, project] = await Promise.all([
     readJson<Manifest>(path.join(root, 'manifest.json')),
     readJson<InputEvent[]>(path.join(root, 'events.json')),
@@ -835,6 +870,9 @@ ipcMain.handle('record:repeat', async (
   if (recorder) throw new Error('Ya hay una grabacion en curso');
 
   const origen = path.resolve(opts.dir);
+  if (!(await esRutaDeGrabacion(origen))) {
+    throw new Error('Esa carpeta no es una grabacion de Vitrina.');
+  }
   const manifest = JSON.parse(
     await fsp.readFile(path.join(origen, 'manifest.json'), 'utf8')) as Manifest;
   const events = JSON.parse(
@@ -960,6 +998,9 @@ ipcMain.handle('record:retake', async (_e, opts: { dir: string; desdeMs: number 
   if (recorder) throw new Error('Ya hay una grabacion en curso');
 
   const origen = path.resolve(opts.dir);
+  if (!(await esRutaDeGrabacion(origen))) {
+    throw new Error('Esa carpeta no es una grabacion de Vitrina.');
+  }
   const manifest = JSON.parse(
     await fsp.readFile(path.join(origen, 'manifest.json'), 'utf8')) as Manifest;
   const events = JSON.parse(
@@ -1124,6 +1165,9 @@ ipcMain.handle('recording:open', async () => {
 ipcMain.handle('recording:load', (_e, dir: string) => loadRecording(dir));
 
 ipcMain.handle('recording:saveProject', async (_e, dir: string, project: Project) => {
+  if (!(await esRutaDeGrabacion(dir))) {
+    throw new Error('Esa carpeta no es una grabacion de Vitrina.');
+  }
   await fsp.writeFile(path.join(dir, 'project.json'), JSON.stringify(project, null, 2));
 });
 
@@ -1156,6 +1200,9 @@ async function planAndSave(dir: string, cameraPreset: CameraPresetName): Promise
 ipcMain.handle('export:run', async (_e, opts: {
   dir: string; preset: string; cameraPreset: CameraPresetName; soft: boolean;
 }) => {
+  if (!(await esRutaDeGrabacion(opts.dir))) {
+    throw new Error('Esa carpeta no es una grabacion de Vitrina.');
+  }
   exportController = new AbortController();
   try {
     return await exportRecording({
@@ -1181,6 +1228,9 @@ ipcMain.handle('export:run', async (_e, opts: {
  * decodifica frames, dos cosas que el renderer no deberia hacer.
  */
 ipcMain.handle('guia:run', async (_e, dir: string) => {
+  if (!(await esRutaDeGrabacion(dir))) {
+    throw new Error('Esa carpeta no es una grabacion de Vitrina.');
+  }
   // En el idioma de la app: la guia se comparte con quien no estuvo en la demo,
   // y quien la exporta en ingles espera entregarla en ingles.
   const { idioma } = await leerAjustes();
@@ -1205,6 +1255,7 @@ ipcMain.handle('export:cancel', () => {
  */
 ipcMain.handle('audio:silencios', async (_e, dir: string): Promise<Cut[]> => {
   const root = path.resolve(dir);
+  if (!(await esRutaDeGrabacion(root))) return [];
   const manifest = await readJson<Manifest>(path.join(root, 'manifest.json'));
   if (!manifest.audio) return [];
 
@@ -1232,6 +1283,9 @@ ipcMain.handle('audio:silencios', async (_e, dir: string): Promise<Cut[]> => {
  * el proyecto sin fondo y sin explicacion.
  */
 ipcMain.handle('background:choose', async (_e, dir: string) => {
+  if (!(await esRutaDeGrabacion(dir))) {
+    throw new Error('Esa carpeta no es una grabacion de Vitrina.');
+  }
   const t = await traductor();
   const r = await dialog.showOpenDialog({
     title: t('Imagen de fondo'),
@@ -1254,6 +1308,9 @@ ipcMain.handle('background:choose', async (_e, dir: string) => {
  * guardara la ruta original, el export fallaria en cuanto se moviera el fichero.
  */
 ipcMain.handle('watermark:choose', async (_e, dir: string) => {
+  if (!(await esRutaDeGrabacion(dir))) {
+    throw new Error('Esa carpeta no es una grabacion de Vitrina.');
+  }
   const t = await traductor();
   const r = await dialog.showOpenDialog({
     title: t('Marca de agua'),
@@ -1269,8 +1326,8 @@ ipcMain.handle('watermark:choose', async (_e, dir: string) => {
   return destino;
 });
 
-ipcMain.handle('shell:reveal', (_e, target: string) => {
-  shell.showItemInFolder(target);
+ipcMain.handle('shell:reveal', async (_e, target: string) => {
+  if (await esRutaRevelable(target)) shell.showItemInFolder(path.resolve(target));
 });
 
 ipcMain.handle('project:defaults', (_e, url: string) =>
