@@ -34,6 +34,9 @@ import {
   exportRecording, exportarGuia, EXPORT_PRESETS, ExportAbortedError, findFfmpeg,
   comoInstalarFfmpeg, origenDeFfmpeg, leerFrame,
 } from '@vitrina/export';
+import {
+  leerManifest, leerProyecto, leerEventos,
+} from '@vitrina/core/persistencia';
 import { findBrowser, comoInstalarNavegador } from '@vitrina/capture-cdp';
 import { normalizarAjustes, aplicarLook, type Ajustes } from './ajustes.ts';
 import { esMasNueva, puedeActualizarSolo } from './version.ts';
@@ -325,8 +328,7 @@ function tituloDeGrabacion(url: string): string {
  */
 async function instanteDePortada(dir: string, m: Manifest): Promise<number> {
   try {
-    const events = JSON.parse(
-      await fsp.readFile(path.join(dir, 'events.json'), 'utf8')) as InputEvent[];
+    const events = await leerEventos(path.join(dir, 'events.json'));
     const click = events.find((e) => e.type === 'down');
     if (click) return click.t - m.startedAt;
   } catch {
@@ -374,8 +376,7 @@ ipcMain.handle('recordings:preview', async (_e, dir: string): Promise<string[]> 
   }
 
   try {
-    const m = JSON.parse(
-      await fsp.readFile(path.join(carpeta, 'manifest.json'), 'utf8')) as Manifest;
+    const m = await leerManifest(path.join(carpeta, 'manifest.json'));
     // Repartidos entre el 8 % y el 88 %: los extremos de una demo son la pagina
     // cargando y el cursor parado, y no cuentan nada.
     const cuantos = 6;
@@ -397,7 +398,7 @@ ipcMain.handle('recordings:recent', async (_e, limite = 5) => {
       .map(async (nombre) => {
         const dir = path.join(RECORDINGS, nombre);
         try {
-          const m = JSON.parse(await fsp.readFile(path.join(dir, 'manifest.json'), 'utf8')) as Manifest;
+          const m = await leerManifest(path.join(dir, 'manifest.json'));
           const [portada] = await fotogramas(dir, m, [await instanteDePortada(dir, m)]);
           return {
             dir,
@@ -688,9 +689,6 @@ app.on('window-all-closed', () => {
 
 // --- lectura de una grabacion ----------------------------------------------
 
-const readJson = async <T,>(p: string): Promise<T> =>
-  JSON.parse(await fsp.readFile(p, 'utf8')) as T;
-
 /**
  * Que una ruta venida del renderer sea realmente una grabacion.
  *
@@ -735,9 +733,9 @@ async function loadRecording(dir: string): Promise<RecordingData> {
     throw new Error('Esa carpeta no es una grabacion de Vitrina.');
   }
   const [manifest, events, project] = await Promise.all([
-    readJson<Manifest>(path.join(root, 'manifest.json')),
-    readJson<InputEvent[]>(path.join(root, 'events.json')),
-    readJson<Project>(path.join(root, 'project.json')),
+    leerManifest(path.join(root, 'manifest.json')),
+    leerEventos(path.join(root, 'events.json')),
+    leerProyecto(path.join(root, 'project.json')),
   ]);
   servedDir = root;
   return { dir: root, manifest, events, project };
@@ -886,10 +884,8 @@ ipcMain.handle('record:repeat', async (
   if (!(await esRutaDeGrabacion(origen))) {
     throw new Error('Esa carpeta no es una grabacion de Vitrina.');
   }
-  const manifest = JSON.parse(
-    await fsp.readFile(path.join(origen, 'manifest.json'), 'utf8')) as Manifest;
-  const events = JSON.parse(
-    await fsp.readFile(path.join(origen, 'events.json'), 'utf8')) as InputEvent[];
+  const manifest = await leerManifest(path.join(origen, 'manifest.json'));
+  const events = await leerEventos(path.join(origen, 'events.json'));
 
   const fuenteVieja = manifest.capture ?? manifest.viewport;
   const elegido = opts.presetName
@@ -942,8 +938,7 @@ ipcMain.handle('record:repeat', async (
     // en pixeles de la fuente, asi que copiarlos tal cual a una captura de otro
     // tamano deja la camara encuadrando otro sitio, y sin sintoma visible.
     try {
-      const viejo = JSON.parse(
-        await fsp.readFile(path.join(origen, 'project.json'), 'utf8')) as Project;
+      const viejo = await leerProyecto(path.join(origen, 'project.json'));
       const fuenteNueva = resultado.manifest.capture ?? resultado.manifest.viewport;
       // La repeticion vuelve a ejecutar el guion en un navegador nuevo, pero no
       // vuelve a grabar a la persona: sin pista, un estilo de burbuja copiado
@@ -1013,10 +1008,8 @@ ipcMain.handle('record:retake', async (_e, opts: { dir: string; desdeMs: number 
   if (!(await esRutaDeGrabacion(origen))) {
     throw new Error('Esa carpeta no es una grabacion de Vitrina.');
   }
-  const manifest = JSON.parse(
-    await fsp.readFile(path.join(origen, 'manifest.json'), 'utf8')) as Manifest;
-  const events = JSON.parse(
-    await fsp.readFile(path.join(origen, 'events.json'), 'utf8')) as InputEvent[];
+  const manifest = await leerManifest(path.join(origen, 'manifest.json'));
+  const events = await leerEventos(path.join(origen, 'events.json'));
 
   const destino = carpetaDeGrabacion('regrabada');
   await fsp.mkdir(destino, { recursive: true });
@@ -1117,12 +1110,10 @@ ipcMain.handle('record:stop', async () => {
     const { origen, desdeMs } = regrabando;
     regrabando = null;
     try {
-      const viejo = JSON.parse(
-        await fsp.readFile(path.join(origen, 'project.json'), 'utf8')) as Project;
-      const viejoManifest = JSON.parse(
-        await fsp.readFile(path.join(origen, 'manifest.json'), 'utf8')) as Manifest;
+      const viejo = await leerProyecto(path.join(origen, 'project.json'));
+      const viejoManifest = await leerManifest(path.join(origen, 'manifest.json'));
       const ruta = path.join(recordingDir, 'project.json');
-      const nuevo = JSON.parse(await fsp.readFile(ruta, 'utf8')) as Project;
+      const nuevo = await leerProyecto(ruta);
 
       const copiado = reescalarProyecto(
         viejo,
@@ -1155,7 +1146,7 @@ ipcMain.handle('record:stop', async () => {
   if (look) {
     const ruta = path.join(recordingDir, 'project.json');
     try {
-      const p = JSON.parse(await fsp.readFile(ruta, 'utf8')) as Project;
+      const p = await leerProyecto(ruta);
       await fsp.writeFile(ruta, JSON.stringify(aplicarLook(p, look), null, 2));
     } catch { /* sin look: la grabacion sigue siendo valida */ }
   }
@@ -1267,7 +1258,7 @@ ipcMain.handle('export:cancel', () => {
 ipcMain.handle('audio:silencios', async (_e, dir: string): Promise<Cut[]> => {
   const root = path.resolve(dir);
   if (!(await esRutaDeGrabacion(root))) return [];
-  const manifest = await readJson<Manifest>(path.join(root, 'manifest.json'));
+  const manifest = await leerManifest(path.join(root, 'manifest.json'));
   if (!manifest.audio) return [];
 
   const ruta = path.join(root, manifest.audio.file);
