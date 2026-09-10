@@ -326,13 +326,36 @@ async function instanteDePortada(dir: string, m: Manifest): Promise<number> {
  * Se pide al posar el cursor y se cachea: generarlas todas al arrancar
  * decodificaria treinta frames grandes de golpe y la app tardaria en abrir.
  * La cache vive lo que vive la app; la carpeta de la grabacion no se ensucia.
+ *
+ * El limite es una cota de memoria, no una mania: cada entrada son seis data
+ * URLs de cientos de kilobytes, y una sesion larga abriendo grabaciones podia
+ * acumularlas sin devolver nada. Se desaloja el menos usado (LRU) cuando se
+ * pasa del tope, no el mas viejo por hora: quien sigue posando el cursor sobre
+ * la misma carpeta conserva su tira caliente.
  */
+const CACHE_PREVIA_MAX = 20;
 const cachePrevia = new Map<string, string[]>();
+
+function cachearPrevia(carpeta: string, tira: string[]): void {
+  // Volver a poner la clave la sube al final de la lista: es la que se acaba
+  // de usar y no debe ser la primera en irse.
+  cachePrevia.delete(carpeta);
+  cachePrevia.set(carpeta, tira);
+  if (cachePrevia.size > CACHE_PREVIA_MAX) {
+    const masVieja = cachePrevia.keys().next().value;
+    if (masVieja !== undefined) cachePrevia.delete(masVieja);
+  }
+}
 
 ipcMain.handle('recordings:preview', async (_e, dir: string): Promise<string[]> => {
   const carpeta = path.resolve(dir);
   const cacheada = cachePrevia.get(carpeta);
-  if (cacheada) return cacheada;
+  if (cacheada) {
+    // Tocar la clave la marca como la mas reciente.
+    cachePrevia.delete(carpeta);
+    cachePrevia.set(carpeta, cacheada);
+    return cacheada;
+  }
 
   try {
     const m = JSON.parse(
@@ -343,7 +366,7 @@ ipcMain.handle('recordings:preview', async (_e, dir: string): Promise<string[]> 
     const instantes = Array.from({ length: cuantos }, (_, i) =>
       m.durationMs * (0.08 + (0.8 * i) / (cuantos - 1)));
     const tira = await fotogramas(carpeta, m, instantes);
-    cachePrevia.set(carpeta, tira);
+    cachearPrevia(carpeta, tira);
     return tira;
   } catch {
     return [];
