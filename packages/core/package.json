@@ -3,10 +3,14 @@
   "version": "0.1.0-dev",
   "private": true,
   "type": "module",
-  "description": "Modelo de proyecto, matematica de calidad y motor de camara. Sin dependencias.",
+  "description": "Modelo de proyecto, matematica de calidad y motor de camara. Persistencia validada con zod en ./persistencia.",
   "exports": {
     ".": "./src/index.ts",
     "./types": "./src/types.ts",
-    "./quality": "./src/quality.ts"
+    "./quality": "./src/quality.ts",
+    "./persistencia": "./src/persistencia.ts"
+  },
+  "dependencies": {
+    "zod": "^4.6.1"
   }
 }
