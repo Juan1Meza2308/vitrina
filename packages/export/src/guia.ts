@@ -18,8 +18,10 @@ import path from 'node:path';
 import {
   FrameIndex, TimeMap, pasosDe, capitulosDe, srtDe, guiaMarkdown, reloj, conIdioma,
 } from '@vitrina/core';
-import type { InputEvent, Manifest, Paso, Project, Rect, Idioma, T } from '@vitrina/core';
+import { leerManifest, leerProyecto, leerEventos } from '@vitrina/core/persistencia';
+import type { Paso, Rect, Idioma, T } from '@vitrina/core';
 import { leerFrame } from './leer-frame.ts';
+import { transcribirNarracion } from './whisper.ts';
 
 export interface OpcionesGuia {
   /** Carpeta `.vitrina`. */
@@ -34,6 +36,14 @@ export interface OpcionesGuia {
    * trabajando, no en el del proyecto.
    */
   idioma?: Idioma;
+  /**
+   * Transcribir la narracion y escribir `narracion.srt` junto a la guia.
+   *
+   * No es opcional por gusto: transcribir tarda lo que tarda el modelo y exige
+   * un modelo de voz que puede no estar instalado. La guia de proximo paso no
+   * depende de ello, y quien solo quiere los pasos no deberia pagarlo.
+   */
+  subtitulos?: boolean;
 }
 
 export interface ResultadoGuia {
@@ -41,9 +51,6 @@ export interface ResultadoGuia {
   /** Ficheros escritos, relativos a la carpeta. */
   ficheros: string[];
 }
-
-const leer = async <T>(p: string): Promise<T> =>
-  JSON.parse(await fsp.readFile(p, 'utf8')) as T;
 
 /**
  * Caja de la captura a partir de la del elemento.
@@ -82,9 +89,9 @@ export function encuadreDePaso(
 
 export async function exportarGuia(opts: OpcionesGuia): Promise<ResultadoGuia> {
   const root = path.resolve(opts.recordingDir);
-  const manifest = await leer<Manifest>(path.join(root, 'manifest.json'));
-  const events = await leer<InputEvent[]>(path.join(root, 'events.json'));
-  const project = await leer<Project>(path.join(root, 'project.json'));
+  const manifest = await leerManifest(path.join(root, 'manifest.json'));
+  const events = await leerEventos(path.join(root, 'events.json'));
+  const project = await leerProyecto(path.join(root, 'project.json'));
 
   const map = new TimeMap({
     durationMs: manifest.durationMs,
@@ -99,6 +106,21 @@ export async function exportarGuia(opts: OpcionesGuia): Promise<ResultadoGuia> {
     throw new Error(
       'La grabacion no tiene pasos que contar: sin clicks ni teclas no hay guia.',
     );
+  }
+
+  // La transcripcion de la voz es un fichero aparte: los subtitulos de accion
+  // no se mezclan con lo que se dijo. Si falla por falta de modelo, la guia de
+  // pasos ya esta decidida y no tiene sentido tumbarla: se avisa y se sigue.
+  let narracion: string[] = [];
+  if (opts.subtitulos && manifest.audio) {
+    try {
+      // El STT se prueba HOY en espanol. Cuando el segundo idioma este medido
+      // (WER del mismo spike), aqui se decide por `idioma` en vez de fijarlo.
+      const r = await transcribirNarracion({ recordingDir: root, idioma: 'es' });
+      narracion = r.ficheros;
+    } catch {
+      // La guia sin subtitulos de voz sigue valiendo; se pierde solo la voz.
+    }
   }
 
   const index = new FrameIndex(manifest);
@@ -151,6 +173,8 @@ export async function exportarGuia(opts: OpcionesGuia): Promise<ResultadoGuia> {
 
   await fsp.writeFile(path.join(root, 'guia.srt'), srtDe(pasos, map.outputDurationMs));
   ficheros.push('guia.srt');
+
+  ficheros.push(...narracion);
 
   return { pasos, ficheros };
 }

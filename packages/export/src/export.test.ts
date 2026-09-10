@@ -24,6 +24,7 @@ import { clampZooms, exportRecording, ExportAbortedError } from './exporter.ts';
 import { EXPORT_PRESETS, extensionFor, resolvePreset } from './presets.ts';
 import { spawnSync } from 'node:child_process';
 import { findFfmpeg, comoInstalarFfmpeg, origenDeFfmpeg, cadenaAtempo } from './ffmpeg.ts';
+import { findWhisper, findModeloWhisper } from './whisper.ts';
 
 const run = promisify(execFile);
 const T0 = 1_700_000_000_000;
@@ -825,6 +826,58 @@ describe('el ffmpeg que viaja con la app', () => {
     ['gif', 'el preset gif'],
   ])('trae %s, que necesita %s', (codec) => {
     expect(codecs).toContain(codec);
+  });
+});
+
+describe('findWhisper · rutas por plataforma', () => {
+  it('sin ninguna ruta conocida cae al PATH en vez de fallar', () => {
+    expect(findWhisper('darwin', () => false)).toBe('whisper-cli');
+  });
+
+  it('en Windows busca un .exe y en lo demas no', () => {
+    const dePlataforma = (plat: NodeJS.Platform) => {
+      const vistas: string[] = [];
+      findWhisper(plat, (p) => { vistas.push(p); return false; });
+      return vistas.filter((p) => p.includes('whisper-cpp-static'));
+    };
+    expect(dePlataforma('win32').every((p) => p.endsWith('.exe'))).toBe(true);
+    expect(dePlataforma('darwin').every((p) => !p.endsWith('.exe'))).toBe(true);
+  });
+
+  it('la variable de entorno manda sobre las rutas', () => {
+    const vistas: string[] = [];
+    const antes = process.env['WHISPER_PATH'];
+    try {
+      process.env['WHISPER_PATH'] = '/ruta/mia/whisper-cli';
+      const ruta = findWhisper('linux', (p) => { vistas.push(p); return p === '/ruta/mia/whisper-cli'; });
+      expect(ruta).toBe('/ruta/mia/whisper-cli');
+    } finally {
+      if (antes === undefined) delete process.env['WHISPER_PATH'];
+      else process.env['WHISPER_PATH'] = antes;
+    }
+  });
+});
+
+describe('findModeloWhisper', () => {
+  it('devuelve null si no hay modelo senalado', () => {
+    const antes = process.env['WHISPER_MODEL'];
+    try {
+      delete process.env['WHISPER_MODEL'];
+      expect(findModeloWhisper()).toBeNull();
+    } finally {
+      if (antes !== undefined) process.env['WHISPER_MODEL'] = antes;
+    }
+  });
+
+  it('da el modelo de WHISPER_MODEL solo si el fichero existe', () => {
+    const antes = process.env['WHISPER_MODEL'];
+    try {
+      process.env['WHISPER_MODEL'] = '/modelo/inexistente/ggml-base.bin';
+      expect(findModeloWhisper()).toBeNull();
+    } finally {
+      if (antes === undefined) delete process.env['WHISPER_MODEL'];
+      else process.env['WHISPER_MODEL'] = antes;
+    }
   });
 });
 
